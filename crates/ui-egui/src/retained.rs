@@ -781,13 +781,21 @@ mod tests {
         app.card.canvas = pipeline;
         app.theme_wanted = Some(if dark { egui::ThemePreference::Dark } else { egui::ThemePreference::Light });
         let ctx = Context::default();
-        let side = Rect::from_min_size(Pos2::ZERO, vec2(SIDE[0] as f32, SIDE[1] as f32));
         let mut outputs = Vec::new();
         for i in 0..6 {
-            let mut raw = RawInput { screen_rect: Some(side), time: Some(f64::from(i) * 10.0), ..RawInput::default() };
-            raw.viewports.entry(ViewportId::ROOT).or_default().native_pixels_per_point = Some(1.0);
-            outputs.push(ctx.run_ui(raw, |ui| app.show(ui)));
+            outputs.push(step(&mut app, &ctx, i));
         }
+        // The layout settles over the first frames, which moves the view: until a worker's exact drawing comes, the frame shows the
+        // last one moved, whose edges may round otherwise. Each window waits for its own, so the two show the same drawing.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let mut i = 6;
+        while app.canvas.drawing.shown_drawing().map(|d| d.view) != app.canvas.current_view(level) {
+            assert!(std::time::Instant::now() < deadline, "the worker published nothing");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            outputs.push(step(&mut app, &ctx, i));
+            i += 1;
+        }
+        outputs.push(step(&mut app, &ctx, i));
         assert_eq!(
             (crate::style::dark(), crate::style::canvas_dark()),
             (dark, dark && !light_canvas),
