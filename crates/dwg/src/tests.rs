@@ -114,6 +114,54 @@ fn bytes_changed_anywhere_in_a_dwg_never_panic() {
     }
 }
 
+/// The sample house's plan as the core writes it in DXF.
+fn plan_dxf() -> String {
+    let mut s = bimcraft_core::engine::Session::new();
+    s.script(bimcraft_core::sample::SAMPLE).unwrap();
+    let m = &s.model;
+    let level = m.levels()[0].0;
+    bimcraft_core::render::dxf(&bimcraft_core::render::plan(m, level, 1600, 1000), m)
+}
+
+fn per_layer(d: &dxf::Dxf) -> std::collections::BTreeMap<String, usize> {
+    let mut n = std::collections::BTreeMap::new();
+    for e in &d.entities {
+        *n.entry(e.layer.clone()).or_insert(0) += 1;
+    }
+    n
+}
+
+#[test]
+fn a_plan_written_as_dwg_2018_reads_back_with_its_layers_and_entities() {
+    let text = plan_dxf();
+    let dwg = to_dwg(&text, Limits::DEFAULT).unwrap();
+    assert!(dwg.starts_with(b"AC1032") && is_dwg(&dwg), "{:?}", dwg.get(..6));
+    let (before, after) = (dxf::read_text(&text).unwrap(), dxf::read(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).unwrap());
+    assert_eq!(after.unit, "mm");
+    assert_eq!(per_layer(&after), per_layer(&before));
+    for layer in &before.layers {
+        assert!(after.layer(&layer.name).is_some(), "{} was lost", layer.name);
+    }
+    // A dashed grid keeps its linetype.
+    let dashed = |d: &dxf::Dxf| d.entities.iter().filter(|e| e.layer == "A-GRID" && e.linetype.is_some()).count();
+    assert_eq!(dashed(&after), dashed(&before));
+    // Through the test helper too.
+    assert!(dwg_from_dxf(&text).unwrap().starts_with(b"AC1032"));
+}
+
+#[test]
+fn a_dxf_too_large_or_that_isnt_one_or_a_dwg_too_large_is_refused_and_never_panics() {
+    let text = plan_dxf();
+    let e = to_dwg(&text, Limits { dxf_bytes: 1000, ..Limits::DEFAULT }).unwrap_err();
+    assert!(e.contains("larger than"), "{e}");
+    let e = to_dwg(&text, Limits { dwg_bytes: 1000, ..Limits::DEFAULT }).unwrap_err();
+    assert!(e.contains("more than"), "{e}");
+    for bad in ["", "not a drawing", "  0\nSECTION\n  2\nENTITIES\n  0\nLWPOLYLINE\n 90\n99999999\n", &text[..text.len() / 2]] {
+        let _ = to_dwg(bad, Limits::DEFAULT);
+    }
+    assert!(to_dwg("not a drawing", Limits::DEFAULT).is_err());
+}
+
 #[test]
 fn a_file_too_large_is_refused_before_it_is_read() {
     let dir = std::env::temp_dir().join(format!("bimcraft-dwg-{}", std::process::id()));

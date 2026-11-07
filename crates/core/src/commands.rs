@@ -128,9 +128,12 @@ pub static ALL: &[Command] = &[
     other(
         "save",
         "Save",
-        "{path?} .bimcraft saves the project (Save As with a path); .ifc exports IFC4; .glb exports the default 3D view's scene as \
+        "{path?, view?} .bimcraft saves the project (Save As with a path); .ifc exports IFC4; .glb exports the default 3D view's scene as \
          glTF 2.0 (metres, y up, a node for each element named by its id, GUID and category in `extras`; returns `elements` and \
-         `triangles`); .svg or .png exports the lowest level's plan; .pdf prints every sheet, a page each",
+         `triangles`); .svg, .png, .dxf or .dwg exports a level's plan, `view` (a level or plan view by name, id or GUID; the \
+         lowest level by default): the DXF is AutoCAD 2018 ASCII in mm, on AIA layers by category (A-WALL, A-DOOR, A-GLAZ, \
+         A-AREA-IDEN, A-ANNO-DIMS, …; fills on <layer>-PATT, lettering as strokes), and the DWG the same drawing as AutoCAD \
+         2018 (AC1032), where the build has a DWG writer; .pdf prints every sheet, a page each",
         save,
     ),
     other("undo", "Undo", "{count?} takes back the last `count` steps (1 by default)", undo),
@@ -1568,7 +1571,7 @@ pub static ALL: &[Command] = &[
          reflected ceiling plan, looking up from 2300 mm), a section, an elevation, a sheet (at 5 px a paper mm), or the 3D view seen from \
          `azimuth` degrees round from east (counter-clockwise) and `elevation` degrees up (by default from the south-east, \
          30° up), fitted; in perspective (see `perspective`) through its lens, and with `eye_elevation` from an eye that high \
-         (mm) looking at the same point, as a PNG (pngBase64), or written to a path: .png, .svg for a plan, .pdf for a sheet. A plan, section, \
+         (mm) looking at the same point, as a PNG (pngBase64), or written to a path: .png, .svg, .dxf or .dwg for a plan, .pdf for a sheet. A plan, section, \
          elevation or sheet that could not draw something as asked (a fill pattern too dense for the view, more ink behind \
          a region than is kept above it) says so in the reply's `notes`",
         render_view,
@@ -3100,10 +3103,11 @@ fn save(s: &mut Session, p: &Value) -> R {
         std::fs::write(&path, pdf::pdf(&pages)).map_err(|e| bad(c, format!("{}: {e}", path.display())))?;
         return Ok(json!({"path": path, "format": "PDF", "pages": pages.len()}));
     }
-    if matches!(format.as_str(), "svg" | "png") {
-        let level = level_param(c, &s.model, &json!({}), "view")?;
-        write_plan(&render::plan(&crate::link::seen(&s.model), level, 1600, 1000), &path)?;
-        return Ok(json!({"path": path, "format": format}));
+    if matches!(format.as_str(), "svg" | "png" | "dxf" | "dwg") {
+        let level = level_param(c, &s.model, p, "view")?;
+        let seen = crate::link::seen(&s.model);
+        let notes = write_plan(&render::plan(&seen, level, 1600, 1000), &seen, &path, s.dwg_writer.as_ref()).map_err(|e| bad(c, e))?;
+        return Ok(with_notes(json!({"path": path, "format": format}), &notes));
     }
     let text = s.model.to_json().map_err(|e| bad(c, e))?;
     crate::autosave::atomic_write(&path, &text).map_err(|e| bad(c, e))?;
@@ -3146,13 +3150,30 @@ pub fn base64(bytes: &[u8]) -> String {
     out
 }
 
-fn write_plan(d: &render::Drawing, path: &Path) -> Result<(), String> {
-    let bytes = match ext(path).as_str() {
+/// The plan `d` of `m` written to `path` as its extension says (a DWG by `dwg`, the session's writer), and notes on what the
+/// format left out.
+fn write_plan(d: &render::Drawing, m: &Model, path: &Path, dwg: Option<&crate::cad::DwgWriter>) -> Result<Vec<String>, String> {
+    let mut notes = Vec::new();
+    let format = ext(path);
+    let bytes = match format.as_str() {
         "svg" => render::svg(d).into_bytes(),
         "png" => render::png(d)?,
-        other => return Err(format!("render: write a .png or .svg, not `.{other}`")),
+        "dxf" | "dwg" => {
+            let pictures = render::dxf::pictures(d);
+            if pictures > 0 {
+                notes.push(format!("{pictures} picture(s) in the plan aren't written to {}", format.to_ascii_uppercase()));
+            }
+            let text = render::dxf(d, m);
+            match (format.as_str(), dwg) {
+                ("dxf", _) => text.into_bytes(),
+                (_, Some(write)) => write(&text).map_err(|e| format!("{}: {e}", path.display()))?,
+                (_, None) => return Err(format!("{}: this build can't write DWG; save as .dxf", path.display())),
+            }
+        }
+        other => return Err(format!("render: write a .png, .svg, .dxf or .dwg, not `.{other}`")),
     };
-    std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(notes)
 }
 
 /// A picture that only comes as PNG (the 3D view, a section): written to `path`, a .png, when
@@ -3384,8 +3405,8 @@ fn render_view(s: &mut Session, p: &Value) -> R {
     match string(c, p, "path")? {
         Some(path) => {
             let path = PathBuf::from(path);
-            write_plan(&d, &path)?;
-            Ok(with_notes(json!({"path": path, "width": w, "height": h, "view": level_name(m, level), "kind": kind}), &d.notes))
+            let notes = [d.notes.clone(), write_plan(&d, m, &path, s.dwg_writer.as_ref())?].concat();
+            Ok(with_notes(json!({"path": path, "width": w, "height": h, "view": level_name(m, level), "kind": kind}), &notes))
         }
         None => Ok(with_notes(
             json!({"pngBase64": base64(&render::png(&d)?), "width": w, "height": h, "view": level_name(m, level), "kind": kind}),
