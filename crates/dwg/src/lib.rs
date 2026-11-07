@@ -228,14 +228,33 @@ fn drain(stream: impl Read, cap: u64) -> Vec<u8> {
     buf
 }
 
-/// The DWG a DXF becomes, written by the same library: tests make their DWG files with it, since Autodesk's own are never
-/// committed.
+// ---------- Writing ----------
+
+/// The DWG, AutoCAD 2018 (AC1032), the ASCII DXF `dxf` becomes, within `limits`: the DXF no larger than `dxf_bytes`, the DWG
+/// no larger than `dwg_bytes`. The DXF is the core's own (`render::dxf`), but the library is run under `catch_unwind` all
+/// the same, so a drawing it can't write is an error rather than the end of the app.
+pub fn to_dwg(dxf: &str, limits: Limits) -> Result<Vec<u8>, String> {
+    if dxf.len() > limits.dxf_bytes {
+        return Err(format!("the DXF is {}, larger than the {} of DXF BIMCraft writes as DWG", mb(dxf.len()), mb(limits.dxf_bytes)));
+    }
+    let written = std::panic::catch_unwind(|| {
+        let mut doc = acadrust::DxfReader::from_reader(Cursor::new(dxf.as_bytes().to_vec()))
+            .and_then(acadrust::DxfReader::read)
+            .map_err(|e| format!("the DXF couldn't be read: {e}"))?;
+        doc.version = acadrust::types::DxfVersion::AC1032;
+        acadrust::DwgWriter::write_to_vec(&doc).map_err(|e| format!("the DWG couldn't be written: {e}"))
+    })
+    .map_err(|_| "the DWG writer failed on this drawing".to_string())??;
+    if written.len() > limits.dwg_bytes {
+        return Err(format!("the drawing became more than {} of DWG, the most BIMCraft writes", mb(limits.dwg_bytes)));
+    }
+    Ok(written)
+}
+
+/// The DWG a DXF becomes ([`to_dwg`]): tests make their DWG files with it, since Autodesk's own are never committed.
 #[cfg(any(test, feature = "testing"))]
 pub fn dwg_from_dxf(dxf: &str) -> Result<Vec<u8>, String> {
-    let doc = acadrust::DxfReader::from_reader(Cursor::new(dxf.as_bytes().to_vec()))
-        .and_then(acadrust::DxfReader::read)
-        .map_err(|e| format!("the DXF couldn't be read: {e}"))?;
-    acadrust::DwgWriter::write_to_vec(&doc).map_err(|e| format!("the DWG couldn't be written: {e}"))
+    to_dwg(dxf, Limits::DEFAULT)
 }
 
 #[cfg(test)]
