@@ -6,6 +6,9 @@
 //! `dxf.rs` reads as it reads any other. Nothing outside this crate sees `acadrust`'s types, and the core never depends on
 //! it: the apps hand a `Session` a DWG reader ([`reader`], the core's `cad::DwgReader`), as the window is handed the Revit reader.
 //!
+//! It writes the other way too: [`to_dwg`] turns the DXF of a plan the core writes (`render::dxf`) into a DWG 2018 through
+//! the same library, and the apps hand a `Session` that as its DWG writer ([`writer`], the core's `cad::DwgWriter`).
+//!
 //! A file is hostile. Its size is held to [`Limits`] before the decoder runs, the DXF it becomes while it is written, and the
 //! decoder runs under `catch_unwind`. That isn't enough on its own: a small file that declares a huge table can make the
 //! decoder allocate until the process aborts, which nothing in the process can catch. So the apps read a DWG in a child

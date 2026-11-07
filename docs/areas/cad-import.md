@@ -1,10 +1,11 @@
-# Importing and linking CAD drawings
+# Importing, linking and exporting CAD drawings
 
 On the roadmap under 0.9 Interoperability, as Revit's Import CAD and Link CAD: a consultant's or a surveyor's DXF drawing
 brought into a project and drawn under the model in the plans of a level, to trace walls over and to check against. A project
 holds each drawing once, an import element places it, plans draw and snap to it, and the desktop brings one in (Insert > Import
-CAD, Link CAD). A DWG comes in as the DXF it becomes (below); DXF export, exploding an import into detail lines (which waits on detail lines, issue #58), and
-images and PDFs as underlays are still to come.
+CAD, Link CAD). A DWG comes in as the DXF it becomes (below), and a level's plan goes out as DXF or DWG the same way backwards
+([Export](#export)); exploding an import into detail lines (which waits on detail lines, issue #58), and images and PDFs as
+underlays are still to come.
 
 ## The reader
 
@@ -45,6 +46,42 @@ the child it takes only the child, which is also stopped after `CHILD_TIME` or p
 couldn't be read. Tests make their DWG files from DXF text with the same library (`dwg_from_dxf`, the `testing` feature),
 since Autodesk's are never committed; `BIMCRAFT_DWG_SAMPLES` names a folder of real ones for
 `real_drawings_where_a_folder_of_them_is_named`, and `apps/bimcraft-cli/tests/dwg.rs` drives the child.
+
+## Export
+
+A level's plan goes out as CAD, as Revit's Export > CAD Formats does for a view: `save` to a `.dxf` or `.dwg` path (so
+`--save plan.dwg`, `convert house.bimcraft plan.dxf` and the MCP `save` tool), of the lowest level or the level or plan view
+`view` names, and `render` with such a `path`. It runs the import's route backwards: `render::plan` builds the plan's
+`Drawing`, `render::dxf` (`render/dxf.rs`, the core's own code from the public DXF reference) writes it as ASCII DXF, and for a
+DWG the session's `DwgWriter` turns that text into the file.
+
+- **The DXF** is AutoCAD 2018 (`$ACADVER` AC1032), in millimetres (`$INSUNITS` 4), its extents the plan's. Points go back from
+  the plan's pixels to the model's mm with `View::mm`. Each `Prim::Line` is an `LWPOLYLINE` (its closed flag, the DXF line
+  weight nearest its width on paper, its colour as a true colour, code 420); a dashed one takes a linetype of its dashes in mm
+  (`BIM-DASH-…`) in the LTYPE table. Each `Prim::Fill` is a solid `HATCH`, its rings boundary loops. A picture (`Prim::Image`)
+  is left out, and the reply's `notes` say how many. It has the tables, blocks and root dictionary AutoCAD expects, at
+  AutoCAD's conventional handles (the tables 1 to A, `*Model_Space` at 1F), which libredwg's `dxf2dwg` reads without a complaint.
+- **Layers** follow the AIA CAD Layer Guidelines, by the category of the element a primitive draws (`layer` in `render/dxf.rs`,
+  one table): `A-WALL`, `A-DOOR`, `A-GLAZ` (windows), `A-FLOR`, `A-CLNG`, `A-ROOF`, `A-COLS`, `S-COLS`, `S-BEAM`, `S-FNDN`,
+  `A-STRS`, `A-FLOR-HRAL` (railings), `A-FURN` and the other components by their family's category (`P-FIXT`, `E-POWR`,
+  `E-LITE`, …), `A-GRID`, `A-AREA-IDEN` (rooms and their tags), `A-ANNO-DIMS`, `A-ANNO-TEXT`, `A-ANNO-SYMB` (tags, spot
+  elevations, section and elevation marks), `P-PIPE`, `M-DUCT`, and `A-ANNO-MISC` for what belongs to no element (the view's
+  title) or to one no layer is kept for. A model element's fills and pattern lines go on `<layer>-PATT` (a cut wall's poché
+  on `A-WALL-PATT`) and its lettering on `<layer>-IDEN`; annotation keeps all of its own on its layer.
+- **Lettering** stays the strokes (or, for a text type in IBM Plex, the filled outlines) the plan letters it in: no TEXT
+  entities yet, so a CAD program can't edit the words.
+- **The DWG** comes from `crates/dwg`: `bimcraft_dwg::to_dwg` reads the DXF with acadrust's `DxfReader`, sets the document to
+  AC1032 and writes it with its `DwgWriter`, under `catch_unwind`, the DXF held to `Limits::dxf_bytes` and the DWG to
+  `Limits::dwg_bytes`. It runs in the app's own process: what it reads is the core's DXF, not a stranger's file. A session
+  writes a DWG through the `DwgWriter` it is given (`Session::dwg_writer`), as it reads one through its `DwgReader`; the desktop
+  and the command line (so MCP too) hand theirs `bimcraft_dwg::writer()` behind their default `dwg` feature, and a session
+  without one says "this build can't write DWG; save as .dxf".
+
+Tests: `render::dxf::tests` reads the sample house's plan back with `dxf::read_text` (layers, entities per layer, mm, extents,
+dashes, weights); `plan_export_tests.rs` drives `save` with a fake writer; `crates/dwg`'s tests round-trip the plan through
+`to_dxf`, and `apps/bimcraft-cli/tests/dwg.rs` saves the sample as DWG from the command line. Outside our own code, libredwg's
+`dwg2dxf` reads the DWG back with every entity on its layer, and `import_cad` of it into a new project draws the plan again.
+Still to come: DWG 2000 (AC1015), and TEXT and MTEXT entities in place of the strokes.
 
 ## The project
 
