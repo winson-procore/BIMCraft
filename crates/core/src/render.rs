@@ -392,6 +392,26 @@ impl Drawing {
             .collect();
         self.push(Prim::Fill { rings, color });
     }
+    /// `rings` filled as a DXF hatch's nested boundaries are: the outermost filled, a ring inside it a hole, a ring inside
+    /// that filled again. Each is wound by how many of the larger rings hold it, so the non-zero rule every painter fills by
+    /// leaves the holes clear.
+    pub(crate) fn fill_nested(&mut self, rings: &[Vec<P2>], color: Rgb) {
+        if rings.is_empty() {
+            return;
+        }
+        let sizes: Vec<f64> = rings.iter().map(|r| geom::area(r).abs()).collect();
+        let rings = rings
+            .iter()
+            .zip(&sizes)
+            .map(|(r, size)| {
+                let depth = r.first().map_or(0, |p| rings.iter().zip(&sizes).filter(|(o, s)| **s > *size && geom::contains(o, *p)).count());
+                let mut r: Vec<P2> = if (geom::area(r) < 0.0) == (depth % 2 == 0) { r.iter().rev().copied().collect() } else { r.clone() };
+                r.dedup();
+                r.iter().map(|p| self.view.px(*p)).collect()
+            })
+            .collect();
+        self.push(Prim::Fill { rings, color });
+    }
     /// `pts` joined in `pen`, as wide as it is on the paper the view stands for.
     pub(crate) fn line(&mut self, pts: &[P2], pen: Pen, color: Rgb, closed: bool) {
         let pts = pts.iter().map(|p| self.view.px(*p)).collect();
@@ -2562,7 +2582,7 @@ fn cad_imports(d: &mut Drawing, m: &Model, key: crate::ids::Guid, level: crate::
                 Shape::Fill { rings, solid } => {
                     let rings: Vec<Vec<P2>> = rings.iter().map(|r| r.iter().map(|p| place(*p)).collect()).collect();
                     let fill = if *solid { color } else { Rgb(pale(color.0), pale(color.1), pale(color.2)) };
-                    d.fill(&rings, fill);
+                    d.fill_nested(&rings, fill);
                 }
                 shape => {
                     let dash = cad.dash(ent).map(|[a, b]| [(a * k) as f32, (b * k) as f32]).filter(|[a, b]| *a >= 1.0 && *b >= 1.0);

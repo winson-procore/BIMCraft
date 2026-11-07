@@ -561,6 +561,42 @@ fn a_hatch_fills_text_is_aligned_and_a_dashed_layer_draws_dashed() {
 }
 
 #[test]
+fn a_hatchs_inner_rings_are_holes_and_a_ring_in_a_hole_is_filled_again() {
+    // Squares 5 m, 3 m and 1 m a side about one middle, each wound the same way: a polyline path apiece.
+    let square = |lo: f64, hi: f64| {
+        let mut path = pairs(&[(92, "2"), (72, "0"), (73, "1"), (93, "4")]);
+        for (x, y) in [(lo, lo), (hi, lo), (hi, hi), (lo, hi)] {
+            path += &pairs(&[(10, &x.to_string()), (20, &y.to_string())]);
+        }
+        path + &pairs(&[(97, "0")])
+    };
+    let hatch = |rings: &[(f64, f64)]| {
+        let mut h = pairs(&[(0, "HATCH"), (8, "FILL"), (62, "5"), (2, "SOLID"), (70, "1"), (71, "0"), (91, &rings.len().to_string())]);
+        for (lo, hi) in rings {
+            h += &square(*lo, *hi);
+        }
+        h + &pairs(&[(75, "0"), (76, "1"), (98, "0")])
+    };
+    let one_ring = hatch(&[(10_000.0, 11_000.0)]);
+    let text = dxf("4", &[], &(hatch(&[(0.0, 5000.0), (1000.0, 4000.0), (2000.0, 3000.0)]) + &one_ring));
+    let mut s = Session::new();
+    run(&mut s, "import_cad", json!({"path": file("holes", "letters.dxf", &text), "position": "origin"}));
+    let (one, _) = levels(&s);
+    let d = render::plan(&s.model, one, 800, 800);
+    let pm = tiny_skia::Pixmap::decode_png(&render::png(&d).unwrap()).unwrap();
+    let at = |x: f64, y: f64| {
+        let (px, py) = d.view.px(P2(x, y));
+        let p = pm.pixel(px as u32, py as u32).unwrap().demultiply();
+        Rgb(p.red(), p.green(), p.blue())
+    };
+    let blue = |c: Rgb| c.2 > 200 && c.0 < 60 && c.1 < 60;
+    assert!(blue(at(500.0, 2500.0)), "the outer ring's band is filled: {:?}", at(500.0, 2500.0));
+    assert_eq!(at(1500.0, 2500.0), render::PAPER, "the ring inside it is a hole");
+    assert!(blue(at(2500.0, 2500.0)), "the ring inside the hole is filled again: {:?}", at(2500.0, 2500.0));
+    assert!(blue(at(10_500.0, 10_500.0)), "a hatch of one ring is filled through: {:?}", at(10_500.0, 10_500.0));
+}
+
+#[test]
 fn a_plan_snaps_to_an_imports_ends_middles_crossings_and_centres_so_walls_can_be_traced() {
     let mut s = Session::new();
     let circle = pairs(&[(0, "CIRCLE"), (8, "WALLS"), (10, "20"), (20, "3"), (40, "0.5")]);
