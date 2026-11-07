@@ -87,3 +87,18 @@ fn the_child_gives_dxf_and_a_child_that_fails_or_runs_too_long_says_so() {
     let e = bimcraft_dwg::in_child(&dir.join("nowhere.exe"), &path, Duration::from_secs(5)).unwrap_err();
     assert!(e.contains("couldn't start"), "{e}");
 }
+
+#[test]
+fn save_writes_the_sample_houses_plan_as_a_dwg_that_reads_back() {
+    let dir = dir("save").unwrap();
+    let out = Command::new(EXE).current_dir(&dir).args(["run", "--sample", "--save", "plan.dwg"]).output().unwrap();
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{said}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(said.contains(r#"{"format":"dwg","path":"plan.dwg"}"#), "{said}");
+    let bytes = std::fs::read(dir.join("plan.dwg")).unwrap();
+    assert!(bimcraft_dwg::is_dwg(&bytes) && bytes.starts_with(b"AC1032"), "{:?}", bytes.get(..6));
+    let back = bimcraft_dwg::to_dxf(&bytes, bimcraft_dwg::Limits::DEFAULT).unwrap();
+    let d = bimcraft_core::dxf::read(&back.dxf).unwrap();
+    assert_eq!(d.unit, "mm");
+    assert!(d.entities.iter().any(|e| e.layer == "A-WALL"));
+}

@@ -18,6 +18,11 @@ use crate::render::Rgb;
 /// child process), and a session without one says to save the drawing as DXF.
 pub type DwgReader = Arc<dyn Fn(&std::path::Path) -> Result<(Vec<u8>, Vec<String>), String> + Send + Sync>;
 
+/// What writes a DWG drawing for a session: the DWG file's bytes an ASCII DXF's text (`render::dxf`) becomes, or why it
+/// can't be. The core writes no DWG of its own; the apps hand their `Session` one (`bimcraft-dwg`), and a session without one
+/// says to save the plan as DXF.
+pub type DwgWriter = Arc<dyn Fn(&str) -> Result<Vec<u8>, String> + Send + Sync>;
+
 /// Drawings one project may hold.
 pub const MAX_CADS: usize = 64;
 /// What a project's drawings may hold among them, bytes of DXF.

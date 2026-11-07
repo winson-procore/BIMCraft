@@ -8,7 +8,7 @@ mod window;
 use std::io::Write;
 use std::process::ExitCode;
 
-use bimcraft_core::cad::DwgReader;
+use bimcraft_core::cad::{DwgReader, DwgWriter};
 use bimcraft_core::engine::{Session, catalog};
 use bimcraft_core::sample::SAMPLE;
 use serde_json::{Value, json};
@@ -41,6 +41,7 @@ fn print_pretty(out: &mut impl Write, v: &Value) -> Result<(), String> {
 fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
     let mut s = Session::new();
     s.dwg = dwg_reader();
+    s.dwg_writer = dwg_writer();
     match args {
         [cmd, rest @ ..] if cmd == "run" => {
             let mut rest = rest.iter();
@@ -144,6 +145,18 @@ fn dwg_reader() -> Option<DwgReader> {
 
 #[cfg(not(feature = "dwg"))]
 fn dwg_reader() -> Option<DwgReader> {
+    None
+}
+
+/// The DWG writer a session is given: `bimcraft-dwg`'s, which writes a plan as DWG 2018, behind the `dwg` feature. A build
+/// without it hands none, and saving a .dwg says to save it as DXF.
+#[cfg(feature = "dwg")]
+fn dwg_writer() -> Option<DwgWriter> {
+    Some(bimcraft_dwg::writer())
+}
+
+#[cfg(not(feature = "dwg"))]
+fn dwg_writer() -> Option<DwgWriter> {
     None
 }
 

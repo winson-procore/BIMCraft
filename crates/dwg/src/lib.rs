@@ -251,6 +251,12 @@ pub fn to_dwg(dxf: &str, limits: Limits) -> Result<Vec<u8>, String> {
     Ok(written)
 }
 
+/// The DWG writer an app hands its `Session` (the core's `cad::DwgWriter`): [`to_dwg`] within [`Limits::DEFAULT`], in this
+/// process, since what it reads is the core's own DXF.
+pub fn writer() -> bimcraft_core::cad::DwgWriter {
+    std::sync::Arc::new(|dxf: &str| to_dwg(dxf, Limits::DEFAULT))
+}
+
 /// The DWG a DXF becomes ([`to_dwg`]): tests make their DWG files with it, since Autodesk's own are never committed.
 #[cfg(any(test, feature = "testing"))]
 pub fn dwg_from_dxf(dxf: &str) -> Result<Vec<u8>, String> {
