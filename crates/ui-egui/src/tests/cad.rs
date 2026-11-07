@@ -191,3 +191,63 @@ fn a_dwg_comes_in_through_the_box_with_the_reader_the_app_is_given_and_its_notes
     let status = &h.state().status;
     assert!(!status.error && status.text.contains("3 of the DWG's object records"), "{status:?}");
 }
+
+#[test]
+fn a_hatchs_inner_rings_stay_holes_on_the_canvas() {
+    use bimcraft_core::render;
+    use egui::Shape;
+
+    fn covers(shape: &Shape, p: egui::Pos2) -> bool {
+        match shape {
+            Shape::Vec(shapes) => shapes.iter().any(|s| covers(s, p)),
+            Shape::Mesh(mesh) => mesh.indices.as_chunks::<3>().0.iter().any(|t| {
+                let [a, b, c] = t.map(|i| mesh.vertices[i as usize].pos);
+                let cross = |a: egui::Vec2, b: egui::Vec2| a.x * b.y - a.y * b.x;
+                let s = [cross(b - a, p - a), cross(c - b, p - b), cross(a - c, p - c)];
+                cross(b - a, c - a).abs() > 1e-6 && (s.iter().all(|s| *s >= 0.0) || s.iter().all(|s| *s <= 0.0))
+            }),
+            Shape::Path(path) if path.closed && path.fill != egui::Color32::TRANSPARENT => {
+                let n = path.points.len();
+                (0..n)
+                    .filter(|i| {
+                        let (a, b) = (path.points[*i], path.points[(i + 1) % n]);
+                        (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x)
+                    })
+                    .count()
+                    % 2
+                    == 1
+            }
+            _ => false,
+        }
+    }
+    // A solid hatch of squares 5 m, 3 m and 1 m a side about one middle, in mm: a band, a hole, and an island in it.
+    let mut hatch = pairs(&[(0, "HATCH"), (8, "FILL"), (62, "5"), (2, "SOLID"), (70, "1"), (71, "0"), (91, "3")]);
+    for (lo, hi) in [(0.0, 5000.0), (1000.0, 4000.0), (2000.0, 3000.0)] {
+        hatch += &pairs(&[(92, "2"), (72, "0"), (73, "1"), (93, "4")]);
+        for (x, y) in [(lo, lo), (hi, lo), (hi, hi), (lo, hi)] {
+            hatch += &pairs(&[(10, &f64::to_string(&x)), (20, &f64::to_string(&y))]);
+        }
+        hatch += &pairs(&[(97, "0")]);
+    }
+    hatch += &pairs(&[(75, "0"), (76, "1"), (98, "0")]);
+    let text = format!("0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n{hatch}0\nENDSEC\n0\nEOF\n");
+    let path = drawing("holes", "letters.dxf").with_file_name("letters.dxf");
+    std::fs::write(&path, text).unwrap();
+    let mut s = Session::new();
+    s.execute("import_cad", &json!({"path": path, "position": "origin"})).unwrap();
+    let level = s.model.levels()[0].0;
+    let d = render::plan(&s.model, level, 600, 600);
+    let at = |x: f64, y: f64| {
+        let (px, py) = d.view.px(P2(x, y));
+        pos2(px, py)
+    };
+    let (band, hole, island) = (at(500.0, 2500.0), at(1500.0, 2500.0), at(2500.0, 2500.0));
+    let mut h = Harness::builder().with_size([600.0, 600.0]).build_ui(move |ui| {
+        crate::canvas::paint(ui.painter(), crate::canvas::Place::at(Pos2::ZERO), &d, &[], None, false, &[]);
+    });
+    h.run();
+    let shapes = &h.output().shapes;
+    assert!(shapes.iter().any(|s| covers(&s.shape, band)), "the outer ring's band is filled");
+    assert!(!shapes.iter().any(|s| covers(&s.shape, hole)), "the ring inside it is a hole");
+    assert!(shapes.iter().any(|s| covers(&s.shape, island)), "the ring inside the hole is filled again");
+}
