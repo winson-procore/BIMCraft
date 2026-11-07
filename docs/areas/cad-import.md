@@ -120,7 +120,9 @@ The engine removes a drawing nothing places after each command, and forgets the 
 entity of a layer the import and the view show, in its colour (the view's ink when it has none or the import draws in black),
 its pen (`Cad::pen`, the entity's or its layer's line weight) and its dashes (`Cad::dash`, its linetype by `$LTSCALE`, scaled to
 the view, left solid when a dash would be under a pixel). Text is lettered with `font.rs` at its height, turned and aligned; a
-solid hatch is filled. What lies outside the view is passed over, so a large site plan zoomed in draws only what's on screen. An
+solid hatch is filled. A hatch's boundary loops nest as the DXF reference says (`Drawing::fill_nested`): the outermost is
+filled, a loop inside it is a hole, a loop inside that is filled again, whichever way the file winds them, so outlined lettering
+keeps its counters; the canvas fills such a hatch by the non-zero rule, as it does lettering. What lies outside the view is passed over, so a large site plan zoomed in draws only what's on screen. An
 import is one element: picked by any of its lines, selected whole. Sections, elevations and the 3D view leave imports out, as
 Revit's do for a drawing placed in a plan; IFC export leaves them out too. The category is `cadimport`, Revit's Imported
 Categories: Visibility/Graphics hides it or halftones it in a view like any other.

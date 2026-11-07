@@ -569,6 +569,17 @@ fn convex(r: &[(f32, f32)]) -> bool {
     turns.iter().all(|t| *t > 0.0) || turns.iter().all(|t| *t < 0.0)
 }
 
+/// Whether some of `rings` turn one way and some the other: holes, as the core winds an imported hatch's inner rings.
+fn holed(rings: &[Vec<(f32, f32)>]) -> bool {
+    let area = |r: &Vec<(f32, f32)>| r.iter().zip(r.iter().cycle().skip(1)).map(|(a, b)| a.0 * b.1 - a.1 * b.0).sum::<f32>();
+    let (mut cw, mut ccw) = (false, false);
+    for a in rings.iter().map(area) {
+        cw |= a < 0.0;
+        ccw |= a > 0.0;
+    }
+    cw && ccw
+}
+
 fn pos(origin: Pos2, (x, y): (f32, f32)) -> Pos2 {
     origin + vec2(x, y)
 }
@@ -703,12 +714,24 @@ pub(crate) fn paint_prim(
                 out(Shape::closed_line(r.iter().map(|q| at.pos(*q)).collect(), Stroke::new(0.5, fill)));
             }
         }
-        // Ordinary fills are convex rings or independent polygons, triangulated without seams.
+        // Ordinary fills are convex rings or independent polygons, triangulated without seams; one with rings wound both ways
+        // (an imported hatch's holes) by the non-zero rule.
         Prim::Fill { rings, color: c } => {
             let fill = accent.map_or(color(*c), |a| a.1);
             match rings.as_slice() {
                 [r] if convex(r) => {
                     out(Shape::convex_polygon(r.iter().map(|q| at.pos(*q)).collect(), fill, Stroke::NONE));
+                }
+                _ if holed(rings) => {
+                    let mut mesh = Mesh::default();
+                    for tri in letter(rings).iter() {
+                        let first = mesh.vertices.len() as u32;
+                        for q in tri {
+                            mesh.colored_vertex(at.pos(*q), fill);
+                        }
+                        mesh.add_triangle(first, first + 1, first + 2);
+                    }
+                    out(Shape::mesh(mesh));
                 }
                 _ => {
                     let mut mesh = Mesh::default();
