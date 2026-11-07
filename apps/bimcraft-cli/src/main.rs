@@ -237,10 +237,14 @@ mod tests {
     fn run_builds_the_sample_and_saves_each_format() {
         let base = std::env::temp_dir().join(format!("bimcraft-cli-{}", std::process::id()));
         let path = |ext: &str| base.with_extension(ext).to_string_lossy().into_owned();
-        let (project, ifc, png, svg) = (path("bimcraft"), path("ifc"), path("png"), path("svg"));
+        let (project, ifc, png, svg, dxf) = (path("bimcraft"), path("ifc"), path("png"), path("svg"), path("dxf"));
         let roof = r#"level {"elevation": 3200, "name": "Roof"}"#;
-        let out = cli_out(&["run", "--sample", "--cmd", roof, "--save", &project, "--save", &ifc, "--save", &png]).unwrap();
+        let out = cli_out(&["run", "--sample", "--cmd", roof, "--save", &project, "--save", &ifc, "--save", &png, "--save", &dxf]).unwrap();
         assert!(out.contains("\"Roof\""), "{out}");
+        assert!(out.contains(&json!({"path": dxf, "format": "dxf"}).to_string()), "{out}");
+        let plan = bimcraft_core::dxf::read(&std::fs::read(&dxf).unwrap()).unwrap();
+        assert_eq!(plan.unit, "mm");
+        assert!(plan.entities.iter().any(|e| e.layer == "A-WALL"));
         assert!(std::fs::read(&png).unwrap().starts_with(b"\x89PNG"));
         assert!(std::fs::read_to_string(&ifc).unwrap().contains("IFCWALL("));
         let info: Value = serde_json::from_str(&cli_out(&["info", &project]).unwrap()).unwrap();
@@ -248,7 +252,10 @@ mod tests {
         assert_eq!(info["levels"][2]["name"], "Roof", "levels sort by elevation");
         cli_out(&["convert", &project, &svg]).unwrap();
         assert!(std::fs::read_to_string(&svg).unwrap().starts_with("<svg"));
-        for p in [project, ifc, png, svg] {
+        std::fs::remove_file(&dxf).unwrap();
+        cli_out(&["convert", &project, &dxf]).unwrap();
+        assert!(bimcraft_core::dxf::read(&std::fs::read(&dxf).unwrap()).unwrap().layer("A-DOOR").is_some());
+        for p in [project, ifc, png, svg, dxf] {
             let _ = std::fs::remove_file(p);
         }
     }

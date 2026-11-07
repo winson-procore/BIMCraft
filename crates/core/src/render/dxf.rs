@@ -18,6 +18,23 @@ const WEIGHTS: [i32; 24] = [0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60,
 /// The layer of what belongs to no element, or to one no layer is kept for.
 const MISC: &str = "A-ANNO-MISC";
 
+// The handles AutoCAD gives a drawing's tables, dictionaries and two spaces, which readers expect there; the rest are given
+// from `FIRST`.
+const BLOCK_RECORDS: u64 = 0x1;
+const LAYERS: u64 = 0x2;
+const STYLES: u64 = 0x3;
+const LTYPES: u64 = 0x5;
+const VIEWS: u64 = 0x6;
+const UCSS: u64 = 0x7;
+const VPORTS: u64 = 0x8;
+const APPIDS: u64 = 0x9;
+const DIMSTYLES: u64 = 0xA;
+const ROOT: u64 = 0xC;
+const GROUPS: u64 = 0xD;
+const PAPER_SPACE: u64 = 0x1B;
+const MODEL_SPACE: u64 = 0x1F;
+const FIRST: u64 = 0x30;
+
 /// The plan `d` of `m` as a DXF file's text.
 pub fn dxf(d: &Drawing, m: &Model) -> String {
     let mut w = Out::default();
@@ -25,8 +42,6 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
     let mut layers: BTreeSet<String> = BTreeSet::from(["0".to_string()]);
     let mut ltypes: BTreeMap<String, Vec<f64>> = BTreeMap::new();
     let mut ext: Option<[P2; 2]> = None;
-    let model_space = w.handle();
-    let paper_space = w.handle();
     let mm = |p: &(f32, f32)| (p.0.is_finite() && p.1.is_finite()).then(|| d.view.mm(*p));
     for (i, prim) in d.prims.iter().enumerate() {
         let owner = d.owners.get(i).copied().flatten();
@@ -43,7 +58,7 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
                 });
                 let h = w.handle();
                 pair(&mut ents, 0, "LWPOLYLINE");
-                entity(&mut ents, h, model_space, &name, ltype.as_deref(), Some(weight(d, *width)), *color);
+                entity(&mut ents, h, MODEL_SPACE, &name, ltype.as_deref(), Some(weight(d, *width)), *color);
                 pair(&mut ents, 100, "AcDbPolyline");
                 pair(&mut ents, 90, pts.len());
                 pair(&mut ents, 70, i32::from(*closed));
@@ -62,7 +77,7 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
                 let name = on(base, part, true);
                 let h = w.handle();
                 pair(&mut ents, 0, "HATCH");
-                entity(&mut ents, h, model_space, &name, None, None, *color);
+                entity(&mut ents, h, MODEL_SPACE, &name, None, None, *color);
                 pair(&mut ents, 100, "AcDbHatch");
                 point3(&mut ents, 10, P2(0.0, 0.0));
                 pair(&mut ents, 210, 0);
@@ -93,8 +108,8 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
         }
     }
     let mut tables = String::new();
-    table(&mut tables, &mut w, "VPORT", |_, _, _| 0);
-    table(&mut tables, &mut w, "LTYPE", |s, w, owner| {
+    table(&mut tables, &mut w, "VPORT", VPORTS, |_, _, _| 0);
+    table(&mut tables, &mut w, "LTYPE", LTYPES, |s, w, owner| {
         for name in ["ByBlock", "ByLayer", "Continuous"] {
             ltype(s, w.handle(), owner, name, &[]);
         }
@@ -103,7 +118,7 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
         }
         3 + ltypes.len()
     });
-    table(&mut tables, &mut w, "LAYER", |s, w, owner| {
+    table(&mut tables, &mut w, "LAYER", LAYERS, |s, w, owner| {
         for name in &layers {
             pair(s, 0, "LAYER");
             record(s, 5, w.handle(), owner, "AcDbLayerTableRecord", name);
@@ -113,7 +128,7 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
         }
         layers.len()
     });
-    table(&mut tables, &mut w, "STYLE", |s, w, owner| {
+    table(&mut tables, &mut w, "STYLE", STYLES, |s, w, owner| {
         pair(s, 0, "STYLE");
         record(s, 5, w.handle(), owner, "AcDbTextStyleTableRecord", "Standard");
         pair(s, 40, 0);
@@ -125,20 +140,20 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
         pair(s, 4, "");
         1
     });
-    table(&mut tables, &mut w, "VIEW", |_, _, _| 0);
-    table(&mut tables, &mut w, "UCS", |_, _, _| 0);
-    table(&mut tables, &mut w, "APPID", |s, w, owner| {
+    table(&mut tables, &mut w, "VIEW", VIEWS, |_, _, _| 0);
+    table(&mut tables, &mut w, "UCS", UCSS, |_, _, _| 0);
+    table(&mut tables, &mut w, "APPID", APPIDS, |s, w, owner| {
         pair(s, 0, "APPID");
         record(s, 5, w.handle(), owner, "AcDbRegAppTableRecord", "ACAD");
         1
     });
-    table(&mut tables, &mut w, "DIMSTYLE", |s, w, owner| {
+    table(&mut tables, &mut w, "DIMSTYLE", DIMSTYLES, |s, w, owner| {
         pair(s, 0, "DIMSTYLE");
         record(s, 105, w.handle(), owner, "AcDbDimStyleTableRecord", "Standard");
         1
     });
-    table(&mut tables, &mut w, "BLOCK_RECORD", |s, _, owner| {
-        for (h, name) in [(model_space, "*Model_Space"), (paper_space, "*Paper_Space")] {
+    table(&mut tables, &mut w, "BLOCK_RECORD", BLOCK_RECORDS, |s, _, owner| {
+        for (h, name) in [(MODEL_SPACE, "*Model_Space"), (PAPER_SPACE, "*Paper_Space")] {
             pair(s, 0, "BLOCK_RECORD");
             record(s, 5, h, owner, "AcDbBlockTableRecord", name);
         }
@@ -147,9 +162,9 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
     let mut rest = String::new();
     section(&mut rest, "TABLES", |s| s.push_str(&tables));
     section(&mut rest, "BLOCKS", |s| {
-        for (owner, name) in [(model_space, "*Model_Space"), (paper_space, "*Paper_Space")] {
+        for (owner, name) in [(MODEL_SPACE, "*Model_Space"), (PAPER_SPACE, "*Paper_Space")] {
             pair(s, 0, "BLOCK");
-            hex(s, 5, w.handle());
+            hex(s, 5, owner + 1);
             hex(s, 330, owner);
             pair(s, 100, "AcDbEntity");
             pair(s, 8, "0");
@@ -160,7 +175,7 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
             pair(s, 3, name);
             pair(s, 1, "");
             pair(s, 0, "ENDBLK");
-            hex(s, 5, w.handle());
+            hex(s, 5, owner + 2);
             hex(s, 330, owner);
             pair(s, 100, "AcDbEntity");
             pair(s, 8, "0");
@@ -169,7 +184,7 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
     });
     section(&mut rest, "ENTITIES", |s| s.push_str(&ents));
     section(&mut rest, "OBJECTS", |s| {
-        let (root, groups) = (w.handle(), w.handle());
+        let (root, groups) = (ROOT, GROUPS);
         pair(s, 0, "DICTIONARY");
         hex(s, 5, root);
         hex(s, 330, 0);
@@ -322,14 +337,14 @@ fn grow(ext: Option<[P2; 2]>, pts: &[P2]) -> Option<[P2; 2]> {
     crate::dxf::union(ext.into_iter().chain(pts.iter().map(|p| [*p, *p])))
 }
 
-/// Handles as they're given out, from 1.
+/// Handles as they're given out, from [`FIRST`].
 struct Out {
     next: u64,
 }
 
 impl Default for Out {
     fn default() -> Out {
-        Out { next: 1 }
+        Out { next: FIRST }
     }
 }
 
@@ -374,8 +389,7 @@ fn section(s: &mut String, name: &str, body: impl FnOnce(&mut String)) {
 }
 
 /// A symbol table, its records written by `records` (given the table's handle, which owns them), which says how many.
-fn table(s: &mut String, w: &mut Out, name: &str, records: impl FnOnce(&mut String, &mut Out, u64) -> usize) {
-    let h = w.handle();
+fn table(s: &mut String, w: &mut Out, name: &str, h: u64, records: impl FnOnce(&mut String, &mut Out, u64) -> usize) {
     let mut body = String::new();
     let n = records(&mut body, w, h);
     pair(s, 0, "TABLE");
