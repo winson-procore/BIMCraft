@@ -36,6 +36,8 @@ use crate::{font, massing, sheet, stairs};
 
 mod dimensions;
 use dimensions::dimension;
+mod dxf;
+pub use dxf::dxf;
 mod regions;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
