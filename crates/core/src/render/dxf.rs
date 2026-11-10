@@ -293,10 +293,8 @@ fn masks(d: &Drawing) -> Vec<Mask> {
 fn cut_line(line: &[P2], masks: &[&Mask]) -> Option<Vec<Vec<P2>>> {
     let mut parts = vec![line.to_vec()];
     for piece in masks.iter().flat_map(|k| &k.pieces) {
-        parts = parts
-            .into_iter()
-            .flat_map(|l| if boxes_meet(&l, piece) { geom::line_outside_convex(&l, piece) } else { vec![l] })
-            .collect();
+        parts =
+            parts.into_iter().flat_map(|l| if boxes_meet(&l, piece) { geom::line_outside_convex(&l, piece) } else { vec![l] }).collect();
         if parts.len() > MAX_PIECES {
             return None;
         }
@@ -381,8 +379,7 @@ fn clipped(d: &Drawing) -> Vec<(usize, Cow<'_, Prim>)> {
                     out.push((i, Cow::Borrowed(prim)));
                     continue;
                 }
-                let whole: Vec<Vec<(f32, f32)>> =
-                    rings.iter().zip(&cuts).filter(|(_, c)| c.is_none()).map(|(r, _)| r.clone()).collect();
+                let whole: Vec<Vec<(f32, f32)>> = rings.iter().zip(&cuts).filter(|(_, c)| c.is_none()).map(|(r, _)| r.clone()).collect();
                 if !whole.is_empty() {
                     out.push((i, Cow::Owned(Prim::Fill { rings: whole, color: *color })));
                 }

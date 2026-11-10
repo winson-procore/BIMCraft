@@ -82,9 +82,9 @@ fn the_sample_houses_plan_reads_back_on_aia_layers_in_millimetres() {
 }
 
 /// Layers no paper lies over in the sample's plan: what is drawn on them goes out one primitive, one entity. Paper is laid over
-/// the rest: the walls' poché and lines and the floor's at the openings, a dimension's line under its text, and whatever a tag,
-/// a mark or a camera covers.
-const UNTOUCHED: [&str; 8] = ["A-GRID", "A-GRID-IDEN", "A-AREA-IDEN", "A-ANNO-TEXT", "A-ROOF", "A-FLOR-CASE", "A-DOOR", "A-GLAZ"];
+/// the rest: the walls' poché and lines and the floor's at the openings, a dimension's line under its text, the roof's outline
+/// under a dimension's text and the tags, and whatever a tag, a mark or a camera covers.
+const UNTOUCHED: [&str; 7] = ["A-GRID", "A-GRID-IDEN", "A-AREA-IDEN", "A-ANNO-TEXT", "A-FLOR-CASE", "A-DOOR", "A-GLAZ"];
 
 #[test]
 fn walls_are_weighted_polylines_their_poche_a_solid_hatch_and_grids_dashed_in_mm() {
@@ -93,13 +93,12 @@ fn walls_are_weighted_polylines_their_poche_a_solid_hatch_and_grids_dashed_in_mm
     // Where no paper lies over a closed line it stays one; a cut one is open pieces.
     let kept = |layer: &str| UNTOUCHED.contains(&layer);
     let closed = (d.prims.iter().zip(&d.owners).zip(&d.parts))
-        .filter(|((p, o), part)| matches!(p, Prim::Line { closed: true, pts, .. } if pts.len() >= 2) && kept(&on(layer(&m, **o), **part, false)))
+        .filter(|((p, o), part)| {
+            matches!(p, Prim::Line { closed: true, pts, .. } if pts.len() >= 2) && kept(&on(layer(&m, **o), **part, false))
+        })
         .count();
     assert!(closed > 0);
-    assert_eq!(
-        r.entities.iter().filter(|e| matches!(e.shape, Shape::Polyline { closed: true, .. }) && kept(&e.layer)).count(),
-        closed
-    );
+    assert_eq!(r.entities.iter().filter(|e| matches!(e.shape, Shape::Polyline { closed: true, .. }) && kept(&e.layer)).count(), closed);
     let walls: Vec<_> = r.entities.iter().filter(|e| e.layer == "A-WALL").collect();
     assert!(walls.iter().all(|e| e.weight.is_some_and(|w| w > 0.0) && matches!(e.color, Color::True(..))), "{:?}", walls[0]);
     let poche: Vec<_> = r.entities.iter().filter(|e| e.layer == "A-WALL-PATT" && matches!(e.shape, Shape::Fill { .. })).collect();
@@ -198,7 +197,8 @@ fn the_poche_is_open_where_a_door_and_a_window_are_and_solid_elsewhere() {
     assert!(gaps.len() >= 7, "the sample has doors and windows: {}", gaps.len());
     let r = dxf::read_text(&dxf(&d, &m)).unwrap();
     let poche = Color::True(crate::render::POCHE.0, crate::render::POCHE.1, crate::render::POCHE.2);
-    let held = |p: P2, fills: &[Vec<Vec<P2>>]| fills.iter().any(|rings| rings.iter().filter(|r| crate::geom::contains(r, p)).count() % 2 == 1);
+    let held =
+        |p: P2, fills: &[Vec<Vec<P2>>]| fills.iter().any(|rings| rings.iter().filter(|r| crate::geom::contains(r, p)).count() % 2 == 1);
     let drawn: Vec<Vec<Vec<P2>>> = d
         .prims
         .iter()

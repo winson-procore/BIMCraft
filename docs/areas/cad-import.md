@@ -61,6 +61,12 @@ DWG the session's `DwgWriter` turns that text into the file.
   (`BIM-DASH-…`) in the LTYPE table. Each `Prim::Fill` is a solid `HATCH`, its rings boundary loops. A picture (`Prim::Image`)
   is left out, and the reply's `notes` say how many. It has the tables, blocks and root dictionary AutoCAD expects, at
   AutoCAD's conventional handles (the tables 1 to A, `*Model_Space` at 1F), which libredwg's `dxf2dwg` reads without a complaint.
+- **Paper is not an entity.** A plan hides what it drew before by laying a fill of the paper's colour (`render::PAPER`) over it,
+  which a PNG gets from paint order and a CAD viewer, drawing hatches over lines, does not (a white hatch over a window hides
+  its glass). So `render::dxf` writes no paper fill: `clipped` cuts what came before each one out of the primitives (lines by
+  `geom::line_outside_convex`, fills by `walls::split`, one hatch per convex piece), so the poché is open at a door or window,
+  and a wall's face lines stop at a jamb. A primitive may therefore go out as several entities, and the `Drawing` is untouched,
+  so the PNG and SVG are the same. A mask with holes, or too many pieces, is left as it is.
 - **Layers** follow the AIA CAD Layer Guidelines, by the category of the element a primitive draws (`layer` in `render/dxf.rs`,
   one table): `A-WALL`, `A-DOOR`, `A-GLAZ` (windows), `A-FLOR`, `A-CLNG`, `A-ROOF`, `A-COLS`, `S-COLS`, `S-BEAM`, `S-FNDN`,
   `A-STRS`, `A-FLOR-HRAL` (railings), `A-FURN` and the other components by their family's category (`P-FIXT`, `E-POWR`,
