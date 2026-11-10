@@ -83,6 +83,18 @@ DWG the session's `DwgWriter` turns that text into the file.
   lines, `\`, `{` or `}` is an MTEXT too (escaped, lines as `\P`, line spacing 0.96 since an MTEXT's is 5/3 of the height).
   Characters beyond ASCII are written as they are: AC1032's DXF is UTF-8. The strokes under a lettering are left out of the
   entities (the extents keep them), and a lettering that isn't a finite shape is left out harmlessly.
+- **Dimensions** go out as `DIMENSION` entities, not strokes, for an aligned or linear dimension of a continuous string
+  (`render/dxf/dims.rs`). `render/dimensions.rs` pushes a `Drawing::dimensions` record (`render::DimensionRecord`, model mm) for
+  each segment beside the lines and ticks it draws, which a PNG or SVG ignores. Each record is a `DIMENSION` on `A-ANNO-DIMS`
+  (aligned, or rotated with group 50 for a linear one; groups 13 and 14 the measured points, 10 the dimension line, 11 the
+  number's middle, 1 a blank, since the number is the `TEXT` or `MTEXT` beside it), in a `DIMSTYLE` named for the dimension
+  type (one name, written once, with `<>/\":;?*|,=` made `_`; DIMTXT, DIMASZ, DIMEXO, DIMEXE, DIMGAP, DIMDEC in model mm). What
+  the dimension draws (dimension line, witness lines, ticks) is held by an anonymous block, `*D1`, `*D2`, ..., which the first
+  segment of each dimension names (group 2), as AutoCAD keeps it, so the ink is in the file once, off the `ENTITIES`, and the
+  core's reader (which draws a `DIMENSION`'s block) draws it again. Angular, radial, diameter and arc length dimensions,
+  baseline and ordinate strings, and a dimension that can't be placed (a view with no scale, a point that isn't finite) are
+  not written as entities and keep their strokes on `A-ANNO-DIMS`, as before. A CAD program that redraws a dimension from its
+  style (as AutoCAD does when it is edited) draws it by that style, which is ours by sizes, not by every pen.
 - **The DWG** comes from `crates/dwg`: `bimcraft_dwg::to_dwg` reads the DXF with acadrust's `DxfReader`, sets the document to
   AC1032 and writes it with its `DwgWriter`, under `catch_unwind`, the DXF held to `Limits::dxf_bytes` and the DWG to
   `Limits::dwg_bytes`. It runs in the app's own process: what it reads is the core's DXF, not a stranger's file. A session
@@ -91,7 +103,7 @@ DWG the session's `DwgWriter` turns that text into the file.
   without one says "this build can't write DWG; save as .dxf".
 
 Tests: `render::dxf::tests` reads the sample house's plan back with `dxf::read_text` (layers, entities per layer, mm, extents,
-dashes, weights); `plan_export_tests.rs` drives `save` with a fake writer; `crates/dwg`'s tests round-trip the plan through
+dashes, weights); `render::dxf::dims_tests` reads the DIMENSION, DIMSTYLE and block records as a plain group-code walk; `plan_export_tests.rs` drives `save` with a fake writer; `crates/dwg`'s tests round-trip the plan through
 `to_dxf`, and `apps/bimcraft-cli/tests/dwg.rs` saves the sample as DWG from the command line. Outside our own code, libredwg's
 `dwg2dxf` reads the DWG back with every entity on its layer, and `import_cad` of it into a new project draws the plan again.
 Still to come: DWG 2000 (AC1015).
