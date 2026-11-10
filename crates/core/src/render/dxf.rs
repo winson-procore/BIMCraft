@@ -657,7 +657,11 @@ fn lettering(s: &mut String, h: u64, layer: &str, l: &super::Lettering, at: P2, 
         },
     );
     let plain = escaped(&l.text, false);
-    if !l.text.contains(['\n', '\\', '{', '}']) && plain.len() <= CHUNK {
+    // Lettering a plan laid out in a typeface goes as an MTEXT with that typeface's run, which is how a reader that drew it
+    // the same finds the face; a TEXT has no way to say it.
+    let face: String =
+        l.font.iter().flat_map(|f| f.chars()).filter(|c| !c.is_control() && !"|;\\{}".contains(*c)).collect::<String>().trim().into();
+    if face.is_empty() && !l.text.contains(['\n', '\\', '{', '}']) && plain.len() <= CHUNK {
         pair(s, 0, "TEXT");
         entity(s, h, MODEL_SPACE, layer, None, None, l.color);
         pair(s, 100, "AcDbText");
@@ -681,7 +685,10 @@ fn lettering(s: &mut String, h: u64, layer: &str, l: &super::Lettering, at: P2, 
             2 => 3,
             _ => 6,
         } + right;
-    let body = escaped(&l.text, true);
+    let mut body = escaped(&l.text, true);
+    if !face.is_empty() {
+        body = format!("{{\\f{face}|b0|i0|c0|p34;{body}}}");
+    }
     pair(s, 0, "MTEXT");
     entity(s, h, MODEL_SPACE, layer, None, None, l.color);
     pair(s, 100, "AcDbMText");

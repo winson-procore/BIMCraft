@@ -229,6 +229,8 @@ pub struct Lettering {
     pub align: crate::dxf::Align,
     pub owner: Option<Id>,
     pub color: Rgb,
+    /// The typeface it is set in, as a text type names one; none when the CAD single-stroke lettering draws it.
+    pub font: Option<String>,
     /// The index of the first primitive that draws it, which [`Drawing::grow`] goes by.
     from: usize,
 }
@@ -512,7 +514,7 @@ impl Drawing {
         let (s, c) = angle.sin_cos();
         let w = font::width(text, height);
         let align = crate::dxf::Align { h: crate::dxf::Horizontal::Center, v: crate::dxf::Vertical::Middle };
-        let record = Lettering { text: text.to_string(), at: (x, y), height, angle, align, owner: None, color, from: 0 };
+        let record = Lettering { text: text.to_string(), at: (x, y), height, angle, align, owner: None, color, font: None, from: 0 };
         self.lettered(record, |d| {
             for pts in font::strokes(text, -w / 2.0, height / 2.0, height) {
                 let pts = pts.into_iter().map(|(a, b)| (x + a * c - b * s, y + a * s + b * c)).collect();
@@ -2600,12 +2602,20 @@ fn cad_imports(d: &mut Drawing, m: &Model, key: crate::ids::Guid, level: crate::
             }
             let color = cad.color(ent, ci.colors).unwrap_or(INK);
             match &ent.shape {
-                Shape::Text { at, height, angle, text, align } => {
+                Shape::Text { at, height, angle, text, align, font } => {
                     let px = (height * k) as f32;
                     if px < 1.0 {
                         continue;
                     }
-                    let wide = f64::from(font::width(text, px)) / k;
+                    // Text a plan exported in a typeface is laid out in it again, as it was drawn.
+                    let laid = font.as_ref().map(|f| {
+                        let t = crate::text::TextType { font: f.clone(), size: *height, ..Default::default() };
+                        crate::text::layout(&t, text, &crate::text::styles(&t, text, false, &[]))
+                    });
+                    let wide = match &laid {
+                        Some(l) => l.width,
+                        None => f64::from(font::width(text, px)) / k,
+                    };
                     let (u, v) =
                         (P2(angle.to_radians().cos(), angle.to_radians().sin()), P2(-angle.to_radians().sin(), angle.to_radians().cos()));
                     let left = match align.h {
@@ -2618,6 +2628,12 @@ fn cad_imports(d: &mut Drawing, m: &Model, key: crate::ids::Guid, level: crate::
                         Vertical::Middle => left - v * (height / 2.0),
                         Vertical::Top => left - v * *height,
                     };
+                    let turn = -((angle + ci.angle).to_radians()) as f32;
+                    if let Some(laid) = laid {
+                        let frame = NoteFrame { at: d.view.px(place(base + v * *height)), k: k as f32, angle: turn };
+                        d.set_text(text, &laid, &frame, color, false);
+                        continue;
+                    }
                     let middle = d.view.px(place(base + u * (wide / 2.0) + v * (height / 2.0)));
                     d.text_turned(text, middle, px, -((angle + ci.angle).to_radians()) as f32, color);
                 }
@@ -4161,6 +4177,32 @@ impl Drawing {
     }
 }
 
+impl Drawing {
+    /// `text`, which `layout` lays out, drawn as `frame` puts it, and kept as lettering; `centred` as [`Lettering::of_layout`] says.
+    pub(crate) fn set_text(&mut self, text: &str, layout: &crate::text::Layout, frame: &NoteFrame, color: Rgb, centred: bool) {
+        let k = frame.k;
+        let f = |(x, y): (f32, f32)| frame.px((f64::from(x), f64::from(y)));
+        self.lettered(Lettering::of_layout(text, layout, frame, color, centred), |d| {
+            let drawn = layout.drawn();
+            for letter in &drawn.fill {
+                d.push(Prim::Fill { rings: letter.iter().map(|r| r.iter().copied().map(f).collect()).collect(), color });
+            }
+            for (pts, width) in drawn.strokes {
+                d.push(Prim::Line { pts: pts.into_iter().map(f).collect(), width: (width * k).max(1.0), color, dash: None, closed: false });
+            }
+            for (a, b) in drawn.underlines {
+                d.push(Prim::Line {
+                    pts: vec![frame.px(a), frame.px(b)],
+                    width: (drawn.underline_width * k).max(1.0),
+                    color,
+                    dash: None,
+                    closed: false,
+                });
+            }
+        });
+    }
+}
+
 impl Lettering {
     /// `text`, which `layout` lays out, as `frame` puts it in the drawing: its top left (the top of its first line's capitals),
     /// or when `centred` and it is one line, its middle.
@@ -4179,6 +4221,7 @@ impl Lettering {
             align,
             owner: None,
             color,
+            font: Some(layout.font.clone()),
             from: 0,
         }
     }
@@ -4190,27 +4233,8 @@ pub(crate) fn note(d: &mut Drawing, m: &Model, n: &Note) {
     let t = m.text_types.get(&n.type_name).cloned().unwrap_or_default();
     let layout = note_layout(m, n);
     let frame = d.note_frame(n);
-    let f = |(x, y): (f32, f32)| frame.px((f64::from(x), f64::from(y)));
     let color = Rgb(t.color[0], t.color[1], t.color[2]);
-    let k = frame.k;
-    d.lettered(Lettering::of_layout(&n.text, &layout, &frame, color, false), |d| {
-        let drawn = layout.drawn();
-        for letter in &drawn.fill {
-            d.push(Prim::Fill { rings: letter.iter().map(|r| r.iter().copied().map(f).collect()).collect(), color });
-        }
-        for (pts, width) in drawn.strokes {
-            d.push(Prim::Line { pts: pts.into_iter().map(f).collect(), width: (width * k).max(1.0), color, dash: None, closed: false });
-        }
-        for (a, b) in drawn.underlines {
-            d.push(Prim::Line {
-                pts: vec![frame.px(a), frame.px(b)],
-                width: (drawn.underline_width * k).max(1.0),
-                color,
-                dash: None,
-                closed: false,
-            });
-        }
-    });
+    d.set_text(&n.text, &layout, &frame, color, false);
     let off = if t.border { t.border_offset } else { 0.4 * t.size };
     if t.border {
         let [l, top, r, b] = layout.frame(t.border_offset);

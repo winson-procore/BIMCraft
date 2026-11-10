@@ -172,6 +172,41 @@ fn a_plans_lettering_survives_as_text_and_mtext_in_the_dwg() {
 }
 
 #[test]
+fn an_mtext_with_a_font_run_keeps_the_run_through_the_dwg() {
+    let run = "{\\fArial|b0|i0|c0|p34;Oak floor}";
+    let mut text = room_dxf();
+    let at = text.rfind("  0\nENDSEC").unwrap();
+    let mtext = pairs(&[
+        (0, "MTEXT"),
+        (100, "AcDbEntity"),
+        (8, "WALLS"),
+        (100, "AcDbMText"),
+        (10, "1000"),
+        (20, "1000"),
+        (30, "0"),
+        (40, "250"),
+        (41, "0"),
+        (71, "1"),
+        (72, "1"),
+        (1, run),
+        (7, "Standard"),
+        (11, "1"),
+        (21, "0"),
+        (31, "0"),
+        (73, "1"),
+        (44, "0.96"),
+    ]);
+    text.insert_str(at, &mtext);
+    let dwg = to_dwg(&text, Limits::DEFAULT).unwrap();
+    let back = String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).into_owned();
+    assert!(
+        back.contains("Arial|b0|i0|c0|p34;Oak floor"),
+        "{}",
+        back.lines().skip_while(|l| l.trim() != "MTEXT").take(40).collect::<Vec<_>>().join("|")
+    );
+}
+
+#[test]
 fn a_dxf_too_large_or_that_isnt_one_or_a_dwg_too_large_is_refused_and_never_panics() {
     let text = plan_dxf();
     let e = to_dwg(&text, Limits { dxf_bytes: 1000, ..Limits::DEFAULT }).unwrap_err();

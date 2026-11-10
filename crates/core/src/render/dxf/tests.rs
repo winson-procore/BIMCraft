@@ -450,18 +450,57 @@ fn a_note_of_several_lines_is_one_mtext_that_reads_back_as_its_lines() {
 fn a_single_line_note_is_a_text_whose_top_left_is_the_notes_point() {
     let (m, d) = noted("Oak floor");
     let text = dxf(&d, &m);
-    assert_eq!(text.lines().filter(|l| l.trim() == "MTEXT").count(), 0);
     let r = dxf::read_text(&text).unwrap();
     let mine: Vec<_> = r.entities.iter().filter(|e| e.layer == "A-ANNO-TEXT").collect();
-    let [Shape::Text { at, height, text, align, angle }] = &mine.iter().map(|e| e.shape.clone()).collect::<Vec<_>>()[..] else {
+    let [Shape::Text { at, height, text, align, angle, font }] = &mine.iter().map(|e| e.shape.clone()).collect::<Vec<_>>()[..] else {
         panic!("{mine:?}")
     };
+    assert_eq!(font.as_deref(), Some("Arial"));
     assert_eq!(text, "Oak floor");
-    assert_eq!(*align, dxf::Align { h: dxf::Horizontal::Left, v: dxf::Vertical::Top });
-    assert!((at.0 - 1000.0).abs() < 1.0 && (at.1 - 2000.0).abs() < 1.0 && angle.abs() < 1e-6, "{at:?} {angle}");
+    // An MTEXT's lines read back on their baselines, a capital below the note's point.
+    assert_eq!(*align, dxf::Align { h: dxf::Horizontal::Left, v: dxf::Vertical::Baseline });
+    assert!((at.0 - 1000.0).abs() < 1.0 && (at.1 - (2000.0 - height)).abs() < 1.0 && angle.abs() < 1e-6, "{at:?} {angle}");
     // A 2.5 mm capital on paper, at the plan's scale.
     let scale = crate::graphics::scale_of(&m, m.levels()[0].0);
     assert!((height - 2.5 * scale).abs() < 0.5, "{height} at 1:{scale}");
+}
+
+#[test]
+fn lettering_in_a_typeface_goes_as_an_mtext_with_its_run_and_the_stroked_as_a_text() {
+    let (m, d) = sample();
+    let text = dxf(&d, &m);
+    let r = dxf::read_text(&text).unwrap();
+    let font_of = |words: &str| {
+        r.entities.iter().find_map(|e| match &e.shape {
+            Shape::Text { text, font, .. } if text.eq_ignore_ascii_case(words) => Some(font.clone()),
+            _ => None,
+        })
+    };
+    // A dimension's number is laid out in the type's face; a room's name is drawn in our single-stroke lettering.
+    assert_eq!(font_of("10300"), Some(Some("Arial".to_string())));
+    assert_eq!(font_of("Kitchen"), Some(None));
+    assert!(text.contains("{\\fArial|b0|i0|c0|p34;10300}"));
+}
+
+#[test]
+fn a_typefaces_name_cannot_break_out_of_its_run() {
+    let m = Model::new("Empty");
+    let view = View { scale: 0.1, cx: 0.0, cy: 0.0, width: 100, height: 100 };
+    let mut d = Drawing::new(view);
+    d.lettering.push(crate::render::Lettering {
+        text: "Fine".into(),
+        at: (50.0, 50.0),
+        height: 10.0,
+        angle: 0.0,
+        align: dxf::Align { h: dxf::Horizontal::Left, v: dxf::Vertical::Baseline },
+        owner: None,
+        color: crate::render::INK,
+        font: Some("Ev;il|\\{x}\n".into()),
+        from: 0,
+    });
+    let r = dxf::read_text(&dxf(&d, &m)).unwrap();
+    assert_eq!(texts(&r).iter().map(|(_, t, _)| *t).collect::<Vec<_>>(), ["Fine"]);
+    assert!(r.left_out.is_empty(), "{:?}", r.left_out);
 }
 
 #[test]
@@ -486,6 +525,7 @@ fn lettering_that_is_not_a_shape_is_left_out_without_harm() {
         align: dxf::Align { h: dxf::Horizontal::Left, v: dxf::Vertical::Baseline },
         owner: None,
         color: crate::render::INK,
+        font: None,
         from: 0,
     };
     for bad in [
