@@ -10,7 +10,7 @@ use crate::geom::P2;
 use crate::model::{Element, Id};
 use crate::render::{Part, Prim, View, plan};
 
-fn sample() -> (std::sync::Arc<Model>, Drawing) {
+pub(super) fn sample() -> (std::sync::Arc<Model>, Drawing) {
     let mut s = Session::new();
     s.script(crate::sample::SAMPLE).unwrap();
     let m = crate::link::seen(&s.model);
@@ -19,7 +19,7 @@ fn sample() -> (std::sync::Arc<Model>, Drawing) {
     (m, d)
 }
 
-fn per_layer(d: &dxf::Dxf) -> BTreeMap<&str, usize> {
+pub(super) fn per_layer(d: &dxf::Dxf) -> BTreeMap<&str, usize> {
     let mut n = BTreeMap::new();
     for e in &d.entities {
         *n.entry(e.layer.as_str()).or_insert(0) += 1;
