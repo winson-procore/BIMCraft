@@ -1,7 +1,8 @@
 //! A plan as ASCII DXF (AutoCAD 2018, AC1032, in millimetres), from the public DXF reference: each primitive of a
 //! [`Drawing`] an entity on the AIA layer of its element's category, a line a `LWPOLYLINE` (its weight, true colour and
-//! dashes) and a fill a solid `HATCH`. Lettering stays the strokes the plan draws it in. Pictures are left out, which
-//! [`pictures`] counts for a reply to say.
+//! dashes) and a fill a solid `HATCH`. Lettering is the text itself, a `TEXT` (an `MTEXT` for several lines) of style
+//! `Standard` on its element's annotation layer, from the drawing's [`super::Lettering`] records; the strokes the plan draws it
+//! in stay in the picture and are left out here. Pictures are left out, which [`pictures`] counts for a reply to say.
 //!
 //! A fill of the paper's colour is a raster trick (what is drawn before it is hidden), and a CAD viewer draws a hatch over
 //! the lines under it. So it is never an entity: [`clipped`] bakes the paint order into the geometry, cutting what came
@@ -55,11 +56,26 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
     let mut ltypes: BTreeMap<String, Vec<f64>> = BTreeMap::new();
     let mut ext: Option<[P2; 2]> = None;
     let mm = |p: &(f32, f32)| (p.0.is_finite() && p.1.is_finite()).then(|| d.view.mm(*p));
+    // The lettering goes out as text; a view that cannot place text keeps the strokes it is drawn in.
+    let texts = d.view.scale.is_finite() && d.view.scale > 0.0;
     for (i, prim) in &clipped(d) {
         let (i, prim) = (*i, prim.as_ref());
         let owner = d.owners.get(i).copied().flatten();
         let part = d.parts.get(i).copied().unwrap_or_default();
         let base = layer(m, owner);
+        if texts && part == Part::Text {
+            // Not an entity, but still what the drawing's extents are the box of.
+            let rings: Vec<&[(f32, f32)]> = match prim {
+                Prim::Line { pts, .. } => vec![pts],
+                Prim::Fill { rings, .. } => rings.iter().map(Vec::as_slice).collect(),
+                Prim::Image { .. } => Vec::new(),
+            };
+            for ring in rings {
+                let ring: Option<Vec<P2>> = ring.iter().map(mm).collect();
+                ext = grow(ext, &ring.unwrap_or_default());
+            }
+            continue;
+        }
         match prim {
             Prim::Line { pts, width, color, dash, closed } => {
                 let pts: Option<Vec<P2>> = pts.iter().map(mm).collect();
@@ -119,6 +135,15 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
             }
             Prim::Image { .. } => {}
         }
+    }
+    for l in d.lettering.iter().filter(|_| texts) {
+        let (at, height, angle) = (mm(&l.at), f64::from(l.height) / d.view.scale, -f64::from(l.angle).to_degrees());
+        let Some(at) = at.filter(|_| height.is_finite() && height > 0.0 && angle.is_finite() && !l.text.trim().is_empty()) else {
+            continue;
+        };
+        let name = on(layer(m, l.owner), Part::Text, false);
+        lettering(&mut ents, w.handle(), &name, l, at, height, angle.rem_euclid(360.0));
+        layers.insert(name);
     }
     let mut tables = String::new();
     table(&mut tables, &mut w, "VPORT", VPORTS, |_, _, _| 0);
@@ -606,6 +631,100 @@ fn entity(s: &mut String, h: u64, owner: u64, layer: &str, ltype: Option<&str>, 
         pair(s, 370, w);
     }
     pair(s, 420, (u32::from(color.0) << 16) | (u32::from(color.1) << 8) | u32::from(color.2));
+}
+
+/// The text style every text is in, which the STYLE table defines.
+const STYLE: &str = "Standard";
+
+/// The longest string a TEXT holds, or a group of an MTEXT's: the DXF reference's 255 less room for what a reader adds.
+const CHUNK: usize = 250;
+
+/// `l` as a TEXT, or as an MTEXT when it has lines or something a TEXT reads as formatting, at `at` mm and turned `angle`
+/// degrees counter-clockwise. Its characters outside ASCII go out as they are: the file is AC1032, whose DXF is UTF-8.
+fn lettering(s: &mut String, h: u64, layer: &str, l: &super::Lettering, at: P2, height: f64, angle: f64) {
+    use crate::dxf::{Horizontal, Vertical};
+    let (right, down) = (
+        match l.align.h {
+            Horizontal::Left => 0,
+            Horizontal::Center => 1,
+            Horizontal::Right => 2,
+        },
+        match l.align.v {
+            Vertical::Baseline => 0,
+            Vertical::Bottom => 1,
+            Vertical::Middle => 2,
+            Vertical::Top => 3,
+        },
+    );
+    let plain = escaped(&l.text, false);
+    if !l.text.contains(['\n', '\\', '{', '}']) && plain.len() <= CHUNK {
+        pair(s, 0, "TEXT");
+        entity(s, h, MODEL_SPACE, layer, None, None, l.color);
+        pair(s, 100, "AcDbText");
+        point3(s, 10, at);
+        pair(s, 40, num(height));
+        pair(s, 1, plain);
+        pair(s, 50, num(angle));
+        pair(s, 7, STYLE);
+        if right != 0 || down != 0 {
+            pair(s, 72, right);
+            point3(s, 11, at);
+        }
+        pair(s, 100, "AcDbText");
+        pair(s, 73, down);
+        return;
+    }
+    // A text's top is DXF's top attachment, its baseline the bottom's: an MTEXT's attachment point is 1 to 9, row by row.
+    let attach =
+        1 + match down {
+            3 => 0,
+            2 => 3,
+            _ => 6,
+        } + right;
+    let body = escaped(&l.text, true);
+    pair(s, 0, "MTEXT");
+    entity(s, h, MODEL_SPACE, layer, None, None, l.color);
+    pair(s, 100, "AcDbMText");
+    point3(s, 10, at);
+    pair(s, 40, num(height));
+    pair(s, 41, 0);
+    pair(s, 71, attach);
+    pair(s, 72, 1);
+    let mut rest = body.as_str();
+    while rest.len() > CHUNK {
+        let cut = (1..=CHUNK).rev().find(|&i| rest.is_char_boundary(i)).unwrap_or(CHUNK);
+        let (head, tail) = rest.split_at(cut);
+        pair(s, 3, head);
+        rest = tail;
+    }
+    pair(s, 1, rest);
+    pair(s, 7, STYLE);
+    let (sin, cos) = angle.to_radians().sin_cos();
+    pair(s, 11, num(cos));
+    pair(s, 21, num(sin));
+    pair(s, 31, 0);
+    pair(s, 73, 1);
+    // Our lines are 1.6 capitals apart; an MTEXT's are 5/3 of them, times this.
+    pair(s, 44, 0.96);
+}
+
+/// `text` as a DXF string, ASCII: for `multi` an MTEXT's, whose backslashes and braces are escaped and lines parted by `\P`, else a
+/// TEXT's, which has no lines. A control character is a space.
+fn escaped(text: &str, multi: bool) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\n' if multi => out.push_str("\\P"),
+            '\\' | '{' | '}' if multi => {
+                out.push('\\');
+                out.push(c);
+            }
+            '\r' if multi => {}
+            c if c.is_control() => out.push(' '),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
