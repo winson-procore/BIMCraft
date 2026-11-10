@@ -74,8 +74,15 @@ DWG the session's `DwgWriter` turns that text into the file.
   elevations, section and elevation marks), `P-PIPE`, `M-DUCT`, and `A-ANNO-MISC` for what belongs to no element (the view's
   title) or to one no layer is kept for. A model element's fills and pattern lines go on `<layer>-PATT` (a cut wall's poché
   on `A-WALL-PATT`) and its lettering on `<layer>-IDEN`; annotation keeps all of its own on its layer.
-- **Lettering** stays the strokes (or, for a text type in IBM Plex, the filled outlines) the plan letters it in: no TEXT
-  entities yet, so a CAD program can't edit the words.
+- **Lettering** goes out as text a CAD program can edit, and its strokes do not. `Drawing::lettering` (`render::Lettering`, in
+  pixels) holds each string beside the strokes it is drawn in, which `Drawing::lettered` pairs by `Part::Text`; a PNG or SVG
+  ignores it. `render::dxf` writes each as TEXT on its owner's layer in style `Standard` (`Kitchen`, tags, spot elevations:
+  our own single-stroke lettering, which has no typeface) or, when the plan laid it out in a typeface (a dimension's number,
+  a note: `text::layout`), as an MTEXT holding `{\fArial|b0|i0|c0|p34;…}`, which is how `dxf::mtext` knows the typeface and
+  the importer (`render::cad_imports`) lays it out in it again, so a re-imported plan looks as it did. A string with several
+  lines, `\`, `{` or `}` is an MTEXT too (escaped, lines as `\P`, line spacing 0.96 since an MTEXT's is 5/3 of the height).
+  Characters beyond ASCII are written as they are: AC1032's DXF is UTF-8. The strokes under a lettering are left out of the
+  entities (the extents keep them), and a lettering that isn't a finite shape is left out harmlessly.
 - **The DWG** comes from `crates/dwg`: `bimcraft_dwg::to_dwg` reads the DXF with acadrust's `DxfReader`, sets the document to
   AC1032 and writes it with its `DwgWriter`, under `catch_unwind`, the DXF held to `Limits::dxf_bytes` and the DWG to
   `Limits::dwg_bytes`. It runs in the app's own process: what it reads is the core's DXF, not a stranger's file. A session
@@ -87,7 +94,7 @@ Tests: `render::dxf::tests` reads the sample house's plan back with `dxf::read_t
 dashes, weights); `plan_export_tests.rs` drives `save` with a fake writer; `crates/dwg`'s tests round-trip the plan through
 `to_dxf`, and `apps/bimcraft-cli/tests/dwg.rs` saves the sample as DWG from the command line. Outside our own code, libredwg's
 `dwg2dxf` reads the DWG back with every entity on its layer, and `import_cad` of it into a new project draws the plan again.
-Still to come: DWG 2000 (AC1015), and TEXT and MTEXT entities in place of the strokes.
+Still to come: DWG 2000 (AC1015).
 
 ## The project
 
@@ -125,7 +132,8 @@ The engine removes a drawing nothing places after each command, and forgets the 
 `render::cad_imports` draws a plan's imports under all the rest but its scans, as Revit draws an import in the background: each
 entity of a layer the import and the view show, in its colour (the view's ink when it has none or the import draws in black),
 its pen (`Cad::pen`, the entity's or its layer's line weight) and its dashes (`Cad::dash`, its linetype by `$LTSCALE`, scaled to
-the view, left solid when a dash would be under a pixel). Text is lettered with `font.rs` at its height, turned and aligned; a
+the view, left solid when a dash would be under a pixel). Text is lettered with `font.rs` at its height, turned and aligned (or, when an MTEXT names a typeface in a `\f` run, laid out in
+it with `text::layout`, as a note is); a
 solid hatch is filled. A hatch's boundary loops nest as the DXF reference says (`Drawing::fill_nested`): the outermost is
 filled, a loop inside it is a hole, a loop inside that is filled again, whichever way the file winds them, so outlined lettering
 keeps its counters; the canvas fills such a hatch by the non-zero rule, as it does lettering. What lies outside the view is passed over, so a large site plan zoomed in draws only what's on screen. An
