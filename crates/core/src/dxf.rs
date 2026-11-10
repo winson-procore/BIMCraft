@@ -176,12 +176,15 @@ pub enum Shape {
     },
     Point(P2),
     /// One line of lettering: `height` is its capital height, `angle` its baseline's in degrees counter-clockwise from east.
+    /// `font` is the family a multi-line text's `\f` run names, which a view draws in as a typeface; none, the CAD single-stroke
+    /// lettering.
     Text {
         at: P2,
         height: f64,
         angle: f64,
         text: String,
         align: Align,
+        font: Option<String>,
     },
     /// A hatch's boundaries, or a solid: `solid` when filled through, else patterned, which a view draws as it can.
     Fill {
@@ -1015,9 +1018,9 @@ fn transformed(shape: Shape, xf: Xf) -> Shape {
             }
             None => Shape::Polyline { pts: arc_points(c, r, start, end - start).into_iter().map(at).collect(), closed: false },
         },
-        Shape::Text { at: p, height, angle, text, align } => {
+        Shape::Text { at: p, height, angle, text, align, font } => {
             let (k, turn) = xf.similarity().map_or((xf.x.length(), xf.x.1.atan2(xf.x.0).to_degrees()), |(k, t, _)| (k, t));
-            Shape::Text { at: at(p), height: height * k, angle: angle + turn, text, align }
+            Shape::Text { at: at(p), height: height * k, angle: angle + turn, text, align, font }
         }
     }
 }
@@ -1255,7 +1258,17 @@ fn text(e: &Ent) -> Result<Option<Shape>, String> {
             (p, Align { h, v })
         }
     };
-    Ok(Some(Shape::Text { at, height, angle: e.num(50)?.unwrap_or(0.0), text: words, align }))
+    Ok(Some(Shape::Text { at, height, angle: e.num(50)?.unwrap_or(0.0), text: words, align, font: None }))
+}
+
+/// The family of the first `\f` run of a multi-line text's raw words: `\fArial|b0|i0|c0|p34;` names Arial. A file's `\fsimplex.shx;`
+/// names a shape file, which is the CAD lettering, so no font.
+fn font_of(raw: &str) -> Option<String> {
+    let (run, _) = raw.split("\\f").nth(1)?.split_once(';')?;
+    let name = run.split('|').next()?.trim();
+    let shape_file = name.contains('.') && !name.to_ascii_lowercase().ends_with(".ttf");
+    (!name.is_empty() && name.len() <= 64 && !shape_file && !name.contains(['\\', '{', '}']))
+        .then(|| name.trim_end_matches(".ttf").to_string())
 }
 
 /// A multi-line text's lines, each a text of its own, stepped down from where its attachment point puts the block.
@@ -1271,6 +1284,7 @@ fn mtext(e: &Ent) -> Result<Vec<Shape>, String> {
         }
     }
     raw.push_str(e.str(1).unwrap_or(""));
+    let font = font_of(&raw);
     let words = decode(&raw);
     let lines: Vec<&str> = words.lines().collect();
     if lines.iter().all(|l| l.trim().is_empty()) {
@@ -1305,6 +1319,7 @@ fn mtext(e: &Ent) -> Result<Vec<Shape>, String> {
             angle,
             text: line.to_string(),
             align: Align { h, v: Vertical::Baseline },
+            font: font.clone(),
         })
         .collect())
 }
@@ -1891,21 +1906,24 @@ mod tests {
                     height: 2.5,
                     angle: 30.0,
                     text: "Room ° Ø ± % é x".into(),
-                    align: Align { h: Horizontal::Left, v: Vertical::Baseline }
+                    align: Align { h: Horizontal::Left, v: Vertical::Baseline },
+                    font: None,
                 },
                 &Shape::Text {
                     at: P2(8.0, 9.0),
                     height: 1.0,
                     angle: 0.0,
                     text: "Centred".into(),
-                    align: Align { h: Horizontal::Center, v: Vertical::Top }
+                    align: Align { h: Horizontal::Center, v: Vertical::Top },
+                    font: None,
                 },
                 &Shape::Text {
                     at: P2(8.0, 9.0),
                     height: 1.0,
                     angle: 0.0,
                     text: "Middle".into(),
-                    align: Align { h: Horizontal::Center, v: Vertical::Middle }
+                    align: Align { h: Horizontal::Center, v: Vertical::Middle },
+                    font: None,
                 },
             ]
         );
@@ -1979,6 +1997,26 @@ mod tests {
         // Bottom centre at the origin, turned to read upward: the one line's baseline is on the point.
         assert!(near(texts[2].0, P2(0.0, 0.0)), "{:?}", texts[2]);
         assert_eq!((texts[2].1, texts[2].2.h, texts[2].3), ("Up", Horizontal::Center, 90.0));
+    }
+
+    #[test]
+    fn a_multi_line_texts_typeface_is_the_family_its_font_run_names_and_a_shape_file_is_none() {
+        for (raw, want) in [
+            ("{\\fArial|b0|i0|c0|p34;10300}", Some("Arial")),
+            ("{\\fSegoe UI|b1;x}", Some("Segoe UI")),
+            ("{\\fArial.ttf|b0;x}", Some("Arial")),
+            ("{\\fsimplex.shx;x}", None),
+            ("{\\f|b0;x}", None),
+            ("plain", None),
+            ("{\\fArial", None),
+        ] {
+            let d = drawing(&pairs(&[(0, "MTEXT"), (10, "0"), (20, "0"), (40, "3"), (1, raw)]));
+            let got = d.entities.iter().find_map(|e| match &e.shape {
+                Shape::Text { font, .. } => Some(font.as_deref()),
+                _ => None,
+            });
+            assert_eq!(got.flatten(), want, "{raw}");
+        }
     }
 
     #[test]

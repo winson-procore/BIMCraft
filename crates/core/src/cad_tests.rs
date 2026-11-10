@@ -561,6 +561,31 @@ fn a_hatch_fills_text_is_aligned_and_a_dashed_layer_draws_dashed() {
 }
 
 #[test]
+fn a_texts_typeface_is_laid_out_again_in_filled_letters_about_its_attachment_point() {
+    let note = pairs(&[(0, "MTEXT"), (8, "0"), (10, "3000"), (20, "500"), (40, "200"), (71, "5"), (1, "{\\fArial|b0|i0|c0|p34;10300}")]);
+    let text = dxf("4", &[], &note);
+    let mut s = Session::new();
+    let id = run(&mut s, "import_cad", json!({"path": file("face", "face.dxf", &text), "position": "origin"}))["id"].as_u64().unwrap();
+    let (one, _) = levels(&s);
+    let d = render::plan(&s.model, one, 800, 800);
+    let mine: Vec<_> = d.lettering.iter().filter(|l| l.owner == Some(id)).collect();
+    let [l] = &mine[..] else { panic!("{:?}", d.lettering) };
+    assert_eq!((l.text.as_str(), l.font.as_deref()), ("10300", Some("Arial")));
+    assert!((f64::from(l.height) - 200.0 * d.view.scale).abs() < 0.01, "{}", l.height);
+    // Centred on the point, the capitals a half-height either side of it.
+    let (x, y) = d.view.px(P2(3000.0, 500.0));
+    let ink: Vec<(f32, f32)> = (d.prims.iter().zip(&d.parts))
+        .filter(|(p, part)| **part == render::Part::Text && matches!(p, render::Prim::Fill { .. }))
+        .flat_map(|(p, _)| p.points())
+        .collect();
+    assert!(!ink.is_empty(), "filled letters");
+    let (lo, hi) = ink.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| (lo.min(p.0), hi.max(p.0)));
+    assert!(((lo + hi) / 2.0 - x).abs() < 3.0, "{lo} {hi} about {x}");
+    let (top, bottom) = ink.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| (lo.min(p.1), hi.max(p.1)));
+    assert!(((top + bottom) / 2.0 - y).abs() < 3.0, "{top} {bottom} about {y}");
+}
+
+#[test]
 fn a_hatchs_inner_rings_are_holes_and_a_ring_in_a_hole_is_filled_again() {
     // Squares 5 m, 3 m and 1 m a side about one middle, each wound the same way: a polyline path apiece.
     let square = |lo: f64, hi: f64| {

@@ -214,9 +214,32 @@ impl View {
     }
 }
 
+/// A string as it was set, kept beside the strokes and outlines that draw it (the [`Part::Text`] primitives), so a CAD file can
+/// hold the text itself. Pixels, as the primitives are, and not drawn from: the picture never reads it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Lettering {
+    /// The whole string, its lines parted by `\n`.
+    pub text: String,
+    /// Where its alignment point is, pixels.
+    pub at: (f32, f32),
+    /// Its capitals' height, pixels.
+    pub height: f32,
+    /// How far it is turned, radians clockwise on screen (y runs down).
+    pub angle: f32,
+    pub align: crate::dxf::Align,
+    pub owner: Option<Id>,
+    pub color: Rgb,
+    /// The typeface it is set in, as a text type names one; none when the CAD single-stroke lettering draws it.
+    pub font: Option<String>,
+    /// The index of the first primitive that draws it, which [`Drawing::grow`] goes by.
+    from: usize,
+}
+
 pub struct Drawing {
     pub view: View,
     pub prims: Vec<Prim>,
+    /// The lettering the [`Part::Text`] primitives draw, a record for each string.
+    pub lettering: Vec<Lettering>,
     /// The element each primitive draws, for picking and highlighting.
     pub owners: Vec<Option<Id>>,
     /// What each primitive draws of its element, for overrides.
@@ -248,6 +271,7 @@ impl Drawing {
         Drawing {
             view,
             prims: Vec::new(),
+            lettering: Vec::new(),
             owners: Vec::new(),
             parts: Vec::new(),
             pens: Vec::new(),
@@ -285,6 +309,18 @@ impl Drawing {
     }
     pub(crate) fn push(&mut self, p: Prim) {
         self.push_pen(p, None);
+    }
+    /// `draw`, whose primitives are [`Part::Text`], the lettering `record` says: set down together, so the strings and the
+    /// primitives that draw them cannot drift apart. A string of nothing is no record.
+    fn lettered(&mut self, mut record: Lettering, draw: impl FnOnce(&mut Drawing)) {
+        if !record.text.trim().is_empty() {
+            record.owner = self.owner;
+            record.from = self.prims.len();
+            self.lettering.push(record);
+        }
+        let part = std::mem::replace(&mut self.part, Part::Text);
+        draw(self);
+        self.part = part;
     }
     fn push_pen(&mut self, p: Prim, pen: Option<Pen>) {
         self.prims.push(p);
@@ -444,6 +480,10 @@ impl Drawing {
                 Prim::Image { .. } => {}
             }
         }
+        for l in self.lettering.iter_mut().filter(|l| l.from >= from && k != 1.0) {
+            at(&mut l.at);
+            l.height *= k;
+        }
     }
 
     /// `text` centred on `at` px, capitals `height` px tall.
@@ -464,6 +504,8 @@ impl Drawing {
                 self.pens.push(pen);
             }
         }
+        let (lo, hi) = ((lo.0.min(hi.0), lo.1.min(hi.1)), (lo.0.max(hi.0), lo.1.max(hi.1)));
+        self.lettering.retain(|l| keep(l.owner) || (l.at.0 >= lo.0 && l.at.0 <= hi.0 && l.at.1 >= lo.1 && l.at.1 <= hi.1));
     }
 
     /// `text` centred on `(x, y)` px, capitals `height` px tall, turned `angle` radians clockwise
@@ -471,12 +513,14 @@ impl Drawing {
     fn text_turned(&mut self, text: &str, (x, y): (f32, f32), height: f32, angle: f32, color: Rgb) {
         let (s, c) = angle.sin_cos();
         let w = font::width(text, height);
-        let part = std::mem::replace(&mut self.part, Part::Text);
-        for pts in font::strokes(text, -w / 2.0, height / 2.0, height) {
-            let pts = pts.into_iter().map(|(a, b)| (x + a * c - b * s, y + a * s + b * c)).collect();
-            self.push(Prim::Line { pts, width: (height / 10.0).max(1.0), color, dash: None, closed: false });
-        }
-        self.part = part;
+        let align = crate::dxf::Align { h: crate::dxf::Horizontal::Center, v: crate::dxf::Vertical::Middle };
+        let record = Lettering { text: text.to_string(), at: (x, y), height, angle, align, owner: None, color, font: None, from: 0 };
+        self.lettered(record, |d| {
+            for pts in font::strokes(text, -w / 2.0, height / 2.0, height) {
+                let pts = pts.into_iter().map(|(a, b)| (x + a * c - b * s, y + a * s + b * c)).collect();
+                d.push(Prim::Line { pts, width: (height / 10.0).max(1.0), color, dash: None, closed: false });
+            }
+        });
     }
 
     /// The element drawn nearest the pixel `at`, within `tol` px. Inside a fill beats lying on a
@@ -1994,6 +2038,7 @@ impl SectionOverlay {
         let mut d = Drawing {
             view: b.view,
             prims: b.prims.clone(),
+            lettering: b.lettering.clone(),
             owners: b.owners.clone(),
             parts: b.parts.clone(),
             pens: b.pens.clone(),
@@ -2557,12 +2602,20 @@ fn cad_imports(d: &mut Drawing, m: &Model, key: crate::ids::Guid, level: crate::
             }
             let color = cad.color(ent, ci.colors).unwrap_or(INK);
             match &ent.shape {
-                Shape::Text { at, height, angle, text, align } => {
+                Shape::Text { at, height, angle, text, align, font } => {
                     let px = (height * k) as f32;
                     if px < 1.0 {
                         continue;
                     }
-                    let wide = f64::from(font::width(text, px)) / k;
+                    // Text a plan exported in a typeface is laid out in it again, as it was drawn.
+                    let laid = font.as_ref().map(|f| {
+                        let t = crate::text::TextType { font: f.clone(), size: *height, ..Default::default() };
+                        crate::text::layout(&t, text, &crate::text::styles(&t, text, false, &[]))
+                    });
+                    let wide = match &laid {
+                        Some(l) => l.width,
+                        None => f64::from(font::width(text, px)) / k,
+                    };
                     let (u, v) =
                         (P2(angle.to_radians().cos(), angle.to_radians().sin()), P2(-angle.to_radians().sin(), angle.to_radians().cos()));
                     let left = match align.h {
@@ -2575,6 +2628,12 @@ fn cad_imports(d: &mut Drawing, m: &Model, key: crate::ids::Guid, level: crate::
                         Vertical::Middle => left - v * (height / 2.0),
                         Vertical::Top => left - v * *height,
                     };
+                    let turn = -((angle + ci.angle).to_radians()) as f32;
+                    if let Some(laid) = laid {
+                        let frame = NoteFrame { at: d.view.px(place(base + v * *height)), k: k as f32, angle: turn };
+                        d.set_text(text, &laid, &frame, color, false);
+                        continue;
+                    }
                     let middle = d.view.px(place(base + u * (wide / 2.0) + v * (height / 2.0)));
                     d.text_turned(text, middle, px, -((angle + ci.angle).to_radians()) as f32, color);
                 }
@@ -4118,33 +4177,64 @@ impl Drawing {
     }
 }
 
+impl Drawing {
+    /// `text`, which `layout` lays out, drawn as `frame` puts it, and kept as lettering; `centred` as [`Lettering::of_layout`] says.
+    pub(crate) fn set_text(&mut self, text: &str, layout: &crate::text::Layout, frame: &NoteFrame, color: Rgb, centred: bool) {
+        let k = frame.k;
+        let f = |(x, y): (f32, f32)| frame.px((f64::from(x), f64::from(y)));
+        self.lettered(Lettering::of_layout(text, layout, frame, color, centred), |d| {
+            let drawn = layout.drawn();
+            for letter in &drawn.fill {
+                d.push(Prim::Fill { rings: letter.iter().map(|r| r.iter().copied().map(f).collect()).collect(), color });
+            }
+            for (pts, width) in drawn.strokes {
+                d.push(Prim::Line { pts: pts.into_iter().map(f).collect(), width: (width * k).max(1.0), color, dash: None, closed: false });
+            }
+            for (a, b) in drawn.underlines {
+                d.push(Prim::Line {
+                    pts: vec![frame.px(a), frame.px(b)],
+                    width: (drawn.underline_width * k).max(1.0),
+                    color,
+                    dash: None,
+                    closed: false,
+                });
+            }
+        });
+    }
+}
+
+impl Lettering {
+    /// `text`, which `layout` lays out, as `frame` puts it in the drawing: its top left (the top of its first line's capitals),
+    /// or when `centred` and it is one line, its middle.
+    fn of_layout(text: &str, layout: &crate::text::Layout, frame: &NoteFrame, color: Rgb, centred: bool) -> Lettering {
+        use crate::dxf::{Align, Horizontal, Vertical};
+        let (at, align) = if centred && layout.lines.len() == 1 {
+            (frame.px((layout.width / 2.0, layout.size / 2.0)), Align { h: Horizontal::Center, v: Vertical::Middle })
+        } else {
+            (frame.px((0.0, 0.0)), Align { h: Horizontal::Left, v: Vertical::Top })
+        };
+        Lettering {
+            text: text.to_string(),
+            at,
+            height: layout.size as f32 * frame.k,
+            angle: frame.angle,
+            align,
+            owner: None,
+            color,
+            font: Some(layout.font.clone()),
+            from: 0,
+        }
+    }
+}
+
 /// A text note: its lines down from its top left corner in its type's lettering, turned as it is, its border when its
 /// type has one, and its leader with an arrow at its end.
 pub(crate) fn note(d: &mut Drawing, m: &Model, n: &Note) {
     let t = m.text_types.get(&n.type_name).cloned().unwrap_or_default();
     let layout = note_layout(m, n);
     let frame = d.note_frame(n);
-    let f = |(x, y): (f32, f32)| frame.px((f64::from(x), f64::from(y)));
     let color = Rgb(t.color[0], t.color[1], t.color[2]);
-    let k = frame.k;
-    let part = std::mem::replace(&mut d.part, Part::Text);
-    let drawn = layout.drawn();
-    for letter in &drawn.fill {
-        d.push(Prim::Fill { rings: letter.iter().map(|r| r.iter().copied().map(f).collect()).collect(), color });
-    }
-    for (pts, width) in drawn.strokes {
-        d.push(Prim::Line { pts: pts.into_iter().map(f).collect(), width: (width * k).max(1.0), color, dash: None, closed: false });
-    }
-    for (a, b) in drawn.underlines {
-        d.push(Prim::Line {
-            pts: vec![frame.px(a), frame.px(b)],
-            width: (drawn.underline_width * k).max(1.0),
-            color,
-            dash: None,
-            closed: false,
-        });
-    }
-    d.part = part;
+    d.set_text(&n.text, &layout, &frame, color, false);
     let off = if t.border { t.border_offset } else { 0.4 * t.size };
     if t.border {
         let [l, top, r, b] = layout.frame(t.border_offset);

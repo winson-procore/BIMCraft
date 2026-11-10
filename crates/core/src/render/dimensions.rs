@@ -107,25 +107,25 @@ impl Ink {
             d.fill(&[ring], PAPER);
         }
         let f = |(x, y): (f32, f32)| frame.px((f64::from(x), f64::from(y)));
-        let part = std::mem::replace(&mut d.part, Part::Text);
-        let drawn = layout.drawn();
-        for letter in &drawn.fill {
-            d.push(Prim::Fill { rings: letter.iter().map(|r| r.iter().copied().map(f).collect()).collect(), color: self.color });
-        }
-        for (pts, width) in drawn.strokes {
-            d.push(Prim::Line {
-                pts: pts.into_iter().map(f).collect(),
-                width: (width * k).max(1.0),
-                color: self.color,
-                dash: None,
-                closed: false,
-            });
-        }
-        for (a, b) in drawn.underlines {
-            let width = (drawn.underline_width * k).max(1.0);
-            d.push(Prim::Line { pts: vec![frame.px(a), frame.px(b)], width, color: self.color, dash: None, closed: false });
-        }
-        d.part = part;
+        d.lettered(Lettering::of_layout(text, &layout, &frame, self.color, true), |d| {
+            let drawn = layout.drawn();
+            for letter in &drawn.fill {
+                d.push(Prim::Fill { rings: letter.iter().map(|r| r.iter().copied().map(f).collect()).collect(), color: self.color });
+            }
+            for (pts, width) in drawn.strokes {
+                d.push(Prim::Line {
+                    pts: pts.into_iter().map(f).collect(),
+                    width: (width * k).max(1.0),
+                    color: self.color,
+                    dash: None,
+                    closed: false,
+                });
+            }
+            for (a, b) in drawn.underlines {
+                let width = (drawn.underline_width * k).max(1.0);
+                d.push(Prim::Line { pts: vec![frame.px(a), frame.px(b)], width, color: self.color, dash: None, closed: false });
+            }
+        });
     }
 
     /// A number `label` beside the line at `at` running along `along`, on its `up` side, with the dimension's text above

@@ -55,11 +55,12 @@ fn the_sample_houses_plan_reads_back_on_aia_layers_in_millimetres() {
     assert!(n.keys().all(|l| aia(l)), "{n:?}");
     // Each layer an entity is on is in the LAYER table.
     assert!(n.keys().all(|l| r.layers.iter().any(|t| t.name == *l)));
-    // Everything the plan draws but pictures and paper is an entity, one for each primitive where no paper lies over what is drawn
-    // before it, and a piece or more of it where it does.
+    // Everything the plan draws but pictures, paper and lettering (which is text, below) is an entity, one for each primitive where
+    // no paper lies over what is drawn before it, and a piece or more of it where it does.
     let mut want: BTreeMap<String, usize> = BTreeMap::new();
     for (i, p) in d.prims.iter().enumerate() {
         let drawable = match p {
+            _ if d.parts[i] == Part::Text => false,
             Prim::Line { pts, .. } => pts.len() >= 2,
             Prim::Fill { rings, color } => *color != crate::render::PAPER && rings.iter().any(|r| r.len() >= 3),
             Prim::Image { .. } => false,
@@ -77,13 +78,23 @@ fn the_sample_houses_plan_reads_back_on_aia_layers_in_millimetres() {
             assert!(got >= *k, "{name}: {got} entities for {k} primitives");
         }
     }
-    assert!(n.keys().all(|l| want.contains_key(*l)), "a layer nothing is drawn on: {n:?}");
+    // Lettering is one text entity for each string the plan set, not one for each stroke of it.
+    let texts: BTreeMap<String, usize> = d.lettering.iter().fold(BTreeMap::new(), |mut n, l| {
+        *n.entry(on(layer(&m, l.owner), Part::Text, false)).or_insert(0) += 1;
+        n
+    });
+    for (name, k) in &texts {
+        let got = r.entities.iter().filter(|e| e.layer == *name && matches!(e.shape, Shape::Text { .. })).count();
+        assert!(got >= *k, "{name}: {got} texts for {k} strings");
+    }
+    assert!(n.keys().all(|l| want.contains_key(*l) || texts.contains_key(*l)), "a layer nothing is drawn on: {n:?}");
     assert!(!n.contains_key("A-DOOR-PATT") && !n.contains_key("A-GLAZ-PATT"), "those held only paper: {n:?}");
 }
 
-/// Layers no paper lies over in the sample's plan: what is drawn on them goes out one primitive, one entity. Paper is laid over
-/// the rest: the walls' poché and lines and the floor's at the openings, a dimension's line under its text, the roof's outline
-/// under a dimension's text and the tags, and whatever a tag, a mark or a camera covers.
+/// Layers no paper lies over in the sample's plan: what is drawn on them goes out one primitive, one entity (lettering aside, which
+/// is a text for each string). Paper is laid over the rest: the walls' poché and lines and the floor's at the openings, a
+/// dimension's line under its text, the roof's outline under a dimension's text and the tags, and whatever a tag, a mark or a
+/// camera covers.
 const UNTOUCHED: [&str; 7] = ["A-GRID", "A-GRID-IDEN", "A-AREA-IDEN", "A-ANNO-TEXT", "A-FLOR-CASE", "A-DOOR", "A-GLAZ"];
 
 #[test]
@@ -123,7 +134,14 @@ fn its_extents_are_the_models_and_its_points_the_models_millimetres() {
     let r = dxf::read_text(&dxf(&d, &m)).unwrap();
     let [lo, hi] = r.extents.unwrap();
     let [blo, bhi] = r.bounds().unwrap();
-    assert!(lo.dist(blo) < 0.01 && hi.dist(bhi) < 0.01, "{lo:?} {hi:?} against {blo:?} {bhi:?}");
+    // The entities' box is the extents' but for a text, which `bounds` takes as its point and the extents as the strokes it is drawn in.
+    assert!(
+        lo.0 <= blo.0 + 0.01 && lo.1 <= blo.1 + 0.01 && hi.0 >= bhi.0 - 0.01 && hi.1 >= bhi.1 - 0.01,
+        "{lo:?} {hi:?} against {blo:?} {bhi:?}"
+    );
+    let not_text = r.entities.iter().filter(|e| !matches!(e.shape, Shape::Text { .. }));
+    let [nlo, nhi] = dxf::union(not_text.map(|e| e.shape.bounds())).unwrap();
+    assert!(lo.0 <= nlo.0 + 0.01 && hi.0 >= nhi.0 - 0.01, "{lo:?} {hi:?} against {nlo:?} {nhi:?}");
     // The box round every point the plan draws, taken back to the model's mm.
     let pts = d.prims.iter().filter(|p| !matches!(p, Prim::Image { .. })).flat_map(Prim::points).map(|p| d.view.mm(p));
     let [plo, phi] = dxf::union(pts.map(|p| [p, p])).unwrap();
@@ -335,4 +353,194 @@ fn an_empty_drawing_and_one_of_bad_points_write_a_file_that_reads() {
     let r = dxf::read_text(&dxf(&d, &m)).unwrap();
     assert_eq!(r.entities.len(), 1);
     assert_eq!(r.entities[0].shape, Shape::Polyline { pts: vec![P2(-500.0, 500.0), P2(-400.0, 500.0)], closed: false });
+}
+
+/// The layer, string and height (mm) of each text in `r`.
+fn texts(r: &dxf::Dxf) -> Vec<(&str, &str, f64)> {
+    r.entities
+        .iter()
+        .filter_map(|e| match &e.shape {
+            Shape::Text { text, height, .. } => Some((e.layer.as_str(), text.as_str(), *height)),
+            _ => None,
+        })
+        .collect()
+}
+
+const SET: [(&str, &str); 4] =
+    [("Kitchen", "A-AREA-IDEN"), ("10300", "A-ANNO-DIMS"), ("6000", "A-ANNO-DIMS"), ("Oak floor", "A-ANNO-TEXT")];
+
+#[test]
+fn the_plan_keeps_its_lettering_beside_the_strokes_it_is_drawn_in() {
+    let (m, d) = sample();
+    for (words, want) in SET {
+        let l = d.lettering.iter().find(|l| l.text.eq_ignore_ascii_case(words)).unwrap_or_else(|| panic!("no lettering of {words}"));
+        assert!(l.height > 0.0 && l.height.is_finite(), "{words}: {}", l.height);
+        assert_eq!(on(layer(&m, l.owner), Part::Text, false), want, "{words}");
+    }
+    // Each string is drawn by several strokes too, which the picture keeps drawing.
+    assert!(d.parts.iter().filter(|p| **p == Part::Text).count() > d.lettering.len());
+}
+
+#[test]
+fn lettering_goes_out_as_text_in_mm_on_its_owners_layer_and_not_as_strokes() {
+    let (m, d) = sample();
+    let r = dxf::read_text(&dxf(&d, &m)).unwrap();
+    assert!(r.left_out.is_empty(), "{:?}", r.left_out);
+    let all = texts(&r);
+    for (words, want) in SET {
+        let (layer, _, height) =
+            all.iter().find(|(_, t, _)| t.eq_ignore_ascii_case(words)).unwrap_or_else(|| panic!("no text {words}: {all:?}"));
+        assert_eq!(*layer, want, "{words}");
+        // The capital's height in mm: px over the view's px to the mm.
+        let l = d.lettering.iter().find(|l| l.text.eq_ignore_ascii_case(words)).unwrap();
+        assert!((height - f64::from(l.height) / d.view.scale).abs() < 0.01, "{words}: {height}");
+        assert!(*height > 1.0 && *height < 1000.0, "{words}: {height}");
+    }
+    // The room names and the note have no stroke left under them.
+    for layer in ["A-AREA-IDEN", "A-ANNO-TEXT"] {
+        assert!(r.entities.iter().filter(|e| e.layer == layer).all(|e| matches!(e.shape, Shape::Text { .. })), "{layer}");
+    }
+}
+
+#[test]
+fn the_extents_still_hold_the_strokes_the_text_replaced() {
+    let (m, d) = sample();
+    let r = dxf::read_text(&dxf(&d, &m)).unwrap();
+    let [lo, hi] = r.extents.unwrap();
+    let ink: Vec<P2> = (d.prims.iter().zip(&d.parts))
+        .filter(|(_, part)| **part == Part::Text)
+        .flat_map(|(p, _)| p.points())
+        .map(|p| d.view.mm(p))
+        .collect();
+    assert!(!ink.is_empty());
+    assert!(ink.iter().all(|p| p.0 >= lo.0 - 0.01 && p.0 <= hi.0 + 0.01 && p.1 >= lo.1 - 0.01 && p.1 <= hi.1 + 0.01));
+}
+
+/// The plan of the first level of a project holding a note saying `words`.
+fn noted(words: &str) -> (std::sync::Arc<Model>, Drawing) {
+    let mut s = Session::new();
+    s.execute("text", &serde_json::json!({"text": words, "at": [1000, 2000]})).unwrap();
+    let m = crate::link::seen(&s.model);
+    let d = plan(&m, m.levels()[0].0, 800, 600);
+    (m, d)
+}
+
+#[test]
+fn a_note_of_several_lines_is_one_mtext_that_reads_back_as_its_lines() {
+    let (m, d) = noted("First line\nSecond \\ {line}");
+    let text = dxf(&d, &m);
+    assert_eq!(text.lines().filter(|l| l.trim() == "MTEXT").count(), 1, "one MTEXT");
+    let r = dxf::read_text(&text).unwrap();
+    let lines: Vec<_> = texts(&r).into_iter().filter(|(layer, ..)| *layer == "A-ANNO-TEXT").collect();
+    assert_eq!(lines.iter().map(|(_, t, _)| *t).collect::<Vec<_>>(), ["First line", "Second \\ {line}"], "{lines:?}");
+    assert!(lines.iter().all(|(layer, ..)| *layer == "A-ANNO-TEXT"));
+    // The first line's capital top is at the note's point, 1000 and 2000 mm, the next one down a line's pitch.
+    let notes: Vec<(P2, f64)> = (r.entities.iter().filter(|e| e.layer == "A-ANNO-TEXT"))
+        .filter_map(|e| match &e.shape {
+            Shape::Text { at, height, .. } => Some((*at, *height)),
+            _ => None,
+        })
+        .collect();
+    let ((a, h), (b, _)) = (notes[0], notes[1]);
+    assert!((a.0 - 1000.0).abs() < 1.0 && (a.1 - (2000.0 - h)).abs() < 1.0, "{a:?} {h}");
+    assert!(b.1 < a.1 && (a.1 - b.1 - 1.6 * h).abs() < 1.0, "{a:?} {b:?}");
+}
+
+#[test]
+fn a_single_line_note_is_a_text_whose_top_left_is_the_notes_point() {
+    let (m, d) = noted("Oak floor");
+    let text = dxf(&d, &m);
+    let r = dxf::read_text(&text).unwrap();
+    let mine: Vec<_> = r.entities.iter().filter(|e| e.layer == "A-ANNO-TEXT").collect();
+    let [Shape::Text { at, height, text, align, angle, font }] = &mine.iter().map(|e| e.shape.clone()).collect::<Vec<_>>()[..] else {
+        panic!("{mine:?}")
+    };
+    assert_eq!(font.as_deref(), Some("Arial"));
+    assert_eq!(text, "Oak floor");
+    // An MTEXT's lines read back on their baselines, a capital below the note's point.
+    assert_eq!(*align, dxf::Align { h: dxf::Horizontal::Left, v: dxf::Vertical::Baseline });
+    assert!((at.0 - 1000.0).abs() < 1.0 && (at.1 - (2000.0 - height)).abs() < 1.0 && angle.abs() < 1e-6, "{at:?} {angle}");
+    // A 2.5 mm capital on paper, at the plan's scale.
+    let scale = crate::graphics::scale_of(&m, m.levels()[0].0);
+    assert!((height - 2.5 * scale).abs() < 0.5, "{height} at 1:{scale}");
+}
+
+#[test]
+fn lettering_in_a_typeface_goes_as_an_mtext_with_its_run_and_the_stroked_as_a_text() {
+    let (m, d) = sample();
+    let text = dxf(&d, &m);
+    let r = dxf::read_text(&text).unwrap();
+    let font_of = |words: &str| {
+        r.entities.iter().find_map(|e| match &e.shape {
+            Shape::Text { text, font, .. } if text.eq_ignore_ascii_case(words) => Some(font.clone()),
+            _ => None,
+        })
+    };
+    // A dimension's number is laid out in the type's face; a room's name is drawn in our single-stroke lettering.
+    assert_eq!(font_of("10300"), Some(Some("Arial".to_string())));
+    assert_eq!(font_of("Kitchen"), Some(None));
+    assert!(text.contains("{\\fArial|b0|i0|c0|p34;10300}"));
+}
+
+#[test]
+fn a_typefaces_name_cannot_break_out_of_its_run() {
+    let m = Model::new("Empty");
+    let view = View { scale: 0.1, cx: 0.0, cy: 0.0, width: 100, height: 100 };
+    let mut d = Drawing::new(view);
+    d.lettering.push(crate::render::Lettering {
+        text: "Fine".into(),
+        at: (50.0, 50.0),
+        height: 10.0,
+        angle: 0.0,
+        align: dxf::Align { h: dxf::Horizontal::Left, v: dxf::Vertical::Baseline },
+        owner: None,
+        color: crate::render::INK,
+        font: Some("Ev;il|\\{x}\n".into()),
+        from: 0,
+    });
+    let r = dxf::read_text(&dxf(&d, &m)).unwrap();
+    assert_eq!(texts(&r).iter().map(|(_, t, _)| *t).collect::<Vec<_>>(), ["Fine"]);
+    assert!(r.left_out.is_empty(), "{:?}", r.left_out);
+}
+
+#[test]
+fn characters_outside_ascii_go_out_as_utf8_which_the_2018_dxf_is() {
+    let (m, d) = noted("Caf\u{e9} 24 m\u{b2}");
+    let text = dxf(&d, &m);
+    assert!(text.contains("Caf\u{e9} 24 m\u{b2}") && !text.contains("\\U+"));
+    let r = dxf::read_text(&text).unwrap();
+    assert!(texts(&r).iter().any(|(_, t, _)| *t == "Caf\u{e9} 24 m\u{b2}"), "{:?}", texts(&r));
+}
+
+#[test]
+fn lettering_that_is_not_a_shape_is_left_out_without_harm() {
+    let m = Model::new("Empty");
+    let view = View { scale: 0.1, cx: 0.0, cy: 0.0, width: 100, height: 100 };
+    let mut d = Drawing::new(view);
+    let ok = crate::render::Lettering {
+        text: "Fine".into(),
+        at: (50.0, 50.0),
+        height: 10.0,
+        angle: 0.0,
+        align: dxf::Align { h: dxf::Horizontal::Left, v: dxf::Vertical::Baseline },
+        owner: None,
+        color: crate::render::INK,
+        font: None,
+        from: 0,
+    };
+    for bad in [
+        crate::render::Lettering { at: (f32::NAN, 0.0), ..ok.clone() },
+        crate::render::Lettering { height: 0.0, ..ok.clone() },
+        crate::render::Lettering { height: f32::INFINITY, ..ok.clone() },
+        crate::render::Lettering { angle: f32::NAN, ..ok.clone() },
+        crate::render::Lettering { text: "  ".into(), ..ok.clone() },
+    ] {
+        d.lettering.push(bad);
+    }
+    d.lettering.push(ok);
+    let r = dxf::read_text(&dxf(&d, &m)).unwrap();
+    assert_eq!(texts(&r).iter().map(|(_, t, _)| *t).collect::<Vec<_>>(), ["Fine"]);
+    // A view that maps nothing writes no text.
+    d.view.scale = f64::NAN;
+    assert!(dxf::read_text(&dxf(&d, &m)).unwrap().entities.is_empty());
 }
