@@ -2,21 +2,33 @@
 //! [`Drawing`] an entity on the AIA layer of its element's category, a line a `LWPOLYLINE` (its weight, true colour and
 //! dashes) and a fill a solid `HATCH`. Lettering stays the strokes the plan draws it in. Pictures are left out, which
 //! [`pictures`] counts for a reply to say.
+//!
+//! A fill of the paper's colour is a raster trick (what is drawn before it is hidden), and a CAD viewer draws a hatch over
+//! the lines under it. So it is never an entity: [`clipped`] bakes the paint order into the geometry, cutting what came
+//! before such a fill out of it.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-use super::{Drawing, Part, Prim, Rgb};
+use super::{Drawing, PAPER, Part, Prim, Rgb, boxes_meet};
 use crate::family::Category;
-use crate::geom::P2;
+use crate::geom::{self, P2};
 use crate::model::{Element, Id, Model};
 use crate::sheet;
+use crate::walls;
 
 /// The line weights a DXF may give, hundredths of a mm.
 const WEIGHTS: [i32; 24] = [0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200, 211];
 
 /// The layer of what belongs to no element, or to one no layer is kept for.
 const MISC: &str = "A-ANNO-MISC";
+
+/// The most pieces paper may cut a line or a ring into; one it would cut into more stays whole.
+const MAX_PIECES: usize = 64;
+
+/// The most corners a paper fill may have unless it's convex: a concave one is cut into triangles, which costs a cube of that.
+const MAX_MASK: usize = 128;
 
 // The handles AutoCAD gives a drawing's tables, dictionaries and two spaces, which readers expect there; the rest are given
 // from `FIRST`.
@@ -43,7 +55,8 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
     let mut ltypes: BTreeMap<String, Vec<f64>> = BTreeMap::new();
     let mut ext: Option<[P2; 2]> = None;
     let mm = |p: &(f32, f32)| (p.0.is_finite() && p.1.is_finite()).then(|| d.view.mm(*p));
-    for (i, prim) in d.prims.iter().enumerate() {
+    for (i, prim) in &clipped(d) {
+        let (i, prim) = (*i, prim.as_ref());
         let owner = d.owners.get(i).copied().flatten();
         let part = d.parts.get(i).copied().unwrap_or_default();
         let base = layer(m, owner);
@@ -225,6 +238,161 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
     });
     section(&mut out, "CLASSES", |_| {});
     out.push_str(&rest);
+    out
+}
+
+/// A fill of the paper's colour, whose convex pieces (px) hide what is drawn before the primitive `at`.
+struct Mask {
+    at: usize,
+    pieces: Vec<Vec<P2>>,
+}
+
+fn is_paper(p: &Prim) -> bool {
+    matches!(p, Prim::Fill { color, .. } if *color == PAPER)
+}
+
+fn px(pts: &[(f32, f32)]) -> Vec<P2> {
+    pts.iter().map(|p| P2(f64::from(p.0), f64::from(p.1))).collect()
+}
+
+fn back(pts: &[P2]) -> Vec<(f32, f32)> {
+    pts.iter().map(|p| (p.0 as f32, p.1 as f32)).collect()
+}
+
+fn finite(pts: &[P2]) -> bool {
+    pts.iter().all(|p| p.0.is_finite() && p.1.is_finite())
+}
+
+/// What the paper fills hide, as pieces: none for a fill that has holes, isn't finite, has no area or is a big concave one.
+fn masks(d: &Drawing) -> Vec<Mask> {
+    let mut out = Vec::new();
+    for (at, prim) in d.prims.iter().enumerate() {
+        let Prim::Fill { rings, color } = prim else { continue };
+        if *color != PAPER {
+            continue;
+        }
+        let rings: Vec<Vec<P2>> = rings.iter().map(|r| px(r)).filter(|r| r.len() >= 3).collect();
+        let turns = |r: &Vec<P2>| geom::area(r) > 0.0;
+        if rings.is_empty() || !rings.iter().all(|r| finite(r)) || rings.iter().any(|r| turns(r) != turns(&rings[0])) {
+            continue;
+        }
+        let mut pieces = Vec::new();
+        for r in &rings {
+            if r.len() <= MAX_MASK || walls::convex_pieces(r).len() <= 1 {
+                pieces.extend(walls::convex_pieces(r).into_iter().filter(|p| geom::area(p).abs() > 0.5));
+            }
+        }
+        if !pieces.is_empty() {
+            out.push(Mask { at, pieces });
+        }
+    }
+    out
+}
+
+/// `line` less the paper `masks` cover; none when they leave it whole.
+fn cut_line(line: &[P2], masks: &[&Mask]) -> Option<Vec<Vec<P2>>> {
+    let mut parts = vec![line.to_vec()];
+    for piece in masks.iter().flat_map(|k| &k.pieces) {
+        parts = parts
+            .into_iter()
+            .flat_map(|l| if boxes_meet(&l, piece) { geom::line_outside_convex(&l, piece) } else { vec![l] })
+            .collect();
+        if parts.len() > MAX_PIECES {
+            return None;
+        }
+    }
+    (parts.len() != 1 || parts[0] != line).then_some(parts)
+}
+
+/// `ring` less the paper `masks` cover, as convex pieces; none when they leave it whole.
+fn cut_ring(ring: &[P2], masks: &[&Mask]) -> Option<Vec<Vec<P2>>> {
+    let (mut parts, mut cut) = (vec![ring.to_vec()], false);
+    for piece in masks.iter().flat_map(|k| &k.pieces) {
+        let mut next = Vec::new();
+        for part in parts {
+            if !boxes_meet(&part, piece) {
+                next.push(part);
+                continue;
+            }
+            let (mut rest, mut hit) = (Vec::new(), false);
+            for convex in walls::convex_pieces(&part) {
+                let (inside, outside) = walls::split(convex.clone(), piece);
+                if inside.is_some() {
+                    hit = true;
+                    rest.extend(outside);
+                } else {
+                    rest.push(convex);
+                }
+            }
+            if hit {
+                cut = true;
+                next.extend(rest);
+            } else {
+                next.push(part);
+            }
+        }
+        parts = next;
+        if parts.len() > MAX_PIECES {
+            return None;
+        }
+    }
+    cut.then_some(parts)
+}
+
+/// The primitives of `d` as a CAD drawing has them (with the index of the one each is of): the paper fills gone, and what each
+/// hid of what came before it cut out of that, so a line a mask crosses is the pieces outside it and a fill is convex pieces,
+/// one hatch apiece.
+fn clipped(d: &Drawing) -> Vec<(usize, Cow<'_, Prim>)> {
+    let masks = masks(d);
+    let mut out = Vec::with_capacity(d.prims.len());
+    for (i, prim) in d.prims.iter().enumerate() {
+        if is_paper(prim) {
+            continue;
+        }
+        let later: Vec<&Mask> = masks[masks.partition_point(|k| k.at <= i)..].iter().collect();
+        if later.is_empty() {
+            out.push((i, Cow::Borrowed(prim)));
+            continue;
+        }
+        match prim {
+            Prim::Line { pts, width, color, dash, closed } => {
+                let mut line = px(pts);
+                if *closed {
+                    line.extend(line.first().copied());
+                }
+                let pieces = (line.len() >= 2 && finite(&line)).then(|| cut_line(&line, &later)).flatten();
+                let Some(pieces) = pieces else {
+                    out.push((i, Cow::Borrowed(prim)));
+                    continue;
+                };
+                for piece in pieces.iter().filter(|p| p.len() >= 2) {
+                    let (width, color, dash) = (*width, *color, dash.clone());
+                    out.push((i, Cow::Owned(Prim::Line { pts: back(piece), width, color, dash, closed: false })));
+                }
+            }
+            Prim::Fill { rings, color } => {
+                let px_rings: Vec<Vec<P2>> = rings.iter().map(|r| px(r)).collect();
+                let turns = |r: &Vec<P2>| geom::area(r) > 0.0;
+                // Holes (rings wound the other way) are left as they are: only a fill of pieces is cut.
+                let plain = px_rings.iter().all(|r| finite(r)) && px_rings.iter().all(|r| turns(r) == turns(&px_rings[0]));
+                let cuts: Vec<Option<Vec<Vec<P2>>>> =
+                    if plain { px_rings.iter().map(|r| cut_ring(r, &later)).collect() } else { Vec::new() };
+                if cuts.iter().all(Option::is_none) {
+                    out.push((i, Cow::Borrowed(prim)));
+                    continue;
+                }
+                let whole: Vec<Vec<(f32, f32)>> =
+                    rings.iter().zip(&cuts).filter(|(_, c)| c.is_none()).map(|(r, _)| r.clone()).collect();
+                if !whole.is_empty() {
+                    out.push((i, Cow::Owned(Prim::Fill { rings: whole, color: *color })));
+                }
+                for piece in cuts.iter().flatten().flatten() {
+                    out.push((i, Cow::Owned(Prim::Fill { rings: vec![back(piece)], color: *color })));
+                }
+            }
+            Prim::Image { .. } => out.push((i, Cow::Borrowed(prim))),
+        }
+    }
     out
 }
 
