@@ -2,7 +2,8 @@
 //! [`Drawing`] an entity on the AIA layer of its element's category, a line a `LWPOLYLINE` (its weight, true colour and
 //! dashes) and a fill a solid `HATCH`. Lettering is the text itself, a `TEXT` (an `MTEXT` for several lines) of style
 //! `Standard` on its element's annotation layer, from the drawing's [`super::Lettering`] records; the strokes the plan draws it
-//! in stay in the picture and are left out here. Pictures are left out, which [`pictures`] counts for a reply to say.
+//! in stay in the picture and are left out here. An aligned or linear dimension is a `DIMENSION` of its type's `DIMSTYLE`, its
+//! lines and ticks held by a block of its own ([`dims`]). Pictures are left out, which [`pictures`] counts for a reply to say.
 //!
 //! A fill of the paper's colour is a raster trick (what is drawn before it is hidden), and a CAD viewer draws a hatch over
 //! the lines under it. So it is never an entity: [`clipped`] bakes the paint order into the geometry, cutting what came
@@ -58,6 +59,8 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
     let mm = |p: &(f32, f32)| (p.0.is_finite() && p.1.is_finite()).then(|| d.view.mm(*p));
     // The lettering goes out as text; a view that cannot place text keeps the strokes it is drawn in.
     let texts = d.view.scale.is_finite() && d.view.scale > 0.0;
+    // A dimension written as an entity keeps its strokes in its own block; one that is not stays as drawn.
+    let mut dims = dims::Dims::of(d, m, texts, &mut w, &mut ext, &mut layers);
     for (i, prim) in &clipped(d) {
         let (i, prim) = (*i, prim.as_ref());
         let owner = d.owners.get(i).copied().flatten();
@@ -76,6 +79,10 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
             }
             continue;
         }
+        let (ents, parent) = match owner.and_then(|o| dims.blocks.get_mut(&o)) {
+            Some(block) => (&mut block.body, block.record),
+            None => (&mut ents, MODEL_SPACE),
+        };
         match prim {
             Prim::Line { pts, width, color, dash, closed } => {
                 let pts: Option<Vec<P2>> = pts.iter().map(mm).collect();
@@ -86,13 +93,13 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
                     name
                 });
                 let h = w.handle();
-                pair(&mut ents, 0, "LWPOLYLINE");
-                entity(&mut ents, h, MODEL_SPACE, &name, ltype.as_deref(), Some(weight(d, *width)), *color);
-                pair(&mut ents, 100, "AcDbPolyline");
-                pair(&mut ents, 90, pts.len());
-                pair(&mut ents, 70, i32::from(*closed));
+                pair(ents, 0, "LWPOLYLINE");
+                entity(ents, h, parent, &name, ltype.as_deref(), Some(weight(d, *width)), *color);
+                pair(ents, 100, "AcDbPolyline");
+                pair(ents, 90, pts.len());
+                pair(ents, 70, i32::from(*closed));
                 for p in &pts {
-                    point2(&mut ents, 10, *p);
+                    point2(ents, 10, *p);
                 }
                 ext = grow(ext, &pts);
                 layers.insert(name);
@@ -105,32 +112,32 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
                 }
                 let name = on(base, part, true);
                 let h = w.handle();
-                pair(&mut ents, 0, "HATCH");
-                entity(&mut ents, h, MODEL_SPACE, &name, None, None, *color);
-                pair(&mut ents, 100, "AcDbHatch");
-                point3(&mut ents, 10, P2(0.0, 0.0));
-                pair(&mut ents, 210, 0);
-                pair(&mut ents, 220, 0);
-                pair(&mut ents, 230, 1);
-                pair(&mut ents, 2, "SOLID");
-                pair(&mut ents, 70, 1);
-                pair(&mut ents, 71, 0);
-                pair(&mut ents, 91, rings.len());
+                pair(ents, 0, "HATCH");
+                entity(ents, h, parent, &name, None, None, *color);
+                pair(ents, 100, "AcDbHatch");
+                point3(ents, 10, P2(0.0, 0.0));
+                pair(ents, 210, 0);
+                pair(ents, 220, 0);
+                pair(ents, 230, 1);
+                pair(ents, 2, "SOLID");
+                pair(ents, 70, 1);
+                pair(ents, 71, 0);
+                pair(ents, 91, rings.len());
                 for (k, ring) in rings.iter().enumerate() {
                     // A polyline path; the first the outermost, the rest inside it by odd parity.
-                    pair(&mut ents, 92, if k == 0 { 2 | 1 } else { 2 });
-                    pair(&mut ents, 72, 0);
-                    pair(&mut ents, 73, 1);
-                    pair(&mut ents, 93, ring.len());
+                    pair(ents, 92, if k == 0 { 2 | 1 } else { 2 });
+                    pair(ents, 72, 0);
+                    pair(ents, 73, 1);
+                    pair(ents, 93, ring.len());
                     for p in ring {
-                        point2(&mut ents, 10, *p);
+                        point2(ents, 10, *p);
                     }
-                    pair(&mut ents, 97, 0);
+                    pair(ents, 97, 0);
                     ext = grow(ext, ring);
                 }
-                pair(&mut ents, 75, 0);
-                pair(&mut ents, 76, 1);
-                pair(&mut ents, 98, 0);
+                pair(ents, 75, 0);
+                pair(ents, 76, 1);
+                pair(ents, 98, 0);
                 layers.insert(name);
             }
             Prim::Image { .. } => {}
@@ -145,6 +152,7 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
         lettering(&mut ents, w.handle(), &name, l, at, height, angle.rem_euclid(360.0));
         layers.insert(name);
     }
+    ents.push_str(&dims.entities);
     let mut tables = String::new();
     table(&mut tables, &mut w, "VPORT", VPORTS, |_, _, _| 0);
     table(&mut tables, &mut w, "LTYPE", LTYPES, |s, w, owner| {
@@ -188,14 +196,15 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
     table(&mut tables, &mut w, "DIMSTYLE", DIMSTYLES, |s, w, owner| {
         pair(s, 0, "DIMSTYLE");
         record(s, 105, w.handle(), owner, "AcDbDimStyleTableRecord", "Standard");
-        1
+        1 + dims.style_records(s, w, owner)
     });
     table(&mut tables, &mut w, "BLOCK_RECORD", BLOCK_RECORDS, |s, _, owner| {
         for (h, name) in [(MODEL_SPACE, "*Model_Space"), (PAPER_SPACE, "*Paper_Space")] {
             pair(s, 0, "BLOCK_RECORD");
             record(s, 5, h, owner, "AcDbBlockTableRecord", name);
         }
-        2
+        dims.block_records(s, owner);
+        2 + dims.blocks.len()
     });
     let mut rest = String::new();
     section(&mut rest, "TABLES", |s| s.push_str(&tables));
@@ -219,6 +228,7 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
             pair(s, 8, "0");
             pair(s, 100, "AcDbBlockEnd");
         }
+        dims.block_section(s);
     });
     section(&mut rest, "ENTITIES", |s| s.push_str(&ents));
     section(&mut rest, "OBJECTS", |s| {
@@ -734,5 +744,8 @@ fn escaped(text: &str, multi: bool) -> String {
     out
 }
 
+mod dims;
+#[cfg(test)]
+mod dims_tests;
 #[cfg(test)]
 mod tests;

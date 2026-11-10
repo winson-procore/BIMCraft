@@ -235,11 +235,42 @@ pub struct Lettering {
     from: usize,
 }
 
+/// An aligned or linear dimension's segment as the dimension states it, kept beside the lines and ticks that draw it, so a CAD
+/// file can hold the dimension itself. Model mm, as the dimension is, whatever the view; not drawn from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DimensionRecord {
+    /// The dimension element it is a segment of.
+    pub owner: Option<Id>,
+    /// The name of its dimension type, which a CAD file's dimension style is named for.
+    pub style: String,
+    /// The way a linear dimension's line runs, radians counter-clockwise from east; none for an aligned one.
+    pub linear: Option<f64>,
+    /// What it measures from and to: on the lines it measures, a line apart from the dimension line.
+    pub from: P2,
+    pub to: P2,
+    /// A point on its dimension line, and where its number is centred.
+    pub line: P2,
+    pub text: P2,
+    /// How long it is.
+    pub measure: f64,
+    /// Its type's sizes where the number is lettered: its capitals' height, the tick, the witness line's gap from what it
+    /// measures and its reach past the dimension line, the number's offset off the line.
+    pub text_height: f64,
+    pub tick_size: f64,
+    pub witness_gap: f64,
+    pub witness_extension: f64,
+    pub text_offset: f64,
+    /// Places after the point its type gives, if it does.
+    pub decimals: Option<u8>,
+}
+
 pub struct Drawing {
     pub view: View,
     pub prims: Vec<Prim>,
     /// The lettering the [`Part::Text`] primitives draw, a record for each string.
     pub lettering: Vec<Lettering>,
+    /// The aligned and linear dimensions the primitives of a dimension draw, a record for each of their segments.
+    pub dimensions: Vec<DimensionRecord>,
     /// The element each primitive draws, for picking and highlighting.
     pub owners: Vec<Option<Id>>,
     /// What each primitive draws of its element, for overrides.
@@ -272,6 +303,7 @@ impl Drawing {
             view,
             prims: Vec::new(),
             lettering: Vec::new(),
+            dimensions: Vec::new(),
             owners: Vec::new(),
             parts: Vec::new(),
             pens: Vec::new(),
@@ -506,6 +538,11 @@ impl Drawing {
         }
         let (lo, hi) = ((lo.0.min(hi.0), lo.1.min(hi.1)), (lo.0.max(hi.0), lo.1.max(hi.1)));
         self.lettering.retain(|l| keep(l.owner) || (l.at.0 >= lo.0 && l.at.0 <= hi.0 && l.at.1 >= lo.1 && l.at.1 <= hi.1));
+        let view = self.view;
+        self.dimensions.retain(|r| {
+            let (x, y) = view.px(r.text);
+            keep(r.owner) || (x >= lo.0 && x <= hi.0 && y >= lo.1 && y <= hi.1)
+        });
     }
 
     /// `text` centred on `(x, y)` px, capitals `height` px tall, turned `angle` radians clockwise
@@ -2039,6 +2076,7 @@ impl SectionOverlay {
             view: b.view,
             prims: b.prims.clone(),
             lettering: b.lettering.clone(),
+            dimensions: b.dimensions.clone(),
             owners: b.owners.clone(),
             parts: b.parts.clone(),
             pens: b.pens.clone(),

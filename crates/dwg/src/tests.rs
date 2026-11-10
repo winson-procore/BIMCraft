@@ -172,6 +172,20 @@ fn a_plans_lettering_survives_as_text_and_mtext_in_the_dwg() {
 }
 
 #[test]
+fn a_plans_dimensions_survive_as_dimension_entities_with_their_blocks_in_the_dwg() {
+    let text = plan_dxf();
+    let count = |t: &str| t.lines().filter(|l| l.trim() == "DIMENSION").count();
+    let before = count(&text);
+    assert!(before >= 3, "the plan has {before} dimensions to carry");
+    let dwg = to_dwg(&text, Limits::DEFAULT).unwrap();
+    let back = String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).into_owned();
+    assert_eq!(count(&back), before);
+    // What they draw is still there: the core reads their blocks back as the same lines on the same layer.
+    let (a, b) = (dxf::read_text(&text).unwrap(), dxf::read(back.as_bytes()).unwrap());
+    assert_eq!(per_layer(&b).get("A-ANNO-DIMS"), per_layer(&a).get("A-ANNO-DIMS"));
+}
+
+#[test]
 fn an_mtext_with_a_font_run_keeps_the_run_through_the_dwg() {
     let run = "{\\fArial|b0|i0|c0|p34;Oak floor}";
     let mut text = room_dxf();
