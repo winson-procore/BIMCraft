@@ -194,6 +194,28 @@ fn aligned(d: &mut Drawing, m: &Model, dim: &Dimension, ink: &Ink) {
                 let [(s0, _), (s1, _)] = pair else { continue };
                 ink.label(d, &m.dimension_extra(dim, i), label, on((s0 + s1) / 2.0, 0.0), n, u);
             }
+            for pair in cross.windows(2) {
+                let [(s0, (a0, b0)), (s1, _)] = pair else { continue };
+                // The measured points stand on one line apart from the dimension line, as far as the first reference's middle.
+                let apart = ((*a0 + *b0) * 0.5 - on(*s0, 0.0)).dot(u);
+                let (size, off) = (ink.t.text_size * ink.mm, ink.t.text_offset * ink.mm);
+                d.dimensions.push(DimensionRecord {
+                    owner: d.owner,
+                    style: if dim.type_name.is_empty() { crate::dims::DIAGONAL.to_string() } else { dim.type_name.clone() },
+                    linear: (dim.kind == DimKind::Linear).then(|| n.1.atan2(n.0)),
+                    from: on(*s0, apart),
+                    to: on(*s1, apart),
+                    line: on(*s1, 0.0),
+                    text: on((s0 + s1) / 2.0, 0.0) + u * (off + size / 2.0),
+                    measure: s1 - s0,
+                    text_height: size,
+                    tick_size: ink.t.tick_size * ink.mm,
+                    witness_gap: ink.t.witness_gap * ink.mm,
+                    witness_extension: ink.t.witness_extension * ink.mm,
+                    text_offset: off,
+                    decimals: ink.t.decimals,
+                });
+            }
         }
         DimString::Baseline => {
             for (k, (&(w, i, j), label)) in lines.iter().zip(&labels).enumerate() {
