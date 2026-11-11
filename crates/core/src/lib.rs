@@ -33,6 +33,7 @@ pub mod dps;
 pub mod dr;
 pub mod drainage;
 pub mod draw;
+pub mod drawing_miner;
 pub mod dxf;
 #[cfg(test)]
 mod eberick_tests;

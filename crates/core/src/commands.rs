@@ -87,6 +87,15 @@ pub static ALL: &[Command] = &[
          fails its own checks (RP-…) or can't be written writes no file; the error starts with its code. The project is not touched",
         crate::rulepack::rule_pack,
     ),
+    other(
+        "drawing_miner",
+        "Drawing Miner",
+        "{corpus, out} mine a CAD corpus described by `corpus/sources.json` into normalized-scene, semantic-graph, space-graph, \
+         overlay, candidate-rules, report and manifest JSON/SVG artifacts under `out`. This CAD-first foundation reads DXF files, \
+         preserves source provenance, evaluates labeled fixtures when an oracle is present, emits exploratory candidate rules only, \
+         and keeps typed diagnostics for non-plan drawings. The project is not touched",
+        crate::drawing_miner::drawing_miner,
+    ),
     other("highrise", "Synthetic Highrise", "{storeys?: 20} replace the project with an original 1–80 storey performance sample", highrise),
     other(
         "tower",
