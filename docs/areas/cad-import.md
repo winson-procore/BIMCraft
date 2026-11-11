@@ -95,6 +95,17 @@ DWG the session's `DwgWriter` turns that text into the file.
   baseline and ordinate strings, and a dimension that can't be placed (a view with no scale, a point that isn't finite) are
   not written as entities and keep their strokes on `A-ANNO-DIMS`, as before. A CAD program that redraws a dimension from its
   style (as AutoCAD does when it is edited) draws it by that style, which is ours by sizes, not by every pen.
+- **Doors, windows and components** go out as `INSERT`s of blocks (`render/dxf/blocks.rs`), not strokes. The strokes of each
+  element (`Drawing::owners`, not its lettering) are put back into the element's own frame: a door or window's is its wall's axis
+  at its offset, turned by the wall's tangent; a component's is `at` turned by `angle`. Instances of one family type that draw
+  the same (to 0.05 mm) share a `BLOCK` named `family: type` (`_2`, ... for another way of drawing it, a hand or facing flipped
+  or a parameter changed; at most 16 a type, 5,000 blocks, 50,000 inserts). Each `INSERT` is at the instance's origin, turned by
+  its angle, at scale 1, on the element's layer (`A-DOOR`, `A-GLAZ`, `A-FURN`, ...), with a `MARK` (the element's mark) and a
+  `TYPE` (`family: type`) attribute. The block declares both as `ATTDEF`s; the `ATTRIB`s are invisible (flag 1), because the
+  plan's own `TEXT` is the lettering and the core's reader draws a visible one as text. The `INSERT` is written where its
+  element's first stroke stood, so what the plan draws over it (the grid across a window) still does. An element that cannot be
+  placed, or past a cap, keeps its strokes. Known limit: libredwg's `dwg2dxf` reads the DWG's inserts and attributes but prints
+  `Invalid ATTRIB.keep_duplicate_records` for each `ATTRIB` acadrust writes in AC1032; acadrust reads them back whole.
 - **The DWG** comes from `crates/dwg`: `bimcraft_dwg::to_dwg` reads the DXF with acadrust's `DxfReader`, sets the document to
   AC1032 and writes it with its `DwgWriter`, under `catch_unwind`, the DXF held to `Limits::dxf_bytes` and the DWG to
   `Limits::dwg_bytes`. It runs in the app's own process: what it reads is the core's DXF, not a stranger's file. A session
@@ -103,7 +114,7 @@ DWG the session's `DwgWriter` turns that text into the file.
   without one says "this build can't write DWG; save as .dxf".
 
 Tests: `render::dxf::tests` reads the sample house's plan back with `dxf::read_text` (layers, entities per layer, mm, extents,
-dashes, weights); `render::dxf::dims_tests` reads the DIMENSION, DIMSTYLE and block records as a plain group-code walk; `plan_export_tests.rs` drives `save` with a fake writer; `crates/dwg`'s tests round-trip the plan through
+dashes, weights); `render::dxf::dims_tests` reads the DIMENSION, DIMSTYLE and block records as a plain group-code walk; `render::dxf::blocks_tests` does the same for the blocks, inserts and attributes; `plan_export_tests.rs` drives `save` with a fake writer; `crates/dwg`'s tests round-trip the plan through
 `to_dxf`, and `apps/bimcraft-cli/tests/dwg.rs` saves the sample as DWG from the command line. Outside our own code, libredwg's
 `dwg2dxf` reads the DWG back with every entity on its layer, and `import_cad` of it into a new project draws the plan again.
 Still to come: DWG 2000 (AC1015).

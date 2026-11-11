@@ -29,5 +29,6 @@ ACadSharp's MIT notice): a DWG drawing as the ASCII DXF `bimcraft-core`'s `dxf.r
 - The tests round-trip drawings made by acadrust's own writer. Files made by CAD programs are read only when
   `BIMCRAFT_DWG_SAMPLES` names a folder of them, which CI does not set.
 - A DWG written here has been read back by acadrust and by libredwg's `dwg2dxf`, not yet opened in AutoCAD, BricsCAD or the
-  ODA viewer. It is always AutoCAD 2018 (AC1032); 2000 (AC1015) is still to come.
+  ODA viewer. libredwg's `dwg2dxf` prints `Invalid ATTRIB.keep_duplicate_records` for every `ATTRIB` acadrust writes (an
+  insert's `MARK` and `TYPE`) while keeping them; its own writer's ATTRIBs read clean, so the bytes differ. It is always AutoCAD 2018 (AC1032); 2000 (AC1015) is still to come.
 

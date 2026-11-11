@@ -186,6 +186,26 @@ fn a_plans_dimensions_survive_as_dimension_entities_with_their_blocks_in_the_dwg
 }
 
 #[test]
+fn a_plans_doors_windows_and_furniture_survive_as_inserts_of_named_blocks_with_their_attributes_in_the_dwg() {
+    let text = plan_dxf();
+    let count = |t: &str, what: &str| t.lines().filter(|l| l.trim() == what).count();
+    let (inserts, attribs) = (count(&text, "INSERT"), count(&text, "ATTRIB"));
+    assert!(inserts >= 10, "the plan has {inserts} inserts to carry");
+    assert_eq!(attribs, 2 * inserts);
+    let dwg = to_dwg(&text, Limits::DEFAULT).unwrap();
+    let back = String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).into_owned();
+    assert_eq!(count(&back, "INSERT"), inserts);
+    assert_eq!(count(&back, "ATTRIB"), attribs);
+    for tag in ["MARK", "TYPE"] {
+        assert!(back.lines().any(|l| l.trim() == tag), "{tag} was lost");
+    }
+    let (a, b) = (dxf::read_text(&text).unwrap(), dxf::read(back.as_bytes()).unwrap());
+    for layer in ["A-DOOR", "A-GLAZ"] {
+        assert_eq!(per_layer(&b).get(layer), per_layer(&a).get(layer), "{layer}");
+    }
+}
+
+#[test]
 fn an_mtext_with_a_font_run_keeps_the_run_through_the_dwg() {
     let run = "{\\fArial|b0|i0|c0|p34;Oak floor}";
     let mut text = room_dxf();
