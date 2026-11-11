@@ -54,4 +54,4 @@ tags, three dimensions and a note. The sheet `A101` holds the plan (`--save` a `
 ## Not yet
 
 No stairs, shafts, structure or MEP; one storey; door swing and hand are BIMCraft's defaults; no hospitals, datacenters or airports;
-no rule packs or batch runs. `report.json` says so in `capability_notes`.
+no batch runs, and the rules are still hard-coded: the seed rule packs of [rule packs](rule-packs.md) are written but not read. `report.json` says so in `capability_notes`.

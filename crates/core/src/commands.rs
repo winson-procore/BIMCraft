@@ -77,6 +77,16 @@ pub static ALL: &[Command] = &[
          The project is not touched",
         crate::generate::generate,
     ),
+    other(
+        "rule_pack",
+        "Rule Pack Seed Library",
+        "{path} write the frontier-model rule pack seed library to the directory `path`: rule-pack-manifest.json, \
+         validation-report.json and packs/<archetype>.json for office, clinic, hospital, datacenter and airport. Each pack is a seed, \
+         never hard: its rules are exploratory, or soft when a generator check enforces them (`deterministic_checker`), each with the \
+         model proposals it came from and the conflicts among the models. The files are fixed: the same bytes every time. A library that \
+         fails its own checks (RP-…) or can't be written writes no file; the error starts with its code. The project is not touched",
+        crate::rulepack::rule_pack,
+    ),
     other("highrise", "Synthetic Highrise", "{storeys?: 20} replace the project with an original 1–80 storey performance sample", highrise),
     other(
         "tower",

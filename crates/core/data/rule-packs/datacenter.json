@@ -1,0 +1,226 @@
+{
+  "archetype": "datacenter",
+  "rules": [
+    {
+      "id": "datacenter.data-hall-through-a-mantrap",
+      "category": "security",
+      "subject": "data_hall",
+      "predicate": "reached_only_through",
+      "object": "mantrap",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.85,
+      "rationale": "People enter a data hall only through a mantrap, a two-door vestibule where one door must close before the other opens, so entry is checked one person at a time.",
+      "exceptions": ["Freight entries to the hall, which are controlled by other means"],
+      "source_proposals": ["claude-opus#datacenter/data-hall-reached-only-through-mantrap", "claude-sonnet#datacenter/mantrap-before-data-hall", "claude-haiku#datacenter/data-hall-separate-entry"]
+    },
+    {
+      "id": "datacenter.mantrap-behind-the-secure-entry",
+      "category": "security",
+      "subject": "mantrap",
+      "predicate": "reached_only_through",
+      "object": "secure_entry",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "The mantrap is the last of layered controls: the secure entry and its desk come first, then the mantrap, then the hall. Which of the entry and the desk the mantrap hangs off varies between proposals.",
+      "exceptions": ["Small sites with the desk and the entry in one room"],
+      "source_proposals": ["claude-opus#datacenter/mantrap-at-secure-entry", "claude-sonnet#datacenter/layered-secure-entry", "claude-haiku#datacenter/secure-entry-mantrap"]
+    },
+    {
+      "id": "datacenter.offices-and-visitors-outside-the-secure-zone",
+      "category": "separation",
+      "subject": "office",
+      "predicate": "separated_from",
+      "object": "data_hall",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.8,
+      "rationale": "Offices and the visitor lobby sit on the public side of the mantrap, so people who do not work on the equipment have no route to the data hall.",
+      "exceptions": ["Operators who need a desk with a view of the hall"],
+      "source_proposals": ["claude-opus#datacenter/office-landside-of-mantrap", "claude-sonnet#datacenter/support-offices-outside-secure", "claude-sonnet#datacenter/visitor-lobby-isolated", "claude-haiku#datacenter/admin-office-separate"]
+    },
+    {
+      "id": "datacenter.electrical-rooms-beside-the-data-hall",
+      "category": "adjacency",
+      "subject": "electrical_room",
+      "predicate": "adjacent_to",
+      "object": "data_hall",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.7,
+      "rationale": "Switchgear, UPS and battery rooms are rooms of their own, fire-rated, next to the halls they feed, which shortens busway runs and keeps maintenance out of the hall. Whether this is adjacent or separate is a matter of wording in the proposals, see the conflict ledger.",
+      "exceptions": ["Modular designs that put power inside the unit"],
+      "source_proposals": ["claude-opus#datacenter/electrical-rooms-adjacent-data-hall", "claude-haiku#datacenter/power-distribution-data-hall-adjacent", "claude-sonnet#datacenter/electrical-room-separated-from-hall", "claude-haiku#datacenter/battery-backup-accessible"]
+    },
+    {
+      "id": "datacenter.air-handling-beside-the-data-hall",
+      "category": "adjacency",
+      "subject": "mechanical_room",
+      "predicate": "adjacent_to",
+      "object": "data_hall",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.65,
+      "rationale": "Cooling air handlers sit immediately beside the hall they serve, so duct and pipe runs are short and airflow is predictable. Chillers and other wet plant are a separate matter, see the next rule.",
+      "exceptions": ["Rooftop or yard cooling plant reached by risers", "In-row cooling inside the hall"],
+      "source_proposals": ["claude-opus#datacenter/mechanical-rooms-adjacent-data-hall", "claude-sonnet#datacenter/cooling-adjacent-to-hall", "claude-haiku#datacenter/crac-crah-accessible"]
+    },
+    {
+      "id": "datacenter.heavy-plant-outside-the-hall",
+      "category": "separation",
+      "subject": "heavy_plant",
+      "predicate": "separated_from",
+      "object": "data_hall",
+      "condition": "generators and chillers",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.7,
+      "rationale": "Generators and chillers are noisy, heavy and wet, so they are in a yard or plant room apart from the hall, with fuel storage apart from the generators.",
+      "exceptions": ["Containerised plant placed against the building"],
+      "source_proposals": ["claude-sonnet#datacenter/generator-yard-outside", "claude-haiku#datacenter/chiller-mechanical-separate", "claude-opus#datacenter/generators-separated-from-fuel-storage"]
+    },
+    {
+      "id": "datacenter.cooling-and-electrical-in-separate-rooms",
+      "category": "systems",
+      "subject": "cooling_room",
+      "predicate": "separated_from",
+      "object": "electrical_room",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.6,
+      "rationale": "Cooling and electrical plant do not share a room, so each can be maintained independently and water stays away from switchgear.",
+      "exceptions": ["Small data centers"],
+      "source_proposals": ["claude-haiku#datacenter/electrical-cooling-separate"]
+    },
+    {
+      "id": "datacenter.redundant-electrical-a-b-paths",
+      "category": "systems",
+      "subject": "electrical_path_a",
+      "predicate": "separated_from",
+      "object": "electrical_path_b",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.75,
+      "rationale": "The A and B electrical feeds run in physically separate rooms and routes, so one fire, flood or error cannot take both out and the hall keeps redundant power.",
+      "exceptions": ["Facilities that do not claim path diversity"],
+      "source_proposals": ["claude-opus#datacenter/ab-paths-physically-separated", "claude-sonnet#datacenter/power-path-a-b-separate", "claude-opus#datacenter/redundant-electrical-paths"]
+    },
+    {
+      "id": "datacenter.redundant-cooling-paths",
+      "category": "systems",
+      "subject": "mechanical_room_a",
+      "predicate": "separated_from",
+      "object": "mechanical_room_b",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.7,
+      "rationale": "Cooling is redundant too: two independent mechanical rooms and routes serve each hall, so the loss of one leaves the hall cooled.",
+      "exceptions": ["Facilities without a cooling redundancy requirement"],
+      "source_proposals": ["claude-opus#datacenter/redundant-cooling-paths", "claude-sonnet#datacenter/cooling-path-redundant", "claude-haiku#datacenter/redundant-path-diversity"]
+    },
+    {
+      "id": "datacenter.loading-dock-on-a-service-route",
+      "category": "flow",
+      "subject": "loading_dock",
+      "predicate": "directly_accessible_from",
+      "object": "service_corridor",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.75,
+      "rationale": "Equipment arrives at a dock that opens onto a service corridor leading toward the hall, and not through the offices or the entry.",
+      "exceptions": [],
+      "source_proposals": ["claude-sonnet#datacenter/dock-to-hall-service-path", "claude-haiku#datacenter/loading-service-access", "claude-opus#datacenter/loading-dock-service-corridor"]
+    },
+    {
+      "id": "datacenter.staging-room-beside-the-dock",
+      "category": "flow",
+      "subject": "staging_room",
+      "predicate": "adjacent_to",
+      "object": "loading_dock",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.75,
+      "rationale": "New equipment is unpacked and tested in a staging room by the dock, before it is carried into the data hall, so cardboard and dust stay out of the hall.",
+      "exceptions": [],
+      "source_proposals": ["claude-opus#datacenter/staging-room-between-dock-and-hall", "claude-sonnet#datacenter/staging-room-before-hall"]
+    },
+    {
+      "id": "datacenter.operations-center-outside-the-hall",
+      "category": "program",
+      "subject": "network_operations_center",
+      "predicate": "separated_from",
+      "object": "data_hall",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.5,
+      "rationale": "Operators work in a room with comfort heating and cooling and not among the racks. Where it sits relative to the hall and the entry is contested, see the conflict ledger.",
+      "exceptions": ["A single desk inside a small hall", "A remote operations center"],
+      "source_proposals": ["claude-opus#datacenter/noc-separated-from-data-hall", "claude-sonnet#datacenter/noc-overlooks-hall"]
+    },
+    {
+      "id": "datacenter.security-room-sees-the-mantrap",
+      "category": "security",
+      "subject": "security_room",
+      "predicate": "adjacent_to",
+      "object": "mantrap",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.6,
+      "rationale": "Whoever watches the cameras and the doors sits beside the mantrap and the main entry, so they see who is going in and can respond.",
+      "exceptions": ["Remote security monitoring"],
+      "source_proposals": ["claude-opus#datacenter/security-room-oversees-mantrap", "claude-haiku#datacenter/surveillance-monitoring-central"]
+    },
+    {
+      "id": "datacenter.meet-me-room-at-the-hall-edge",
+      "category": "equipment",
+      "subject": "meet_me_room",
+      "predicate": "adjacent_to",
+      "object": "data_hall",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.55,
+      "rationale": "Where carriers connect (the meet-me room) and the network distribution sit at the edge of the hall, so the network runs into the hall are short.",
+      "exceptions": ["Facilities with no external carriers"],
+      "source_proposals": ["claude-opus#datacenter/meetme-at-hall-edge", "claude-haiku#datacenter/network-distribution-central"]
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "datacenter.conflict.electrical-room-and-hall",
+      "topic": "Electrical room next to the hall, or separate from it",
+      "rule_ids": ["datacenter.electrical-rooms-beside-the-data-hall"],
+      "positions": [
+        {"proposal": "claude-opus#datacenter/electrical-rooms-adjacent-data-hall", "position": "Adjacent to the hall, for short runs (confidence 0.9)."},
+        {"proposal": "claude-haiku#datacenter/power-distribution-data-hall-adjacent", "position": "Immediately adjacent, to limit cable runs and voltage drop (confidence 0.9)."},
+        {"proposal": "claude-sonnet#datacenter/electrical-room-separated-from-hall", "position": "Separate from the hall as the predicate says, but its rationale puts the rooms next to the halls and not inside them (confidence 0.75)."}
+      ],
+      "status": "resolved_in_pack",
+      "resolution": "Adjacent, and a room of its own: the literal predicates differ and the rationales do not. The rule uses adjacent_to; the separate-room point is in its rationale."
+    },
+    {
+      "id": "datacenter.conflict.cooling-plant",
+      "topic": "Cooling plant beside the hall, or apart from it",
+      "rule_ids": ["datacenter.air-handling-beside-the-data-hall", "datacenter.heavy-plant-outside-the-hall"],
+      "positions": [
+        {"proposal": "claude-opus#datacenter/mechanical-rooms-adjacent-data-hall", "position": "Mechanical rooms adjacent to the hall, on at least two sides."},
+        {"proposal": "claude-sonnet#datacenter/water-away-from-it", "position": "The hall is not directly accessible from the mechanical room, to limit leaks; contested, as liquid cooling puts water in the hall (confidence 0.4)."},
+        {"proposal": "claude-haiku#datacenter/chiller-mechanical-separate", "position": "The chiller room is separated from the hall."}
+      ],
+      "status": "resolved_in_pack",
+      "resolution": "Split by plant: air handlers are adjacent, and chillers and generators are apart. The wet-plant-door point of the sonnet proposal is not adopted, for its low confidence and its own caveat."
+    },
+    {
+      "id": "datacenter.conflict.operations-center-placement",
+      "topic": "Where the operations center sits",
+      "rule_ids": ["datacenter.operations-center-outside-the-hall", "datacenter.security-room-sees-the-mantrap"],
+      "positions": [
+        {"proposal": "claude-opus#datacenter/noc-separated-from-data-hall", "position": "A separate room, usually with glass onto the hall floor (confidence 0.7)."},
+        {"proposal": "claude-sonnet#datacenter/noc-overlooks-hall", "position": "In the secured area, in view of the entry control, outside the hall (confidence 0.45)."},
+        {"proposal": "claude-haiku#datacenter/surveillance-monitoring-central", "position": "The monitoring center near the main entry (confidence 0.9)."}
+      ],
+      "status": "open",
+      "resolution": "Only that it is not inside the hall is adopted. Whether it faces the hall or the entry is left open, and the monitoring role is a separate rule."
+    }
+  ]
+}

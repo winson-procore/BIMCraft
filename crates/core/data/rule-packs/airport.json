@@ -1,0 +1,240 @@
+{
+  "archetype": "airport",
+  "rules": [
+    {
+      "id": "airport.landside-airside-split",
+      "category": "security",
+      "subject": "landside",
+      "predicate": "separated_from",
+      "object": "airside",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.9,
+      "rationale": "The public landside and the restricted airside are separate zones with no door between them; the only way across is through security screening.",
+      "exceptions": ["Controlled staff and crew entries"],
+      "source_proposals": ["claude-opus#airport/landside-airside-split", "claude-sonnet#airport/landside-airside-split", "claude-haiku#airport/landside-airside-split"]
+    },
+    {
+      "id": "airport.security-is-the-only-crossing",
+      "category": "security",
+      "subject": "airside",
+      "predicate": "reached_only_through",
+      "object": "security_screening",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.9,
+      "rationale": "A departing passenger on the landside reaches the airside and the gates only by passing security screening, which is the single choke point of that route.",
+      "exceptions": ["Staff and crew use separate controlled entries", "Transfer passengers arriving airside have their own arrangements"],
+      "source_proposals": ["claude-sonnet#airport/security-only-crossing", "claude-opus#airport/security-at-airside-boundary", "claude-haiku#airport/departures-security-access"]
+    },
+    {
+      "id": "airport.check-in-landside-before-security",
+      "category": "flow",
+      "subject": "check_in",
+      "predicate": "directly_accessible_from",
+      "object": "departures_hall",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.85,
+      "rationale": "Check-in is on the landside, in the departures hall, and passengers reach it before they reach security screening.",
+      "exceptions": ["Off-airport or remote check-in, which leaves only bag drop"],
+      "source_proposals": ["claude-opus#airport/checkin-before-security", "claude-opus#airport/checkin-landside", "claude-sonnet#airport/checkin-before-security", "claude-haiku#airport/check-in-public-landside"]
+    },
+    {
+      "id": "airport.departures-hall-by-the-kerb",
+      "category": "adjacency",
+      "subject": "departures_hall",
+      "predicate": "adjacent_to",
+      "object": "departures_kerb",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.6,
+      "rationale": "The departures hall is next to the kerb where passengers are dropped off, so they come in with their bags by the shortest way.",
+      "exceptions": ["Terminals reached by rail or by a transit link"],
+      "source_proposals": ["claude-sonnet#airport/departures-hall-near-kerb"]
+    },
+    {
+      "id": "airport.arrivals-and-departures-routes-apart",
+      "category": "separation",
+      "subject": "arrivals_route",
+      "predicate": "must_not_share_route_with",
+      "object": "departures_route",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.8,
+      "rationale": "Arriving passengers, who have not been screened, never share a route with departing ones on the airside, and their landside routes do not cross.",
+      "exceptions": ["Small terminals sharing one hall and managing the flows by time"],
+      "source_proposals": ["claude-opus#airport/arrivals-separated-from-departures", "claude-sonnet#airport/arrivals-departures-separated"]
+    },
+    {
+      "id": "airport.international-arrivals-through-immigration",
+      "category": "flow",
+      "subject": "international_arrivals",
+      "predicate": "reached_only_through",
+      "object": "immigration",
+      "condition": "international arrivals",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.75,
+      "rationale": "An arriving international passenger passes immigration first, and only then reaches the baggage reclaim and the landside.",
+      "exceptions": ["Preclearance or transit arrivals handled elsewhere"],
+      "source_proposals": ["claude-opus#airport/immigration-before-baggage-international", "claude-sonnet#airport/arrivals-path-through-border-and-baggage", "claude-haiku#airport/customs-immigration-arrivals"]
+    },
+    {
+      "id": "airport.customs-after-baggage-reclaim",
+      "category": "flow",
+      "subject": "customs",
+      "predicate": "reached_only_through",
+      "object": "baggage_reclaim",
+      "condition": "international arrivals",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.75,
+      "rationale": "Customs comes after the baggage reclaim, because a passenger must have their bags before they can be inspected.",
+      "exceptions": ["Hand-baggage-only passengers who skip the reclaim"],
+      "source_proposals": ["claude-opus#airport/customs-after-baggage-international", "claude-sonnet#airport/baggage-reclaim-before-customs"]
+    },
+    {
+      "id": "airport.reclaim-beside-the-arrivals-hall",
+      "category": "adjacency",
+      "subject": "baggage_reclaim",
+      "predicate": "adjacent_to",
+      "object": "arrivals_hall",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.65,
+      "rationale": "The baggage reclaim sits beside the arrivals hall, where passengers leave the secured area for the public landside.",
+      "exceptions": [],
+      "source_proposals": ["claude-opus#airport/baggage-reclaim-airside-landside-boundary", "claude-haiku#airport/arrivals-baggage-claim"]
+    },
+    {
+      "id": "airport.baggage-handling-behind-check-in",
+      "category": "flow",
+      "subject": "baggage_handling",
+      "predicate": "adjacent_to",
+      "object": "check_in",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.6,
+      "rationale": "Bags tagged at check-in drop onto the sortation system directly behind the counters, so the landside bag path is short. Its relation to the make-up area is open, see the conflict ledger.",
+      "exceptions": ["Remote bag halls linked by long conveyors"],
+      "source_proposals": ["claude-opus#airport/baggage-handling-behind-checkin", "claude-sonnet#airport/checkin-linked-to-baggage-screening"]
+    },
+    {
+      "id": "airport.baggage-make-up-near-the-apron",
+      "category": "adjacency",
+      "subject": "baggage_makeup",
+      "predicate": "adjacent_to",
+      "object": "apron",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.55,
+      "rationale": "The make-up area, where bags are sorted to flights, is close to the apron, so bags travel a short enclosed route to the aircraft, and it is back-of-house.",
+      "exceptions": ["Remote bag halls or off-airport sorting"],
+      "source_proposals": ["claude-sonnet#airport/baggage-hall-below-or-behind"]
+    },
+    {
+      "id": "airport.hold-baggage-screened-before-make-up",
+      "category": "security",
+      "subject": "baggage_makeup",
+      "predicate": "reached_only_through",
+      "object": "hold_baggage_screening",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.65,
+      "rationale": "Checked bags are screened before they reach the make-up area, so no unscreened bag is loaded.",
+      "exceptions": [],
+      "source_proposals": ["claude-sonnet#airport/baggage-screening-before-makeup"]
+    },
+    {
+      "id": "airport.gates-on-the-concourse",
+      "category": "access",
+      "subject": "gate",
+      "predicate": "directly_accessible_from",
+      "object": "concourse",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.85,
+      "rationale": "Every gate opens onto the airside concourse, so passengers walk from security to their gate along one connected route.",
+      "exceptions": ["Bus gates reached from a ground-level lounge"],
+      "source_proposals": ["claude-opus#airport/departures-gates-airside", "claude-sonnet#airport/gates-on-concourse", "claude-haiku#airport/concourse-gates-connected", "claude-haiku#airport/gates-clustered-concourse"]
+    },
+    {
+      "id": "airport.concessions-on-the-airside-passenger-path",
+      "category": "program",
+      "subject": "concessions",
+      "predicate": "directly_accessible_from",
+      "object": "airside_concourse",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.65,
+      "rationale": "Shops and food are airside, on the walk between security and the gates, so passengers who have been screened can use them before they board.",
+      "exceptions": ["Landside shops for meeters and greeters"],
+      "source_proposals": ["claude-opus#airport/concessions-after-security", "claude-sonnet#airport/airside-retail-on-passenger-path", "claude-haiku#airport/retail-dining-concourse"]
+    },
+    {
+      "id": "airport.staff-entries-apart-from-passengers",
+      "category": "separation",
+      "subject": "staff_entry",
+      "predicate": "separated_from",
+      "object": "public_entry",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "Staff and crew have their own entry and screening, and their routes do not cross the passenger routes of the airside.",
+      "exceptions": [],
+      "source_proposals": ["claude-opus#airport/staff-route-does-not-cross-sterile", "claude-sonnet#airport/staff-airside-entry-separate", "claude-haiku#airport/employee-entry-separate"]
+    },
+    {
+      "id": "airport.apron-reached-from-airside-only",
+      "category": "security",
+      "subject": "apron_access",
+      "predicate": "not_directly_accessible_from",
+      "object": "landside",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "The apron and the aircraft are reached from the airside only, never straight from a landside space.",
+      "exceptions": ["Staff vehicle gates under control"],
+      "source_proposals": ["claude-opus#airport/apron-access-airside-only"]
+    },
+    {
+      "id": "airport.domestic-and-international-piers-apart",
+      "category": "separation",
+      "subject": "international_pier",
+      "predicate": "separated_from",
+      "object": "domestic_pier",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.6,
+      "rationale": "International and domestic passengers are kept on separate piers or levels, so passengers who have been through border control do not mix with those who have not.",
+      "exceptions": ["Flexible gates swing between the two uses"],
+      "source_proposals": ["claude-sonnet#airport/dom-intl-flow-split"]
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "airport.conflict.security-direction",
+      "topic": "Which side of the screening is which",
+      "rule_ids": ["airport.security-is-the-only-crossing"],
+      "positions": [
+        {"proposal": "claude-opus#airport/security-at-airside-boundary", "position": "Security screening is reached only through the landside (confidence 0.98)."},
+        {"proposal": "claude-sonnet#airport/security-only-crossing", "position": "The airside is reached only through security screening (confidence 0.9)."},
+        {"proposal": "claude-haiku#airport/security-screening-entry-control", "position": "The checkpoint is reached only through the airside, though its rationale calls it the single gateway between landside and airside (confidence 0.95)."}
+      ],
+      "status": "resolved_in_pack",
+      "resolution": "The direction is landside, then screening, then airside. The haiku predicate runs the wrong way and its own rationale disagrees with it, so it is not adopted."
+    },
+    {
+      "id": "airport.conflict.baggage-placement",
+      "topic": "Where the baggage system sits",
+      "rule_ids": ["airport.baggage-handling-behind-check-in", "airport.baggage-make-up-near-the-apron"],
+      "positions": [
+        {"proposal": "claude-opus#airport/baggage-handling-behind-checkin", "position": "Directly behind the check-in counters (confidence 0.9)."},
+        {"proposal": "claude-sonnet#airport/baggage-hall-below-or-behind", "position": "The make-up area close to the apron (confidence 0.7)."}
+      ],
+      "status": "open",
+      "resolution": "Both are kept as separate rules. They are compatible if the system is two spaces joined by a conveyor, and a rule pack that models it as one space cannot meet both."
+    }
+  ]
+}
