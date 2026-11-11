@@ -33,5 +33,9 @@ ACadSharp's MIT notice): a DWG drawing as the ASCII DXF `bimcraft-core`'s `dxf.r
   insert's `MARK` and `TYPE`) while keeping them; its own writer's ATTRIBs read clean, so the bytes differ. Nothing the DXF says changes that: a `280` version
   group before the tag, as the reference orders it, left all 40 errors in place (acadrust's DXF reader ignores it), and
   acadrust's `write_attribute_entity` (0.6.6 and 0.6.8 alike) ends at the lock-position bit where libredwg seems to read one more
-  byte (an inference from the garbage values, not confirmed), so it would take a change in acadrust. It is always AutoCAD 2018 (AC1032); 2000 (AC1015) is still to come.
+  byte (an inference from the garbage values, not confirmed), so it would take a change in acadrust. In paper space it costs more
+  than a diagnostic: libredwg files those `ATTRIB`s under model space (13 of a sheet's 17 paper-space entities stayed), so a sheet's
+  title block letters its words in its block and writes no attribute. Paper space and its `VIEWPORT`s (acadrust's writer takes
+  the `67 = 1` entities, owner `1B`, and the viewports' places, sizes, scales and window centres) read back whole from both
+  acadrust and libredwg, but no `LAYOUT` object is written and no CAD program has opened one. It is always AutoCAD 2018 (AC1032); 2000 (AC1015) is still to come.
 

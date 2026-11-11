@@ -27,6 +27,10 @@ const WEIGHTS: [i32; 24] = [0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60,
 /// The layer of what belongs to no element, or to one no layer is kept for.
 const MISC: &str = "A-ANNO-MISC";
 
+/// The layers of a sheet's title block and of its viewports (and the titles under them).
+const TITLE_LAYER: &str = "G-ANNO-TTLB";
+const VIEWPORT_LAYER: &str = "G-ANNO-VPRT";
+
 /// The most pieces paper may cut a line or a ring into; one it would cut into more stays whole.
 const MAX_PIECES: usize = 64;
 
@@ -52,192 +56,281 @@ const FIRST: u64 = 0x30;
 
 /// The plan `d` of `m` as a DXF file's text.
 pub fn dxf(d: &Drawing, m: &Model) -> String {
-    let mut w = Out::default();
-    let mut ents = String::new();
-    let mut layers: BTreeSet<String> = BTreeSet::from(["0".to_string()]);
-    let mut ltypes: BTreeMap<String, Vec<f64>> = BTreeMap::new();
-    let mut ext: Option<[P2; 2]> = None;
-    let mm = |p: &(f32, f32)| (p.0.is_finite() && p.1.is_finite()).then(|| d.view.mm(*p));
-    // The lettering goes out as text; a view that cannot place text keeps the strokes it is drawn in.
-    let texts = d.view.scale.is_finite() && d.view.scale > 0.0;
-    // A dimension written as an entity keeps its strokes in its own block; one that is not stays as drawn.
-    let mut dims = dims::Dims::of(d, m, texts, &mut w, &mut ext, &mut layers);
-    let clip = clipped(d);
-    // A door, window or piece of furniture is an INSERT of a block that all of a kind share; what it draws is the block's.
-    let mut blocks = blocks::Blocks::of(d, m, texts, &clip, &mut w, &mut ltypes, &mut layers);
-    for (i, prim) in &clip {
-        let (i, prim) = (*i, prim.as_ref());
-        let owner = d.owners.get(i).copied().flatten();
-        let part = d.parts.get(i).copied().unwrap_or_default();
-        let base = layer(m, owner);
-        if texts && part == Part::Text {
-            // Not an entity, but still what the drawing's extents are the box of.
-            let rings: Vec<&[(f32, f32)]> = match prim {
-                Prim::Line { pts, .. } => vec![pts],
-                Prim::Fill { rings, .. } => rings.iter().map(Vec::as_slice).collect(),
-                Prim::Image { .. } => Vec::new(),
-            };
-            for ring in rings {
-                let ring: Option<Vec<P2>> = ring.iter().map(mm).collect();
-                ext = grow(ext, &ring.unwrap_or_default());
-            }
-            continue;
+    let mut doc = Doc::default();
+    doc.add(d, m, MODEL_SPACE, P2(0.0, 0.0));
+    doc.finish()
+}
+
+/// Sheet `e` of `m` as a DXF file's text: the title block, the views' viewports and what is drawn on the paper in paper space, the
+/// views themselves in model space.
+pub fn sheet_dxf(e: sheet::Export, m: &Model) -> String {
+    sheets::write(e, m)
+}
+
+/// What the drawings of one file share: its handles, layers and line types, and the names its blocks and dimension styles take,
+/// which two drawings in a file must not give twice.
+pub(super) struct Shared {
+    w: Out,
+    layers: BTreeSet<String>,
+    ltypes: BTreeMap<String, Vec<f64>>,
+    names: Names,
+}
+
+impl Default for Shared {
+    fn default() -> Shared {
+        Shared { w: Out::default(), layers: BTreeSet::from(["0".to_string()]), ltypes: BTreeMap::new(), names: Names::default() }
+    }
+}
+
+/// The names a file has given, compared as a CAD program does, without case.
+#[derive(Default)]
+pub(super) struct Names {
+    /// The blocks', each in capitals.
+    blocks: BTreeSet<String>,
+    /// The dimension styles', each in capitals, and what each dimension type is called in the file.
+    styles: BTreeSet<String>,
+    style_of: BTreeMap<String, String>,
+    /// How many dimension blocks (`*D1`, `*D2`, ...) there are.
+    dimensions: usize,
+}
+
+/// A file: the drawings added to it, each in a space of its own, and what they share.
+#[derive(Default)]
+struct Doc {
+    shared: Shared,
+    /// What model space and paper space hold, as the box round it.
+    ext: Option<[P2; 2]>,
+    paper_ext: Option<[P2; 2]>,
+    ents: String,
+    dims: Vec<dims::Dims>,
+    blocks: Vec<blocks::Blocks>,
+    title: Option<sheets::TitleBlock>,
+}
+
+/// `d` moved `by` mm: what its pixels come back to, and its dimensions' points.
+fn translate(d: &mut Drawing, by: P2) {
+    d.view.cx += by.0;
+    d.view.cy += by.1;
+    for r in &mut d.dimensions {
+        for p in [&mut r.from, &mut r.to, &mut r.line, &mut r.text] {
+            *p = P2(p.0 + by.0, p.1 + by.1);
         }
-        let Some(ink) = ink(d, prim, part, base) else { continue };
-        ext = ink.grow(ext);
-        let (ents, parent) = match owner {
-            Some(o) if blocks.holds(o) => {
-                if let Some(text) = blocks.take(o) {
-                    ents.push_str(&text);
+    }
+}
+
+impl Doc {
+    /// `d`'s entities, in the space whose block record is `space` (model or paper). `shift` is how far [`translate`] has moved
+    /// the drawing, which what stands in the model by its own coordinates (a door, a window) must follow.
+    fn add(&mut self, d: &Drawing, m: &Model, space: u64, shift: P2) {
+        let mut ext = if space == PAPER_SPACE { self.paper_ext } else { self.ext };
+        let mut ents = String::new();
+        let sh = &mut self.shared;
+        let mm = |p: &(f32, f32)| (p.0.is_finite() && p.1.is_finite()).then(|| d.view.mm(*p));
+        // The lettering goes out as text; a view that cannot place text keeps the strokes it is drawn in.
+        let texts = d.view.scale.is_finite() && d.view.scale > 0.0;
+        // A dimension written as an entity keeps its strokes in its own block; one that is not stays as drawn.
+        let mut dims = dims::Dims::of(d, m, texts, sh, &mut ext, space);
+        let clip = clipped(d);
+        // A door, window or piece of furniture is an INSERT of a block that all of a kind share; what it draws is the block's.
+        let mut blocks = blocks::Blocks::of(d, m, texts, &clip, sh, space, shift);
+        for (i, prim) in &clip {
+            let (i, prim) = (*i, prim.as_ref());
+            let owner = d.owners.get(i).copied().flatten();
+            let part = d.parts.get(i).copied().unwrap_or_default();
+            let base = layer(m, owner);
+            if texts && part == Part::Text {
+                // Not an entity, but still what the drawing's extents are the box of.
+                let rings: Vec<&[(f32, f32)]> = match prim {
+                    Prim::Line { pts, .. } => vec![pts],
+                    Prim::Fill { rings, .. } => rings.iter().map(Vec::as_slice).collect(),
+                    Prim::Image { .. } => Vec::new(),
+                };
+                for ring in rings {
+                    let ring: Option<Vec<P2>> = ring.iter().map(mm).collect();
+                    ext = grow(ext, &ring.unwrap_or_default());
                 }
                 continue;
             }
-            Some(o) => match dims.blocks.get_mut(&o) {
-                Some(block) => (&mut block.body, block.record),
-                None => (&mut ents, MODEL_SPACE),
-            },
-            None => (&mut ents, MODEL_SPACE),
-        };
-        layers.insert(ink.layer.clone());
-        if let Some((name, dashes)) = &ink.ltype {
-            ltypes.insert(name.clone(), dashes.clone());
+            let Some(ink) = ink(d, prim, part, base) else { continue };
+            ext = ink.grow(ext);
+            let (ents, parent) = match owner {
+                Some(o) if blocks.holds(o) => {
+                    if let Some(text) = blocks.take(o) {
+                        ents.push_str(&text);
+                    }
+                    continue;
+                }
+                Some(o) => match dims.blocks.get_mut(&o) {
+                    Some(block) => (&mut block.body, block.record),
+                    None => (&mut ents, space),
+                },
+                None => (&mut ents, space),
+            };
+            sh.layers.insert(ink.layer.clone());
+            if let Some((name, dashes)) = &ink.ltype {
+                sh.ltypes.insert(name.clone(), dashes.clone());
+            }
+            put(ents, sh.w.handle(), parent, &ink);
         }
-        put(ents, w.handle(), parent, &ink);
+        for l in d.lettering.iter().filter(|_| texts) {
+            let (at, height, angle) = (mm(&l.at), f64::from(l.height) / d.view.scale, -f64::from(l.angle).to_degrees());
+            let Some(at) = at.filter(|_| height.is_finite() && height > 0.0 && angle.is_finite() && !l.text.trim().is_empty()) else {
+                continue;
+            };
+            let name = on(layer(m, l.owner), Part::Text, false);
+            lettering(&mut ents, sh.w.handle(), space, &name, l, (at, height, angle.rem_euclid(360.0)));
+            sh.layers.insert(name);
+        }
+        ents.push_str(&std::mem::take(&mut dims.entities));
+        ents.push_str(&blocks.rest());
+        self.ents.push_str(&ents);
+        if space == PAPER_SPACE {
+            self.paper_ext = ext;
+        } else {
+            self.ext = ext;
+        }
+        self.dims.push(dims);
+        self.blocks.push(blocks);
     }
-    for l in d.lettering.iter().filter(|_| texts) {
-        let (at, height, angle) = (mm(&l.at), f64::from(l.height) / d.view.scale, -f64::from(l.angle).to_degrees());
-        let Some(at) = at.filter(|_| height.is_finite() && height > 0.0 && angle.is_finite() && !l.text.trim().is_empty()) else {
-            continue;
-        };
-        let name = on(layer(m, l.owner), Part::Text, false);
-        lettering(&mut ents, w.handle(), &name, l, at, height, angle.rem_euclid(360.0));
-        layers.insert(name);
+
+    /// The file's text.
+    fn finish(self) -> String {
+        let Doc { shared, ext, paper_ext, ents, dims, blocks, title } = self;
+        let Shared { mut w, layers, ltypes, .. } = shared;
+        let mut tables = String::new();
+        table(&mut tables, &mut w, "VPORT", VPORTS, |_, _, _| 0);
+        table(&mut tables, &mut w, "LTYPE", LTYPES, |s, w, owner| {
+            for name in ["ByBlock", "ByLayer", "Continuous"] {
+                ltype(s, w.handle(), owner, name, &[]);
+            }
+            for (name, dashes) in &ltypes {
+                ltype(s, w.handle(), owner, name, dashes);
+            }
+            3 + ltypes.len()
+        });
+        table(&mut tables, &mut w, "LAYER", LAYERS, |s, w, owner| {
+            for name in &layers {
+                pair(s, 0, "LAYER");
+                record(s, 5, w.handle(), owner, "AcDbLayerTableRecord", name);
+                pair(s, 62, 7);
+                pair(s, 6, "Continuous");
+                pair(s, 370, -3);
+            }
+            layers.len()
+        });
+        table(&mut tables, &mut w, "STYLE", STYLES, |s, w, owner| {
+            pair(s, 0, "STYLE");
+            record(s, 5, w.handle(), owner, "AcDbTextStyleTableRecord", "Standard");
+            pair(s, 40, 0);
+            pair(s, 41, 1);
+            pair(s, 50, 0);
+            pair(s, 71, 0);
+            pair(s, 42, 2.5);
+            pair(s, 3, "txt");
+            pair(s, 4, "");
+            1
+        });
+        table(&mut tables, &mut w, "VIEW", VIEWS, |_, _, _| 0);
+        table(&mut tables, &mut w, "UCS", UCSS, |_, _, _| 0);
+        table(&mut tables, &mut w, "APPID", APPIDS, |s, w, owner| {
+            pair(s, 0, "APPID");
+            record(s, 5, w.handle(), owner, "AcDbRegAppTableRecord", "ACAD");
+            1
+        });
+        table(&mut tables, &mut w, "DIMSTYLE", DIMSTYLES, |s, w, owner| {
+            pair(s, 0, "DIMSTYLE");
+            record(s, 105, w.handle(), owner, "AcDbDimStyleTableRecord", "Standard");
+            1 + dims.iter().map(|d| d.style_records(s, w, owner)).sum::<usize>()
+        });
+        table(&mut tables, &mut w, "BLOCK_RECORD", BLOCK_RECORDS, |s, _, owner| {
+            for (h, name) in [(MODEL_SPACE, "*Model_Space"), (PAPER_SPACE, "*Paper_Space")] {
+                pair(s, 0, "BLOCK_RECORD");
+                record(s, 5, h, owner, "AcDbBlockTableRecord", name);
+            }
+            dims.iter().for_each(|d| d.block_records(s, owner));
+            blocks.iter().for_each(|b| b.block_records(s, owner));
+            title.iter().for_each(|t| t.block_record(s, owner));
+            2 + dims.iter().map(|d| d.blocks.len()).sum::<usize>()
+                + blocks.iter().map(blocks::Blocks::len).sum::<usize>()
+                + title.iter().len()
+        });
+        let mut rest = String::new();
+        section(&mut rest, "TABLES", |s| s.push_str(&tables));
+        section(&mut rest, "BLOCKS", |s| {
+            for (owner, name) in [(MODEL_SPACE, "*Model_Space"), (PAPER_SPACE, "*Paper_Space")] {
+                pair(s, 0, "BLOCK");
+                hex(s, 5, owner + 1);
+                hex(s, 330, owner);
+                pair(s, 100, "AcDbEntity");
+                pair(s, 8, "0");
+                pair(s, 100, "AcDbBlockBegin");
+                pair(s, 2, name);
+                pair(s, 70, 0);
+                point3(s, 10, P2(0.0, 0.0));
+                pair(s, 3, name);
+                pair(s, 1, "");
+                pair(s, 0, "ENDBLK");
+                hex(s, 5, owner + 2);
+                hex(s, 330, owner);
+                pair(s, 100, "AcDbEntity");
+                pair(s, 8, "0");
+                pair(s, 100, "AcDbBlockEnd");
+            }
+            dims.iter().for_each(|d| d.block_section(s));
+            blocks.iter().for_each(|b| b.block_section(s));
+            title.iter().for_each(|t| t.block_section(s));
+        });
+        section(&mut rest, "ENTITIES", |s| s.push_str(&ents));
+        section(&mut rest, "OBJECTS", |s| {
+            let (root, groups) = (ROOT, GROUPS);
+            pair(s, 0, "DICTIONARY");
+            hex(s, 5, root);
+            hex(s, 330, 0);
+            pair(s, 100, "AcDbDictionary");
+            pair(s, 281, 1);
+            pair(s, 3, "ACAD_GROUP");
+            hex(s, 350, groups);
+            pair(s, 0, "DICTIONARY");
+            hex(s, 5, groups);
+            hex(s, 330, root);
+            pair(s, 100, "AcDbDictionary");
+            pair(s, 281, 1);
+        });
+        pair(&mut rest, 0, "EOF");
+        let [lo, hi] = ext.unwrap_or_default();
+        let mut out = String::with_capacity(rest.len() + 1024);
+        section(&mut out, "HEADER", |s| {
+            pair(s, 9, "$ACADVER");
+            pair(s, 1, "AC1032");
+            pair(s, 9, "$HANDSEED");
+            hex(s, 5, w.next);
+            pair(s, 9, "$DWGCODEPAGE");
+            pair(s, 3, "ANSI_1252");
+            pair(s, 9, "$INSUNITS");
+            pair(s, 70, 4);
+            pair(s, 9, "$MEASUREMENT");
+            pair(s, 70, 1);
+            pair(s, 9, "$LUNITS");
+            pair(s, 70, 2);
+            pair(s, 9, "$EXTMIN");
+            point3(s, 10, lo);
+            pair(s, 9, "$EXTMAX");
+            point3(s, 10, hi);
+            if let Some([lo, hi]) = paper_ext {
+                pair(s, 9, "$PEXTMIN");
+                point3(s, 10, lo);
+                pair(s, 9, "$PEXTMAX");
+                point3(s, 10, hi);
+            }
+            pair(s, 9, "$LTSCALE");
+            pair(s, 40, 1);
+            pair(s, 9, "$LWDISPLAY");
+            pair(s, 290, 1);
+        });
+        section(&mut out, "CLASSES", |_| {});
+        out.push_str(&rest);
+        out
     }
-    ents.push_str(&dims.entities);
-    ents.push_str(&blocks.rest());
-    let mut tables = String::new();
-    table(&mut tables, &mut w, "VPORT", VPORTS, |_, _, _| 0);
-    table(&mut tables, &mut w, "LTYPE", LTYPES, |s, w, owner| {
-        for name in ["ByBlock", "ByLayer", "Continuous"] {
-            ltype(s, w.handle(), owner, name, &[]);
-        }
-        for (name, dashes) in &ltypes {
-            ltype(s, w.handle(), owner, name, dashes);
-        }
-        3 + ltypes.len()
-    });
-    table(&mut tables, &mut w, "LAYER", LAYERS, |s, w, owner| {
-        for name in &layers {
-            pair(s, 0, "LAYER");
-            record(s, 5, w.handle(), owner, "AcDbLayerTableRecord", name);
-            pair(s, 62, 7);
-            pair(s, 6, "Continuous");
-            pair(s, 370, -3);
-        }
-        layers.len()
-    });
-    table(&mut tables, &mut w, "STYLE", STYLES, |s, w, owner| {
-        pair(s, 0, "STYLE");
-        record(s, 5, w.handle(), owner, "AcDbTextStyleTableRecord", "Standard");
-        pair(s, 40, 0);
-        pair(s, 41, 1);
-        pair(s, 50, 0);
-        pair(s, 71, 0);
-        pair(s, 42, 2.5);
-        pair(s, 3, "txt");
-        pair(s, 4, "");
-        1
-    });
-    table(&mut tables, &mut w, "VIEW", VIEWS, |_, _, _| 0);
-    table(&mut tables, &mut w, "UCS", UCSS, |_, _, _| 0);
-    table(&mut tables, &mut w, "APPID", APPIDS, |s, w, owner| {
-        pair(s, 0, "APPID");
-        record(s, 5, w.handle(), owner, "AcDbRegAppTableRecord", "ACAD");
-        1
-    });
-    table(&mut tables, &mut w, "DIMSTYLE", DIMSTYLES, |s, w, owner| {
-        pair(s, 0, "DIMSTYLE");
-        record(s, 105, w.handle(), owner, "AcDbDimStyleTableRecord", "Standard");
-        1 + dims.style_records(s, w, owner)
-    });
-    table(&mut tables, &mut w, "BLOCK_RECORD", BLOCK_RECORDS, |s, _, owner| {
-        for (h, name) in [(MODEL_SPACE, "*Model_Space"), (PAPER_SPACE, "*Paper_Space")] {
-            pair(s, 0, "BLOCK_RECORD");
-            record(s, 5, h, owner, "AcDbBlockTableRecord", name);
-        }
-        dims.block_records(s, owner);
-        blocks.block_records(s, owner);
-        2 + dims.blocks.len() + blocks.len()
-    });
-    let mut rest = String::new();
-    section(&mut rest, "TABLES", |s| s.push_str(&tables));
-    section(&mut rest, "BLOCKS", |s| {
-        for (owner, name) in [(MODEL_SPACE, "*Model_Space"), (PAPER_SPACE, "*Paper_Space")] {
-            pair(s, 0, "BLOCK");
-            hex(s, 5, owner + 1);
-            hex(s, 330, owner);
-            pair(s, 100, "AcDbEntity");
-            pair(s, 8, "0");
-            pair(s, 100, "AcDbBlockBegin");
-            pair(s, 2, name);
-            pair(s, 70, 0);
-            point3(s, 10, P2(0.0, 0.0));
-            pair(s, 3, name);
-            pair(s, 1, "");
-            pair(s, 0, "ENDBLK");
-            hex(s, 5, owner + 2);
-            hex(s, 330, owner);
-            pair(s, 100, "AcDbEntity");
-            pair(s, 8, "0");
-            pair(s, 100, "AcDbBlockEnd");
-        }
-        dims.block_section(s);
-        blocks.block_section(s);
-    });
-    section(&mut rest, "ENTITIES", |s| s.push_str(&ents));
-    section(&mut rest, "OBJECTS", |s| {
-        let (root, groups) = (ROOT, GROUPS);
-        pair(s, 0, "DICTIONARY");
-        hex(s, 5, root);
-        hex(s, 330, 0);
-        pair(s, 100, "AcDbDictionary");
-        pair(s, 281, 1);
-        pair(s, 3, "ACAD_GROUP");
-        hex(s, 350, groups);
-        pair(s, 0, "DICTIONARY");
-        hex(s, 5, groups);
-        hex(s, 330, root);
-        pair(s, 100, "AcDbDictionary");
-        pair(s, 281, 1);
-    });
-    pair(&mut rest, 0, "EOF");
-    let [lo, hi] = ext.unwrap_or_default();
-    let mut out = String::with_capacity(rest.len() + 1024);
-    section(&mut out, "HEADER", |s| {
-        pair(s, 9, "$ACADVER");
-        pair(s, 1, "AC1032");
-        pair(s, 9, "$HANDSEED");
-        hex(s, 5, w.next);
-        pair(s, 9, "$DWGCODEPAGE");
-        pair(s, 3, "ANSI_1252");
-        pair(s, 9, "$INSUNITS");
-        pair(s, 70, 4);
-        pair(s, 9, "$MEASUREMENT");
-        pair(s, 70, 1);
-        pair(s, 9, "$LUNITS");
-        pair(s, 70, 2);
-        pair(s, 9, "$EXTMIN");
-        point3(s, 10, lo);
-        pair(s, 9, "$EXTMAX");
-        point3(s, 10, hi);
-        pair(s, 9, "$LTSCALE");
-        pair(s, 40, 1);
-        pair(s, 9, "$LWDISPLAY");
-        pair(s, 290, 1);
-    });
-    section(&mut out, "CLASSES", |_| {});
-    out.push_str(&rest);
-    out
 }
 
 /// A fill of the paper's colour, whose convex pieces (px) hide what is drawn before the primitive `at`.
@@ -423,6 +516,9 @@ fn layer(m: &Model, owner: Option<Id>) -> &'static str {
         Element::Tag(_) | Element::Spot(_) | Element::Section(_) | Element::Elevation(_) => "A-ANNO-SYMB",
         Element::DetailLine(_) | Element::FilledRegion(_) | Element::DetailGroup(_) | Element::RepeatingDetail(_) => "A-DETL",
         Element::Mass(_) => "A-MASS",
+        Element::Sheet(_) => TITLE_LAYER,
+        Element::Viewport(_) => VIEWPORT_LAYER,
+        Element::Schedule(_) => "A-ANNO-TABL",
         Element::Pipe(_) => "P-PIPE",
         Element::Duct(_) => "M-DUCT",
         Element::Conduit(_) => "E-POWR-COND",
@@ -452,7 +548,7 @@ fn layer(m: &Model, owner: Option<Id>) -> &'static str {
 /// The layer a primitive of `part` goes on, its element's being `base`: lettering on its annotation layer (`-IDEN`, for
 /// a model element), a model element's fills and patterns on `-PATT`; annotation keeps all of it on its own.
 fn on(base: &str, part: Part, fill: bool) -> String {
-    let annotation = base.starts_with("A-ANNO") || base.ends_with("-IDEN");
+    let annotation = base.contains("-ANNO-") || base.ends_with("-IDEN");
     match part {
         Part::Text if !annotation => format!("{base}-IDEN"),
         Part::Pattern | Part::LinePattern if !annotation => format!("{base}-PATT"),
@@ -704,11 +800,19 @@ fn ltype(s: &mut String, h: u64, owner: u64, name: &str, dashes: &[f64]) {
     }
 }
 
-/// The common head of an entity: handle, owner, layer, linetype, weight and true colour.
-fn entity(s: &mut String, h: u64, owner: u64, layer: &str, ltype: Option<&str>, weight: Option<i32>, color: Rgb) {
+/// The head every entity starts with: its handle, its owner and `AcDbEntity`, and for what paper space owns the flag that says so.
+fn owned(s: &mut String, h: u64, owner: u64) {
     hex(s, 5, h);
     hex(s, 330, owner);
     pair(s, 100, "AcDbEntity");
+    if owner == PAPER_SPACE {
+        pair(s, 67, 1);
+    }
+}
+
+/// The common head of an entity: handle, owner, layer, linetype, weight and true colour.
+fn entity(s: &mut String, h: u64, owner: u64, layer: &str, ltype: Option<&str>, weight: Option<i32>, color: Rgb) {
+    owned(s, h, owner);
     pair(s, 8, layer);
     if let Some(lt) = ltype {
         pair(s, 6, lt);
@@ -726,9 +830,11 @@ const STYLE: &str = "Standard";
 const CHUNK: usize = 250;
 
 /// `l` as a TEXT, or as an MTEXT when it has lines or something a TEXT reads as formatting, at `at` mm and turned `angle`
-/// degrees counter-clockwise. Its characters outside ASCII go out as they are: the file is AC1032, whose DXF is UTF-8.
-fn lettering(s: &mut String, h: u64, layer: &str, l: &super::Lettering, at: P2, height: f64, angle: f64) {
+/// degrees counter-clockwise (`place`: those three), owned by the space `owner`. Its characters outside ASCII go out as they are:
+/// the file is AC1032, whose DXF is UTF-8.
+fn lettering(s: &mut String, h: u64, owner: u64, layer: &str, l: &super::Lettering, place: (P2, f64, f64)) {
     use crate::dxf::{Horizontal, Vertical};
+    let (at, height, angle) = place;
     let (right, down) = (
         match l.align.h {
             Horizontal::Left => 0,
@@ -749,7 +855,7 @@ fn lettering(s: &mut String, h: u64, layer: &str, l: &super::Lettering, at: P2, 
         l.font.iter().flat_map(|f| f.chars()).filter(|c| !c.is_control() && !"|;\\{}".contains(*c)).collect::<String>().trim().into();
     if face.is_empty() && !l.text.contains(['\n', '\\', '{', '}']) && plain.len() <= CHUNK {
         pair(s, 0, "TEXT");
-        entity(s, h, MODEL_SPACE, layer, None, None, l.color);
+        entity(s, h, owner, layer, None, None, l.color);
         pair(s, 100, "AcDbText");
         point3(s, 10, at);
         pair(s, 40, num(height));
@@ -776,7 +882,7 @@ fn lettering(s: &mut String, h: u64, layer: &str, l: &super::Lettering, at: P2, 
         body = format!("{{\\f{face}|b0|i0|c0|p34;{body}}}");
     }
     pair(s, 0, "MTEXT");
-    entity(s, h, MODEL_SPACE, layer, None, None, l.color);
+    entity(s, h, owner, layer, None, None, l.color);
     pair(s, 100, "AcDbMText");
     point3(s, 10, at);
     pair(s, 40, num(height));
@@ -828,5 +934,8 @@ mod dims;
 mod dims_tests;
 #[cfg(test)]
 mod sections_tests;
+mod sheets;
+#[cfg(test)]
+mod sheets_tests;
 #[cfg(test)]
 mod tests;

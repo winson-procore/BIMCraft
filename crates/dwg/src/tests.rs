@@ -240,6 +240,131 @@ fn an_mtext_with_a_font_run_keeps_the_run_through_the_dwg() {
     );
 }
 
+/// `plan_dxf` with paper-space ink and three viewports spliced in: what a sheet's export adds to a plan's file.
+fn sheet_dxf() -> String {
+    let plan = plan_dxf();
+    let paper_line = |h: u32, a: (f64, f64), b: (f64, f64)| {
+        pairs(&[
+            (0, "LINE"),
+            (5, &format!("{h:X}")),
+            (330, "1B"),
+            (100, "AcDbEntity"),
+            (67, "1"),
+            (8, "A-ANNO-TTLB"),
+            (100, "AcDbLine"),
+            (10, &a.0.to_string()),
+            (20, &a.1.to_string()),
+            (30, "0"),
+            (11, &b.0.to_string()),
+            (21, &b.1.to_string()),
+            (31, "0"),
+        ])
+    };
+    let viewport = |h: u32, at: (f64, f64), size: (f64, f64), scale: f64| {
+        pairs(&[
+            (0, "VIEWPORT"),
+            (5, &format!("{h:X}")),
+            (330, "1B"),
+            (100, "AcDbEntity"),
+            (67, "1"),
+            (8, "G-ANNO-VPRT"),
+            (100, "AcDbViewport"),
+            (10, &at.0.to_string()),
+            (20, &at.1.to_string()),
+            (30, "0"),
+            (40, &size.0.to_string()),
+            (41, &size.1.to_string()),
+            (68, "1"),
+            (69, &format!("{}", h - 0x900F)),
+            (12, "5000"),
+            (22, "3000"),
+            (16, "0"),
+            (26, "0"),
+            (36, "1"),
+            (17, "0"),
+            (27, "0"),
+            (37, "0"),
+            (42, "50"),
+            (45, &(size.1 * scale).to_string()),
+            (90, "32800"),
+        ])
+    };
+    let mut paper = String::new();
+    let corners =
+        [((10.0, 10.0), (410.0, 10.0)), ((410.0, 10.0), (410.0, 287.0)), ((410.0, 287.0), (10.0, 287.0)), ((10.0, 287.0), (10.0, 10.0))];
+    for (k, (a, b)) in corners.into_iter().enumerate() {
+        paper += &paper_line(0x9000 + k as u32, a, b);
+    }
+    for (k, at) in [(100.0, 200.0), (250.0, 200.0), (300.0, 100.0)].into_iter().enumerate() {
+        paper += &viewport(0x9010 + k as u32, (at.0, at.1), (120.0, 90.0), 100.0);
+    }
+    let end = plan.find("OBJECTS").unwrap();
+    let at = plan[..end].rfind("  0\nENDSEC").unwrap();
+    format!("{}{paper}{}", &plan[..at], &plan[at..])
+}
+
+/// How many entities of each kind the DXF `text` puts in paper space: those carrying 67 = 1.
+fn paper_kinds(text: &str) -> std::collections::BTreeMap<String, usize> {
+    let lines: Vec<&str> = text.lines().map(str::trim).collect();
+    let mut kinds = std::collections::BTreeMap::new();
+    let mut i = 0;
+    while i + 1 < lines.len() {
+        if lines[i] == "0" {
+            let kind = lines[i + 1];
+            let mut j = i + 2;
+            let mut paper = false;
+            while j + 1 < lines.len() && lines[j] != "0" {
+                paper |= lines[j] == "67" && lines[j + 1] == "1";
+                j += 2;
+            }
+            if paper {
+                *kinds.entry(kind.to_string()).or_insert(0) += 1;
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    kinds
+}
+
+#[test]
+fn a_dxfs_paper_space_and_viewports_survive_the_dwg() {
+    let text = sheet_dxf();
+    let before = paper_kinds(&text);
+    assert_eq!((before.get("LINE"), before.get("VIEWPORT")), (Some(&4), Some(&3)), "{before:?}");
+    let dwg = to_dwg(&text, Limits::DEFAULT).unwrap();
+    let back = String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).into_owned();
+    let after = paper_kinds(&back);
+    assert_eq!((after.get("LINE"), after.get("VIEWPORT")), (Some(&4), Some(&3)), "{after:?}");
+}
+
+#[test]
+fn a_saved_sheet_keeps_its_paper_space_and_viewports_in_the_dwg() {
+    let dir = std::env::temp_dir().join(format!("bimcraft-dwg-sheet-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut s = bimcraft_core::engine::Session::new();
+    s.script(bimcraft_core::sample::SAMPLE).unwrap();
+    s.dwg_writer = Some(writer());
+    let save = |s: &mut bimcraft_core::engine::Session, name: &str| {
+        let path = dir.join(name);
+        s.script(&format!("save {{\"path\": {:?}, \"view\": \"A102\"}}", path.to_string_lossy())).unwrap();
+        path
+    };
+    let text = std::fs::read_to_string(save(&mut s, "a102.dxf")).unwrap();
+    let dwg = std::fs::read(save(&mut s, "a102.dwg")).unwrap();
+    let before = paper_kinds(&text);
+    let back = String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).into_owned();
+    let after = paper_kinds(&back);
+    let total = |k: &std::collections::BTreeMap<String, usize>| k.values().sum::<usize>();
+    assert!(before.get("VIEWPORT").copied().unwrap_or(0) >= 3, "{before:?}");
+    assert!(before.contains_key("INSERT") && !before.contains_key("ATTRIB"), "{before:?}");
+    assert!(after.get("VIEWPORT").copied().unwrap_or(0) >= 3, "{after:?} from {before:?}");
+    assert!(total(&after) * 100 >= total(&before) * 95, "{after:?} from {before:?}");
+    assert!(after.contains_key("INSERT"), "{after:?}");
+    assert!(back.contains("Section and Elevations"), "the title block's lettering is gone");
+}
+
 #[test]
 fn a_dxf_too_large_or_that_isnt_one_or_a_dwg_too_large_is_refused_and_never_panics() {
     let text = plan_dxf();

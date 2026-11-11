@@ -36,7 +36,7 @@ struct Frame {
 
 impl Frame {
     /// The frame of door, window or component `id`, none for another element or one that stands nowhere.
-    fn of(m: &Model, id: Id) -> Option<Frame> {
+    fn of(m: &Model, id: Id, shift: P2) -> Option<Frame> {
         let (origin, angle) = match m.elements.get(id)? {
             Element::Door(o) | Element::Window(o) => {
                 let axis = walls::Axis::of(m.wall(o.host)?);
@@ -51,7 +51,7 @@ impl Frame {
         }
         let angle = angle.rem_euclid(360.0);
         let (sin, cos) = angle.to_radians().sin_cos();
-        Some(Frame { origin, angle, cos, sin })
+        Some(Frame { origin: origin + shift, angle, cos, sin })
     }
 
     /// `p`, model mm, in this frame.
@@ -147,22 +147,15 @@ fn same(a: &[Ink], b: &[Ink]) -> bool {
 }
 
 impl Blocks {
-    /// The blocks and inserts of the doors, windows and components `clip` (the drawing's strokes, see [`clipped`]) draws. Empty
-    /// for a view that cannot place text, which keeps every stroke as drawn. Handles come from `w`; what a block draws goes on
-    /// layers in `layers` and in line types in `ltypes`.
-    pub fn of(
-        d: &Drawing,
-        m: &Model,
-        texts: bool,
-        clip: &[(usize, Cow<'_, Prim>)],
-        w: &mut Out,
-        ltypes: &mut BTreeMap<String, Vec<f64>>,
-        layers: &mut BTreeSet<String>,
-    ) -> Blocks {
+    /// The blocks and inserts of the doors, windows and components `clip` (the drawing's strokes, see [`clipped`]) draws, moved
+    /// by `shift`, in `space`. Empty for a view that cannot place text, which keeps every stroke as drawn. Handles and names come
+    /// from `sh`, which the file's other drawings draw on too; what a block draws goes on its layers and in its line types.
+    pub fn of(d: &Drawing, m: &Model, texts: bool, clip: &[(usize, Cow<'_, Prim>)], sh: &mut Shared, space: u64, shift: P2) -> Blocks {
         let mut out = Blocks::default();
         if !texts {
             return out;
         }
+        let Shared { w, layers, ltypes, names } = sh;
         let mut frames: BTreeMap<Id, Option<Frame>> = BTreeMap::new();
         let mut drawn: BTreeMap<Id, Vec<Ink>> = BTreeMap::new();
         for (i, prim) in clip {
@@ -172,11 +165,10 @@ impl Blocks {
             if part == Part::Text {
                 continue;
             }
-            let Some(frame) = *frames.entry(owner).or_insert_with(|| Frame::of(m, owner)) else { continue };
+            let Some(frame) = *frames.entry(owner).or_insert_with(|| Frame::of(m, owner, shift)) else { continue };
             let Some(ink) = ink(d, prim.as_ref(), part, layer(m, Some(owner))) else { continue };
             drawn.entry(owner).or_default().push(frame.ink(&ink));
         }
-        let mut taken = BTreeSet::new();
         let mut variants: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
         let mut inserts = 0;
         for (owner, ink) in drawn {
@@ -192,8 +184,8 @@ impl Blocks {
                     if of_kind.len() >= MAX_VARIANTS || out.defs.len() >= MAX_BLOCKS {
                         continue;
                     }
-                    let name = safe(&kind.label(), "BIM-BLOCK", &taken);
-                    taken.insert(name.to_uppercase());
+                    let name = safe(&kind.label(), "BIM-BLOCK", &names.blocks);
+                    names.blocks.insert(name.to_uppercase());
                     let record = w.handle();
                     let mut def = Def {
                         name,
@@ -224,7 +216,7 @@ impl Blocks {
             let label = kind.label();
             let label = if label.is_empty() { def.name.clone() } else { label };
             let mut text = String::new();
-            insert(&mut text, w, def, frame, [&kind.mark, &label]);
+            insert(&mut text, w, space, def, frame, [&kind.mark, &label]);
             out.inserts.insert(owner, text);
             out.held.insert(owner);
             inserts += 1;
@@ -304,12 +296,10 @@ impl Blocks {
 }
 
 /// `def`'s `INSERT` at `frame` with its `MARK` and `TYPE` (`values`), then the `SEQEND` that closes them.
-fn insert(s: &mut String, w: &mut Out, def: &Def, frame: &Frame, values: [&str; 2]) {
+fn insert(s: &mut String, w: &mut Out, space: u64, def: &Def, frame: &Frame, values: [&str; 2]) {
     let layer = &def.layer;
     pair(s, 0, "INSERT");
-    hex(s, 5, w.handle());
-    hex(s, 330, MODEL_SPACE);
-    pair(s, 100, "AcDbEntity");
+    owned(s, w.handle(), space);
     pair(s, 8, layer);
     pair(s, 100, "AcDbBlockReference");
     pair(s, 66, 1);
@@ -322,9 +312,7 @@ fn insert(s: &mut String, w: &mut Out, def: &Def, frame: &Frame, values: [&str; 
     for (tag, value) in ["MARK", "TYPE"].into_iter().zip(values) {
         let value: String = escaped(value, false).chars().take(200).collect();
         pair(s, 0, "ATTRIB");
-        hex(s, 5, w.handle());
-        hex(s, 330, MODEL_SPACE);
-        pair(s, 100, "AcDbEntity");
+        owned(s, w.handle(), space);
         pair(s, 8, layer);
         pair(s, 100, "AcDbText");
         point3(s, 10, frame.origin);
@@ -337,8 +325,6 @@ fn insert(s: &mut String, w: &mut Out, def: &Def, frame: &Frame, values: [&str; 
         pair(s, 70, 1);
     }
     pair(s, 0, "SEQEND");
-    hex(s, 5, w.handle());
-    hex(s, 330, MODEL_SPACE);
-    pair(s, 100, "AcDbEntity");
+    owned(s, w.handle(), space);
     pair(s, 8, layer);
 }
