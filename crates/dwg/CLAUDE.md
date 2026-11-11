@@ -30,5 +30,8 @@ ACadSharp's MIT notice): a DWG drawing as the ASCII DXF `bimcraft-core`'s `dxf.r
   `BIMCRAFT_DWG_SAMPLES` names a folder of them, which CI does not set.
 - A DWG written here has been read back by acadrust and by libredwg's `dwg2dxf`, not yet opened in AutoCAD, BricsCAD or the
   ODA viewer. libredwg's `dwg2dxf` prints `Invalid ATTRIB.keep_duplicate_records` for every `ATTRIB` acadrust writes (an
-  insert's `MARK` and `TYPE`) while keeping them; its own writer's ATTRIBs read clean, so the bytes differ. It is always AutoCAD 2018 (AC1032); 2000 (AC1015) is still to come.
+  insert's `MARK` and `TYPE`) while keeping them; its own writer's ATTRIBs read clean, so the bytes differ. Nothing the DXF says changes that: a `280` version
+  group before the tag, as the reference orders it, left all 40 errors in place (acadrust's DXF reader ignores it), and
+  acadrust's `write_attribute_entity` (0.6.6 and 0.6.8 alike) ends at the lock-position bit where libredwg seems to read one more
+  byte (an inference from the garbage values, not confirmed), so it would take a change in acadrust. It is always AutoCAD 2018 (AC1032); 2000 (AC1015) is still to come.
 
