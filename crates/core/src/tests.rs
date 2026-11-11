@@ -1925,6 +1925,8 @@ fn hostile_params_never_panic_or_break_the_model() {
         json!({"start": [0, 0], "end": [0, 0]}),
         json!({"level": "nowhere"}),
         json!({"path": 5}),
+        json!({"path": "/nonexistent/plan.dwg", "version": 5}),
+        json!({"path": "/nonexistent/plan.dwg", "version": "1999"}),
         json!({"path": "/nonexistent/scan.las", "units": "furlong", "spacing": -1}),
         json!({"cloud": "nope", "origin": "file", "at": [1e300, 0]}),
         json!({"path": "/nonexistent/plan.dxf", "units": "furlong", "scale": -1, "position": 3}),

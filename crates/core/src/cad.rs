@@ -18,10 +18,38 @@ use crate::render::Rgb;
 /// child process), and a session without one says to save the drawing as DXF.
 pub type DwgReader = Arc<dyn Fn(&std::path::Path) -> Result<(Vec<u8>, Vec<String>), String> + Send + Sync>;
 
-/// What writes a DWG drawing for a session: the DWG file's bytes an ASCII DXF's text (`render::dxf`) becomes, or why it
-/// can't be. The core writes no DWG of its own; the apps hand their `Session` one (`bimcraft-dwg`), and a session without one
-/// says to save the plan as DXF.
-pub type DwgWriter = Arc<dyn Fn(&str) -> Result<Vec<u8>, String> + Send + Sync>;
+/// What writes a DWG drawing for a session: the DWG file's bytes, of the version asked for, an ASCII DXF's text
+/// (`render::dxf`) becomes, or why it can't be. The core writes no DWG of its own; the apps hand their `Session` one
+/// (`bimcraft-dwg`), and a session without one says to save the plan as DXF.
+pub type DwgWriter = Arc<dyn Fn(&str, DwgVersion) -> Result<Vec<u8>, String> + Send + Sync>;
+
+/// The AutoCAD release a DWG is written as: `save`'s `version`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DwgVersion {
+    /// AutoCAD 2018, AC1032: what a DWG is unless asked otherwise.
+    #[default]
+    Dwg2018,
+    /// AutoCAD 2000, AC1015: no true colour, so a colour is its nearest index.
+    Dwg2000,
+}
+
+impl DwgVersion {
+    /// The version a `save` names: `2018` or `2000`, and nothing else.
+    pub fn from_name(name: &str) -> Option<DwgVersion> {
+        match name.trim() {
+            "2018" => Some(DwgVersion::Dwg2018),
+            "2000" => Some(DwgVersion::Dwg2000),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            DwgVersion::Dwg2018 => "2018",
+            DwgVersion::Dwg2000 => "2000",
+        }
+    }
+}
 
 /// Drawings one project may hold.
 pub const MAX_CADS: usize = 64;

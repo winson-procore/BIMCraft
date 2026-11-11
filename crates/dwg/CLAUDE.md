@@ -2,7 +2,7 @@
 
 The DWG bridge, both ways, through the acadrust crate (MPL-2.0, used unmodified as a separate library; NOTICE carries it and
 ACadSharp's MIT notice): a DWG drawing as the ASCII DXF `bimcraft-core`'s `dxf.rs` reads (`to_dxf`), and the ASCII DXF of a plan
-`render::dxf` writes as a DWG 2018, AC1032 (`to_dwg`). The write-ups are [CAD import](../../docs/areas/cad-import.md#dwg) and
+`render::dxf` writes as a DWG (`to_dwg`), AutoCAD 2018 AC1032 or 2000 AC1015 as `save`'s `version` says. The write-ups are [CAD import](../../docs/areas/cad-import.md#dwg) and
 [export](../../docs/areas/cad-import.md#export).
 
 - **Keep acadrust behind the bridge.** Nothing outside this crate sees its types; what comes out is DXF bytes and notes, or
@@ -37,5 +37,6 @@ ACadSharp's MIT notice): a DWG drawing as the ASCII DXF `bimcraft-core`'s `dxf.r
   than a diagnostic: libredwg files those `ATTRIB`s under model space (13 of a sheet's 17 paper-space entities stayed), so a sheet's
   title block letters its words in its block and writes no attribute. Paper space and its `VIEWPORT`s (acadrust's writer takes
   the `67 = 1` entities, owner `1B`, and the viewports' places, sizes, scales and window centres) read back whole from both
-  acadrust and libredwg, but no `LAYOUT` object is written and no CAD program has opened one. It is always AutoCAD 2018 (AC1032); 2000 (AC1015) is still to come.
+  acadrust and libredwg, but no `LAYOUT` object is written and no CAD program has opened one. The same goes for the 2000 (AC1015) files: libredwg reads them as AC1015 with the same two known diagnostics and no
+  loss of entities, but no CAD program has opened one. They have no true colour; acadrust writes the nearest ACI.
 

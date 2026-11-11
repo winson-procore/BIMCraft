@@ -124,7 +124,7 @@ One line per module: what it owns. Read the module's file and, for the areas it 
 
 `crates/update` (the updater, the only code that phones home; notes: [crates/update/CLAUDE.md](crates/update/CLAUDE.md); area: [updates](docs/areas/updates.md)): `updater.rs` the state the banner draws; `net.rs` HTTPS to GitHub; `detect.rs` which install this is; `install.rs` Windows, `appimage.rs` Linux, `macos.rs` macOS; `exec.rs`, `prefs.rs`, `testing.rs`.
 
-`crates/dwg` (`bimcraft-dwg`, the DWG bridge, which the core never depends on; notes: [crates/dwg/CLAUDE.md](crates/dwg/CLAUDE.md); area: [CAD import](docs/areas/cad-import.md)): a DWG as the DXF the core reads, through acadrust (MPL-2.0, unmodified), in a child process of the app (`in_child`, `child_main`), and a plan's DXF as DWG 2018 (`to_dwg`); the apps hand a `Session` its `reader` and `writer`.
+`crates/dwg` (`bimcraft-dwg`, the DWG bridge, which the core never depends on; notes: [crates/dwg/CLAUDE.md](crates/dwg/CLAUDE.md); area: [CAD import](docs/areas/cad-import.md)): a DWG as the DXF the core reads, through acadrust (MPL-2.0, unmodified), in a child process of the app (`in_child`, `child_main`), and a plan's DXF as DWG 2018 or 2000 (`to_dwg`); the apps hand a `Session` its `reader` and `writer`.
 
 `crates/rvt` (the Revit file reader, Apache-2.0 only; notes: [crates/rvt/CLAUDE.md](crates/rvt/CLAUDE.md); area: [Revit files](docs/areas/revit-import.md)): one module for each part of a file (`container`, `gzip`, `records`, `schema`, `inventory`) and for each element kind it imports (`walls`, `floors`, `roofs`, `columns`, `openings`, `rooms`, `pipes`, `ducts`, `framing`, `generic`), joined by `import.rs`.
 
