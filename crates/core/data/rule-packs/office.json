@@ -1,0 +1,189 @@
+{
+  "archetype": "office",
+  "rules": [
+    {
+      "id": "office.reception-at-entry",
+      "category": "adjacency",
+      "subject": "reception",
+      "predicate": "adjacent_to",
+      "object": "main_entry",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.8,
+      "rationale": "A visitor coming in from the street should meet the reception desk first, so reception sits at the public entry and is the first space inside it.",
+      "exceptions": ["Single-tenant buildings with a guarded lobby may put the desk one space in"],
+      "source_proposals": ["claude-opus#office/reception-at-entry", "claude-sonnet#office/reception-at-entry", "claude-haiku#office/reception-at-entry"]
+    },
+    {
+      "id": "office.waiting-beside-reception",
+      "category": "adjacency",
+      "subject": "visitor_waiting",
+      "predicate": "adjacent_to",
+      "object": "reception",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.75,
+      "rationale": "Visitors wait where the receptionist can see them, so the waiting area opens onto or sits beside the reception desk.",
+      "exceptions": ["Offices whose visitors are met at the door and never wait"],
+      "source_proposals": ["claude-opus#office/waiting-adjacent-reception", "claude-haiku#office/waiting-before-reception"]
+    },
+    {
+      "id": "office.meeting-rooms-off-circulation",
+      "category": "access",
+      "subject": "meeting_room",
+      "predicate": "directly_accessible_from",
+      "object": "shared_circulation",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.8,
+      "rationale": "Meeting and conference rooms are used by people from every team and by visitors, so they open off shared circulation and are never reached through a team's workspace.",
+      "exceptions": ["A board room inside an executive suite"],
+      "source_proposals": ["claude-opus#office/meeting-rooms-off-circulation", "claude-sonnet#office/meeting-rooms-on-circulation", "claude-haiku#office/meeting-rooms-shared-access"]
+    },
+    {
+      "id": "office.visitor-route-avoids-the-work-area",
+      "category": "flow",
+      "subject": "reception",
+      "predicate": "must_not_share_route_with",
+      "object": "open_office",
+      "condition": "the route from the entry to a meeting room used by visitors",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.55,
+      "rationale": "A visitor walking to a meeting room should not cross the open office: it exposes work in progress and breaks the concentration of the people there.",
+      "exceptions": ["Small offices where the only route to the meeting room crosses the work area"],
+      "source_proposals": ["claude-sonnet#office/visitor-not-through-work-area", "claude-opus#office/meeting-rooms-not-through-offices"]
+    },
+    {
+      "id": "office.private-offices-on-circulation",
+      "category": "access",
+      "subject": "private_office",
+      "predicate": "directly_accessible_from",
+      "object": "shared_circulation",
+      "classification": "soft",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "Each private office has its own door onto shared circulation, so no one is reached by walking through another person's room.",
+      "exceptions": ["An executive's office reached through an assistant's room"],
+      "source_proposals": ["claude-haiku#office/private-offices-circulation", "claude-sonnet#office/work_area-reached-via-circulation"],
+      "deterministic_checker": "GR-002"
+    },
+    {
+      "id": "office.focus-rooms-away-from-food",
+      "category": "separation",
+      "subject": "focus_room",
+      "predicate": "separated_from",
+      "object": "pantry",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.6,
+      "rationale": "Focus rooms exist for quiet work, so they sit away from the noise and traffic of the pantry and any cafe.",
+      "exceptions": ["Small floors where every room is within a few metres of the pantry"],
+      "source_proposals": ["claude-sonnet#office/focus-rooms-quiet-edge", "claude-opus#office/quiet-away-from-cafe"]
+    },
+    {
+      "id": "office.restrooms-on-circulation",
+      "category": "access",
+      "subject": "restroom",
+      "predicate": "directly_accessible_from",
+      "object": "shared_circulation",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.8,
+      "rationale": "Restrooms open off shared circulation, usually near the building core, so they can be reached from any workstation without passing through a room.",
+      "exceptions": ["Executive suites with their own restroom"],
+      "source_proposals": ["claude-opus#office/restrooms-off-circulation", "claude-haiku#office/restrooms-off-circulation", "claude-sonnet#office/restrooms-near-core"]
+    },
+    {
+      "id": "office.restroom-doors-not-onto-food-or-meetings",
+      "category": "separation",
+      "subject": "restroom",
+      "predicate": "not_directly_accessible_from",
+      "object": "pantry",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.6,
+      "rationale": "A restroom door should not open straight into the pantry or a meeting room, for hygiene and so that people in the room are not looking at it.",
+      "exceptions": ["Compact floors where a shared lobby serves both and the door is screened"],
+      "source_proposals": ["claude-opus#office/restrooms-not-off-food", "claude-sonnet#office/restroom-door-not-facing-work"]
+    },
+    {
+      "id": "office.restroom-within-walking-distance",
+      "category": "dimensional",
+      "subject": "open_office",
+      "predicate": "requires",
+      "object": "restroom_within_walking_distance",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.5,
+      "rationale": "Every workstation should be a short walk from a restroom; how short is a judgement of the brief, so this is a check for a person, with the route length as evidence.",
+      "exceptions": [],
+      "source_proposals": ["claude-sonnet#office/restroom-travel-distance"]
+    },
+    {
+      "id": "office.pantry-near-the-open-office",
+      "category": "adjacency",
+      "subject": "pantry",
+      "predicate": "adjacent_to",
+      "object": "open_office",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.6,
+      "rationale": "The pantry or break room is a support space that people use many times a day, so it sits close to the open office and on shared circulation.",
+      "exceptions": ["Very large floors that give each wing its own pantry"],
+      "source_proposals": ["claude-sonnet#office/pantry-near-open-office", "claude-haiku#office/kitchen-break-areas-central", "claude-opus#office/pantry-on-each-floor"]
+    },
+    {
+      "id": "office.it-room-not-through-occupied-rooms",
+      "category": "security",
+      "subject": "it_room",
+      "predicate": "not_directly_accessible_from",
+      "object": "private_office",
+      "classification": "exploratory",
+      "checkability": "deterministic",
+      "confidence": 0.55,
+      "rationale": "The IT or server room holds equipment that must stay reachable and secure, so it is never entered through an occupied room. Where its door opens is contested, see the conflict ledger.",
+      "exceptions": ["A single rack in a lockable cabinet inside a storage room"],
+      "source_proposals": ["claude-opus#office/server-room-restricted", "claude-sonnet#office/server-room-secured", "claude-haiku#office/tech-rooms-away-occupied"]
+    },
+    {
+      "id": "office.support-spaces-off-the-visitor-route",
+      "category": "separation",
+      "subject": "loading",
+      "predicate": "separated_from",
+      "object": "reception",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.55,
+      "rationale": "Support spaces such as loading, cleaning storage and stores belong on a service route, so deliveries and cleaners do not cross the reception.",
+      "exceptions": ["Small offices with one entrance for everything"],
+      "source_proposals": ["claude-opus#office/loading-separated-from-reception", "claude-haiku#office/cleaning-storage-service-access", "claude-sonnet#office/storage-support-off-circulation"]
+    },
+    {
+      "id": "office.print-copy-on-circulation",
+      "category": "adjacency",
+      "subject": "print_copy",
+      "predicate": "directly_accessible_from",
+      "object": "shared_circulation",
+      "classification": "exploratory",
+      "checkability": "heuristic",
+      "confidence": 0.5,
+      "rationale": "A print and copy point is used by everyone, so it sits on circulation near the open office instead of inside one team's area.",
+      "exceptions": ["Offices that have gone paperless and have no print point"],
+      "source_proposals": ["claude-opus#office/print-copy-off-circulation", "claude-sonnet#office/print-copy-central"]
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "office.conflict.it-room-door",
+      "topic": "Where the IT room's door opens",
+      "rule_ids": ["office.it-room-not-through-occupied-rooms"],
+      "positions": [
+        {"proposal": "claude-opus#office/server-room-restricted", "position": "Not directly onto the shared corridor: it is reached from an IT or back-of-house zone."},
+        {"proposal": "claude-sonnet#office/server-room-secured", "position": "Entered from controlled circulation, the corridor, and not through an occupied room."}
+      ],
+      "status": "open",
+      "resolution": "The rule keeps only what the models agree on, that the room is not entered through an occupied room. Whether its door may face the corridor is left to a later pack."
+    }
+  ]
+}
