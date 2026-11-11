@@ -340,6 +340,32 @@ fn a_dxfs_paper_space_and_viewports_survive_the_dwg() {
 }
 
 #[test]
+fn a_saved_sheet_keeps_its_paper_space_and_viewports_in_the_dwg() {
+    let dir = std::env::temp_dir().join(format!("bimcraft-dwg-sheet-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut s = bimcraft_core::engine::Session::new();
+    s.script(bimcraft_core::sample::SAMPLE).unwrap();
+    s.dwg_writer = Some(writer());
+    let save = |s: &mut bimcraft_core::engine::Session, name: &str| {
+        let path = dir.join(name);
+        s.script(&format!("save {{\"path\": {:?}, \"view\": \"A102\"}}", path.to_string_lossy())).unwrap();
+        path
+    };
+    let text = std::fs::read_to_string(save(&mut s, "a102.dxf")).unwrap();
+    let dwg = std::fs::read(save(&mut s, "a102.dwg")).unwrap();
+    let before = paper_kinds(&text);
+    let back = String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).into_owned();
+    let after = paper_kinds(&back);
+    let total = |k: &std::collections::BTreeMap<String, usize>| k.values().sum::<usize>();
+    assert!(before.get("VIEWPORT").copied().unwrap_or(0) >= 3, "{before:?}");
+    assert!(before.contains_key("INSERT") && !before.contains_key("ATTRIB"), "{before:?}");
+    assert!(after.get("VIEWPORT").copied().unwrap_or(0) >= 3, "{after:?} from {before:?}");
+    assert!(total(&after) * 100 >= total(&before) * 95, "{after:?} from {before:?}");
+    assert!(after.contains_key("INSERT"), "{after:?}");
+    assert!(back.contains("Section and Elevations"), "the title block's lettering is gone");
+}
+
+#[test]
 fn a_dxf_too_large_or_that_isnt_one_or_a_dwg_too_large_is_refused_and_never_panics() {
     let text = plan_dxf();
     let e = to_dwg(&text, Limits { dxf_bytes: 1000, ..Limits::DEFAULT }).unwrap_err();

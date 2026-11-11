@@ -114,6 +114,21 @@ DWG the session's `DwgWriter` turns that text into the file.
   `notes` say `1 picture(s) of what lies beyond the cut aren't written to DXF; the cut itself is`. No `IMAGE` entity: it names
   its pixels in an `IMAGEDEF` pointing at a file beside the DXF, which a save would have to write too. A section's `.png`
   still comes from `render`; its `.svg` is not made.
+- **Sheets** go out as paper space, by `save` or `render` with a `.dxf` or `.dwg` path and `view` naming a sheet (its number or
+  name; `commands::write_sheet`, `render/dxf/sheets.rs`, fed by `sheet::export`). Paper space (`*Paper_Space`, owner `1B`, group
+  67 = 1) is in the sheet's millimetres: the title block, an `INSERT` of a block `BIM-TITLE-BLOCK` (one for each sheet, `_2`, ...
+  if the name is taken) holding the border, the title box's rules and its project, name, scale and number as `TEXT`; the
+  viewports' own titles; and a `VIEWPORT` (`G-ANNO-VPRT`) for each placed view, centred on the viewport's place, as large as it is
+  on the paper, its scale the view's (code 45, the model height it shows, over code 41, the paper height, is the 1:n). Each view
+  is drawn once in model space by the writer that draws a plan or a section (a plan, a section, an elevation, a schedule as
+  its lines and lettering, its layer `A-ANNO-TABL`), in a place of its own: the windows are shifted along x until they are 200 mm apart, so no
+  viewport shows another's drawing, and each viewport's centre (12, 22) is its window's. Names the drawings share (blocks,
+  dimension styles) are made once in the file (`render::dxf::Shared`). A sheet's pictures (a section's view of what lies beyond its
+  cut, a 3D view) are not written, which `notes` say. No `LAYOUT` object is written, so the sheet is the file's one
+  paper space; whether AutoCAD, BricsCAD or the ODA viewer open it as a layout with these viewports is not yet checked. The title block's lettering is in its block
+  and not an attribute: an `ATTRIB` in paper space comes back from libredwg under model space (acadrust's `ATTRIB` bytes, see below),
+  and an attribute definition that has no attribute drawn is invisible in a CAD program. The cost is that a CAD user edits the
+  block, not an attribute value.
 - **The DWG** comes from `crates/dwg`: `bimcraft_dwg::to_dwg` reads the DXF with acadrust's `DxfReader`, sets the document to
   AC1032 and writes it with its `DwgWriter`, under `catch_unwind`, the DXF held to `Limits::dxf_bytes` and the DWG to
   `Limits::dwg_bytes`. It runs in the app's own process: what it reads is the core's DXF, not a stranger's file. A session
@@ -122,7 +137,7 @@ DWG the session's `DwgWriter` turns that text into the file.
   without one says "this build can't write DWG; save as .dxf".
 
 Tests: `render::dxf::tests` reads the sample house's plan back with `dxf::read_text` (layers, entities per layer, mm, extents,
-dashes, weights); `render::dxf::dims_tests` reads the DIMENSION, DIMSTYLE and block records as a plain group-code walk; `render::dxf::blocks_tests` does the same for the blocks, inserts and attributes; `plan_export_tests.rs` drives `save` with a fake writer; `crates/dwg`'s tests round-trip the plan through
+dashes, weights); `render::dxf::dims_tests` reads the DIMENSION, DIMSTYLE and block records as a plain group-code walk; `render::dxf::blocks_tests` does the same for the blocks, inserts and attributes; `plan_export_tests.rs` drives `save` with a fake writer; `render::dxf::sheets_tests` saves the sample's sheets and reads their paper space, viewports, model space and title block back; `crates/dwg`'s tests round-trip the plan, and a saved sheet, through
 `to_dxf`, and `apps/bimcraft-cli/tests/dwg.rs` saves the sample as DWG from the command line. Outside our own code, libredwg's
 `dwg2dxf` reads the DWG back with every entity on its layer, and `import_cad` of it into a new project draws the plan again.
 Still to come: DWG 2000 (AC1015).
