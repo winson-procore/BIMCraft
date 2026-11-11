@@ -92,7 +92,25 @@ struct Params {
     path: String,
     archetype: String,
     seed: u64,
-    area_m2: f64,
+    area_m2: Option<f64>,
+    area_sqft: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct AreaRequest {
+    value: f64,
+    unit: &'static str,
+    m2: f64,
+}
+
+impl AreaRequest {
+    fn m2(value: f64) -> AreaRequest {
+        AreaRequest { value, unit: "m2", m2: value }
+    }
+
+    fn sqft(value: f64) -> AreaRequest {
+        AreaRequest { value, unit: "sqft", m2: value * 0.092_903_04 }
+    }
 }
 
 /// A run directory's files, in memory and checked, before any of them is written.
@@ -128,18 +146,25 @@ fn least_area(archetype: Archetype, seed: u64) -> Option<f64> {
 
 /// The files for a brief, or why there are none. Touches no file.
 pub fn build(archetype: Archetype, seed: u64, area_m2: f64) -> Result<Built, Refusal> {
-    if !area_m2.is_finite() || area_m2 <= 0.0 || area_m2 > MAX_AREA_M2 {
+    build_with_area(archetype, seed, AreaRequest::m2(area_m2))
+}
+
+fn build_with_area(archetype: Archetype, seed: u64, area: AreaRequest) -> Result<Built, Refusal> {
+    if !area.m2.is_finite() || area.m2 <= 0.0 || area.m2 > MAX_AREA_M2 {
         return Err(refuse(
             "invalid_area",
-            format!("`area_m2` is the gross area in square metres, above 0 and at most {MAX_AREA_M2}; got {area_m2}"),
+            format!(
+                "`area_m2` is the gross area in square metres, above 0 and at most {MAX_AREA_M2}; got {} {} ({} m2)",
+                area.value, area.unit, area.m2
+            ),
         ));
     }
-    let plan = layout::plan(archetype, area_m2, seed).map_err(|why| {
+    let plan = layout::plan(archetype, area.m2, seed).map_err(|why| {
         let least = least_area(archetype, seed)
             .map_or_else(String::new, |a| format!(" The least this {} brief is met at is about {a} m2.", archetype.name()));
         refuse(
             "unsatisfiable_area",
-            format!("{area_m2:.1} m2 is too small for the {} program: it cannot fit ({why}).{least}", archetype.name()),
+            format!("{:.1} m2 is too small for the {} program: it cannot fit ({why}).{least}", area.m2, archetype.name()),
         )
     })?;
     let topology = Topology::of(&plan);
@@ -173,7 +198,9 @@ pub fn build(archetype: Archetype, seed: u64, area_m2: f64) -> Result<Built, Ref
         "generator_version": GENERATOR_VERSION,
         "archetype": archetype.name(),
         "seed": seed,
-        "requested_area_m2": area_m2,
+        "layout_strategy": plan.layout_strategy.name(),
+        "requested_area": {"value": area.value, "unit": area.unit},
+        "requested_area_m2": area.m2,
         "gross_area_m2": plan.gross_m2(),
         "hash_algorithm": "fnv1a64",
         "topology_hash": topology_hash,
@@ -211,7 +238,10 @@ fn run(p: &Value) -> Result<Value, Refusal> {
     let given: Params = serde_json::from_value(p.clone()).map_err(|e| {
         refuse(
             "invalid_params",
-            format!("{e}; `generate` takes `path`, `archetype` ({}), `seed` (an integer from 0) and `area_m2`", Archetype::names()),
+            format!(
+                "{e}; `generate` takes `path`, `archetype` ({}), `seed` (an integer from 0) and one of `area_m2` or `area_sqft`",
+                Archetype::names()
+            ),
         )
     })?;
     let archetype = Archetype::parse(&given.archetype).ok_or_else(|| {
@@ -223,7 +253,13 @@ fn run(p: &Value) -> Result<Value, Refusal> {
     if given.path.trim().is_empty() || given.path.len() > MAX_PATH || given.path.contains('\0') {
         return Err(refuse("invalid_params", format!("`path` is the run directory to write: not empty, at most {MAX_PATH} bytes")));
     }
-    let built = build(archetype, given.seed, given.area_m2)?;
+    let area = match (given.area_m2, given.area_sqft) {
+        (Some(_), Some(_)) => return Err(refuse("invalid_params", "`area_m2` and `area_sqft` are mutually exclusive; give one")),
+        (Some(m2), None) => AreaRequest::m2(m2),
+        (None, Some(sqft)) => AreaRequest::sqft(sqft),
+        (None, None) => return Err(refuse("invalid_params", "`generate` needs one of `area_m2` or `area_sqft`")),
+    };
+    let built = build_with_area(archetype, given.seed, area)?;
     let dir = PathBuf::from(&given.path);
     write(&dir, &built.files)?;
     let count = |s: Status| built.checks.iter().filter(|c| c.status == s).count();

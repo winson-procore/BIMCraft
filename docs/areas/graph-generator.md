@@ -1,6 +1,7 @@
 # The graph building generator
 
-`bimcraft-cli generate --archetype office|clinic|hospital --seed N --area M2 --out DIR` (the `generate` command, `crates/core/src/generate.rs`)
+`bimcraft-cli generate --archetype office|clinic|hospital --seed N (--area M2 | --area-sqft SQFT) --out DIR` (the `generate`
+command, `crates/core/src/generate.rs`)
 turns a brief into a run directory. Deterministic code owns the geometry and the pass/fail; nothing in it is asked of a model. The
 spec is `specs/graph-building-generator.md`; the first shipped slices cover office, clinic and a larger hospital archetype.
 
@@ -20,11 +21,12 @@ whole millimetres, integer seeds, a splitmix `Rng` (`generate::Rng`), no maps wi
 
 ## The layout
 
-One storey, one rectangle: a corridor across the middle and a band of rooms on each side (`layout.rs` has the diagram). The depth is
-the square root of the area over 3, held between 12 and 24 m, so a very large or small area lands off the request and the report
+One storey, one rectangle with one of three layout strategies: `double_loaded_corridor`, `single_loaded_corridor`, or
+`offset_corridor`. The strategy is chosen from the seed and exported in the manifest, topology, building graph and report. The depth
+is the square root of the area over 3, held between 12 and 24 m, so a very large or small area lands off the request and the report
 warns (`GM-001`, over 5%). The program (`program.rs`) grows with the area and takes a few of its counts from the seed; the lobby is
-the south band's first room with the way in in its west wall; every other room has one door to the corridor. Rooms are dealt to the
-band with less in it, in an order the seed shuffles, each as wide as its least area asks.
+the first room with the way in on the west wall; every room has one door to the corridor. Rooms are dealt into the strategy's band(s),
+in an order the seed shuffles, each as wide as its least area asks.
 
 ## Refusals
 
@@ -46,6 +48,7 @@ kinds, which is the shape a versioned rule pack will load.
 ```sh
 bimcraft-cli generate --archetype hospital --seed 10 --area 1800 --out /tmp/hospital-1
 cd /tmp/hospital-1 && bimcraft-cli run --script script.bimcraft.txt --save model.bimcraft --save plan.png --save plan.dxf
+bimcraft-cli generate --archetype office --seed 2 --area-sqft 10000 --out /tmp/office-10000sf
 ```
 
 Open `plan.png`: named, numbered rooms with their areas, a door in each room's wall to the corridor, windows on the outside wall,

@@ -1,5 +1,5 @@
-//! Where the program goes: one rectangle, a corridor across its middle, the rooms dealt into a band on each side of it. All
-//! in whole millimetres, on wall centre lines, so the same brief gives the same plan on any machine.
+//! Where the program goes: one rectangle, a corridor strategy, and rooms dealt into bands off that corridor. All in whole
+//! millimetres, on wall centre lines, so the same brief gives the same plan on any machine.
 //!
 //! ```text
 //!   +------------------------------+   y = depth
@@ -31,6 +31,23 @@ const WINDOW_SPACING: i64 = 4000;
 pub enum Band {
     North,
     South,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Strategy {
+    DoubleLoaded,
+    SingleLoaded,
+    Offset,
+}
+
+impl Strategy {
+    pub fn name(self) -> &'static str {
+        match self {
+            Strategy::DoubleLoaded => "double_loaded_corridor",
+            Strategy::SingleLoaded => "single_loaded_corridor",
+            Strategy::Offset => "offset_corridor",
+        }
+    }
 }
 
 impl Band {
@@ -83,6 +100,7 @@ pub struct Opening {
 pub struct Plan {
     pub archetype: Archetype,
     pub seed: u64,
+    pub layout_strategy: Strategy,
     pub requested_m2: f64,
     pub width: i64,
     pub depth: i64,
@@ -132,8 +150,13 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     }
     let program = program(archetype, area_m2, seed);
     let mut rng = Rng::new(seed, 0x1A7_0001);
+    let layout_strategy = strategy(seed);
     let corridor_width = CORRIDOR_WIDTHS[rng.below(CORRIDOR_WIDTHS.len() as u64) as usize];
-    let corridor_bottom = (depth - corridor_width) / 2 / 100 * 100;
+    let corridor_bottom = match layout_strategy {
+        Strategy::DoubleLoaded => (depth - corridor_width) / 2 / 100 * 100,
+        Strategy::SingleLoaded => 0,
+        Strategy::Offset => (depth * 35 / 100 - corridor_width / 2) / 100 * 100,
+    };
     let corridor_top = corridor_bottom + corridor_width;
 
     // The rooms in an order of the seed's, each to the band with less of the program in it so far; the lobby is the south band's first.
@@ -153,14 +176,40 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     }
 
     let mut cells = Vec::new();
-    for (band, specs, depth_of_band, y0, y1) in
-        [(Band::South, south, corridor_bottom, 0, corridor_bottom), (Band::North, north, depth - corridor_top, corridor_top, depth)]
-    {
-        cells.extend(deal(band, specs, depth_of_band, width, y0, y1)?);
+    if layout_strategy == Strategy::SingleLoaded {
+        south.extend(north);
+        cells.extend(deal(Band::North, south, depth - corridor_top, width, corridor_top, depth)?);
+    } else {
+        for (band, specs, depth_of_band, y0, y1) in
+            [(Band::South, south, corridor_bottom, 0, corridor_bottom), (Band::North, north, depth - corridor_top, corridor_top, depth)]
+        {
+            cells.extend(deal(band, specs, depth_of_band, width, y0, y1)?);
+        }
     }
     let walls = walls(width, depth, corridor_bottom, corridor_top, &cells);
     let openings = openings(&cells, corridor_bottom, corridor_top, depth);
-    Ok(Plan { archetype, seed, requested_m2: area_m2, width, depth, corridor_bottom, corridor_top, program, cells, walls, openings })
+    Ok(Plan {
+        archetype,
+        seed,
+        layout_strategy,
+        requested_m2: area_m2,
+        width,
+        depth,
+        corridor_bottom,
+        corridor_top,
+        program,
+        cells,
+        walls,
+        openings,
+    })
+}
+
+fn strategy(seed: u64) -> Strategy {
+    match seed % 3 {
+        0 => Strategy::DoubleLoaded,
+        1 => Strategy::SingleLoaded,
+        _ => Strategy::Offset,
+    }
 }
 
 /// A band's rooms along its length: each as wide as its least area asks, the rest shared out by what they would like.
@@ -211,7 +260,7 @@ fn walls(width: i64, depth: i64, bottom: i64, top: i64, cells: &[Cell]) -> Vec<W
 fn openings(cells: &[Cell], bottom: i64, top: i64, depth: i64) -> Vec<Opening> {
     let mut out = Vec::new();
     if let Some(lobby) = cells.first() {
-        out.push(Opening { kind: "door", space: lobby.spec.id.clone(), at: [0, bottom / 2], entry: true });
+        out.push(Opening { kind: "door", space: lobby.spec.id.clone(), at: [0, (bottom + top) / 2], entry: true });
     }
     for c in cells {
         let (inside, outside) = if c.band == Band::North { (top, depth) } else { (bottom, 0) };
