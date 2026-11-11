@@ -66,6 +66,17 @@ pub static ALL: &[Command] = &[
          category, `generic` the components of IFC classes BIMCraft has no element for, `skipped` what was left out and why)",
         open,
     ),
+    other(
+        "generate",
+        "Generate Building",
+        "{path, archetype: office|clinic, seed, area_m2} write a run directory at `path` for a generated one-storey plan of about \
+         `area_m2` gross (above 0, at most 5000): program-graph.json, topology-graph.json, building-ir.json, script.bimcraft.txt (a \
+         script for `run`, which builds the plan, its sheet and its annotation), report.json and manifest.json. `seed` is an integer \
+         from 0: the same brief gives the same bytes, other seeds other plans. A brief that can't be met (an area too small for the \
+         program: `unsatisfiable_area`, with the least that fits) or can't be written writes no file; the error starts with its code. \
+         The project is not touched",
+        crate::generate::generate,
+    ),
     other("highrise", "Synthetic Highrise", "{storeys?: 20} replace the project with an original 1–80 storey performance sample", highrise),
     other(
         "tower",

@@ -1925,6 +1925,12 @@ fn hostile_params_never_panic_or_break_the_model() {
         json!({"start": [0, 0], "end": [0, 0]}),
         json!({"level": "nowhere"}),
         json!({"path": 5}),
+        // `generate`: a brief that can never be met or written, so the sweep writes nothing.
+        json!({"path": "/nonexistent/run", "archetype": "office", "seed": 1, "area_m2": 40}),
+        json!({"path": "/nonexistent/run", "archetype": "clinic", "seed": u64::MAX, "area_m2": 1e300}),
+        json!({"path": "/nonexistent/run", "archetype": "hospital", "seed": 1, "area_m2": 900}),
+        json!({"path": "/nonexistent/run", "archetype": "office", "seed": -1, "area_m2": f64::MAX}),
+        json!({"path": "/nonexistent/run", "archetype": "office", "seed": 1.5, "area_m2": 5e-324}),
         json!({"path": "/nonexistent/plan.dwg", "version": 5}),
         json!({"path": "/nonexistent/plan.dwg", "version": "1999"}),
         json!({"path": "/nonexistent/scan.las", "units": "furlong", "spacing": -1}),
