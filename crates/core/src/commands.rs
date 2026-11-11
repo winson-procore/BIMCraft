@@ -131,7 +131,8 @@ pub static ALL: &[Command] = &[
         "{path?, view?} .bimcraft saves the project (Save As with a path); .ifc exports IFC4; .glb exports the default 3D view's scene as \
          glTF 2.0 (metres, y up, a node for each element named by its id, GUID and category in `extras`; returns `elements` and \
          `triangles`); .svg, .png, .dxf or .dwg exports a level's plan, `view` (a level or plan view by name, id or GUID; the \
-         lowest level by default): the DXF is AutoCAD 2018 ASCII in mm, on AIA layers by category (A-WALL, A-DOOR, A-GLAZ, \
+         lowest level by default), and a .dxf or .dwg of a section or elevation `view` names draws it as CAD too (the cut, grids, \
+         levels and lettering as entities; the picture of what lies beyond is left out, which `notes` say): the DXF is AutoCAD 2018 ASCII in mm, on AIA layers by category (A-WALL, A-DOOR, A-GLAZ, \
          A-AREA-IDEN, A-ANNO-DIMS, …; fills on <layer>-PATT, lettering as strokes), and the DWG the same drawing as AutoCAD \
          2018 (AC1032), where the build has a DWG writer; .pdf prints every sheet, a page each",
         save,
@@ -1571,7 +1572,7 @@ pub static ALL: &[Command] = &[
          reflected ceiling plan, looking up from 2300 mm), a section, an elevation, a sheet (at 5 px a paper mm), or the 3D view seen from \
          `azimuth` degrees round from east (counter-clockwise) and `elevation` degrees up (by default from the south-east, \
          30° up), fitted; in perspective (see `perspective`) through its lens, and with `eye_elevation` from an eye that high \
-         (mm) looking at the same point, as a PNG (pngBase64), or written to a path: .png, .svg, .dxf or .dwg for a plan, .pdf for a sheet. A plan, section, \
+         (mm) looking at the same point, as a PNG (pngBase64), or written to a path: .png, .svg, .dxf or .dwg for a plan, .png, .dxf or .dwg for a section or elevation, .pdf for a sheet. A plan, section, \
          elevation or sheet that could not draw something as asked (a fill pattern too dense for the view, more ink behind \
          a region than is kept above it) says so in the reply's `notes`",
         render_view,
@@ -3104,9 +3105,17 @@ fn save(s: &mut Session, p: &Value) -> R {
         return Ok(json!({"path": path, "format": "PDF", "pages": pages.len()}));
     }
     if matches!(format.as_str(), "svg" | "png" | "dxf" | "dwg") {
-        let level = level_param(c, &s.model, p, "view")?;
         let seen = crate::link::seen(&s.model);
-        let notes = write_plan(&render::plan(&seen, level, 1600, 1000), &seen, &path, s.dwg_writer.as_ref()).map_err(|e| bad(c, e))?;
+        if matches!(format.as_str(), "dxf" | "dwg")
+            && let Some((id, name, kind)) = cut_view(&seen, p.get("view"))
+        {
+            let ((width, height), notes) = write_cut(&seen, id, &path, s.dwg_writer.as_ref()).map_err(|e| bad(c, e))?;
+            let reply = json!({"path": path, "format": format, "view": name, "kind": kind, "width": width, "height": height});
+            return Ok(with_notes(reply, &notes));
+        }
+        let level = level_param(c, &s.model, p, "view")?;
+        let notes =
+            write_drawing(&render::plan(&seen, level, 1600, 1000), &seen, &path, s.dwg_writer.as_ref(), 0).map_err(|e| bad(c, e))?;
         return Ok(with_notes(json!({"path": path, "format": format}), &notes));
     }
     let text = s.model.to_json().map_err(|e| bad(c, e))?;
@@ -3150,9 +3159,16 @@ pub fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// The plan `d` of `m` written to `path` as its extension says (a DWG by `dwg`, the session's writer), and notes on what the
-/// format left out.
-fn write_plan(d: &render::Drawing, m: &Model, path: &Path, dwg: Option<&crate::cad::DwgWriter>) -> Result<Vec<String>, String> {
+/// The drawing `d` of `m` (a plan; a section or elevation too, as a DXF or DWG) written to `path` as its extension says (a DWG
+/// by `dwg`, the session's writer), and notes on what the format left out. `beyond` is how many pictures of what lies beyond a
+/// section's cut it is drawn over, which a CAD file doesn't hold.
+fn write_drawing(
+    d: &render::Drawing,
+    m: &Model,
+    path: &Path,
+    dwg: Option<&crate::cad::DwgWriter>,
+    beyond: usize,
+) -> Result<Vec<String>, String> {
     let mut notes = Vec::new();
     let format = ext(path);
     let bytes = match format.as_str() {
@@ -3162,6 +3178,12 @@ fn write_plan(d: &render::Drawing, m: &Model, path: &Path, dwg: Option<&crate::c
             let pictures = render::dxf::pictures(d);
             if pictures > 0 {
                 notes.push(format!("{pictures} picture(s) in the plan aren't written to {}", format.to_ascii_uppercase()));
+            }
+            if beyond > 0 {
+                notes.push(format!(
+                    "{beyond} picture(s) of what lies beyond the cut aren't written to {}; the cut itself is",
+                    format.to_ascii_uppercase()
+                ));
             }
             let text = render::dxf(d, m);
             match (format.as_str(), dwg) {
@@ -3174,6 +3196,22 @@ fn write_plan(d: &render::Drawing, m: &Model, path: &Path, dwg: Option<&crate::c
     };
     std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(notes)
+}
+
+/// The section or elevation `view` names, by name or id: its id, name and category.
+fn cut_view(m: &Model, view: Option<&Value>) -> Option<(Id, String, &'static str)> {
+    let named = |id: &Id, v: &Section| view.and_then(Value::as_str) == Some(v.name.as_str()) || view.and_then(Value::as_u64) == Some(*id);
+    m.elements.iter().find_map(|(id, e)| match e {
+        Element::Section(v) | Element::Elevation(v) if named(id, v) => Some((*id, v.name.clone(), e.category())),
+        _ => None,
+    })
+}
+
+/// Section or elevation `id` of `m` written to `path`, a .dxf or .dwg: the size in px it was fitted to, and the notes.
+fn write_cut(m: &Model, id: Id, path: &Path, dwg: Option<&crate::cad::DwgWriter>) -> Result<((u32, u32), Vec<String>), String> {
+    let (d, beyond) = render::section_drawn(m, id, render::section_fit(m, id, 1600, 1000))?;
+    let notes = [d.notes.clone(), write_drawing(&d, m, path, dwg, beyond)?].concat();
+    Ok(((d.view.width, d.view.height), notes))
 }
 
 /// A picture that only comes as PNG (the 3D view, a section): written to `path`, a .png, when
@@ -3366,12 +3404,12 @@ fn render_view(s: &mut Session, p: &Value) -> R {
         );
     }
     // A section or elevation, by name or id.
-    let named = |id: &Id, v: &Section| view.and_then(Value::as_str) == Some(v.name.as_str()) || view.and_then(Value::as_u64) == Some(*id);
-    let cut = m.elements.iter().find_map(|(id, e)| match e {
-        Element::Section(v) | Element::Elevation(v) if named(id, v) => Some((*id, v.name.clone(), e.category())),
-        _ => None,
-    });
-    if let Some((id, name, kind)) = cut {
+    if let Some((id, name, kind)) = cut_view(m, view) {
+        // Drawn as CAD when the path says so: the cut as entities, the picture beyond it owned up to.
+        if let Some(path) = string(c, p, "path")?.map(PathBuf::from).filter(|path| matches!(ext(path).as_str(), "dxf" | "dwg")) {
+            let ((width, height), notes) = write_cut(m, id, &path, s.dwg_writer.as_ref()).map_err(|e| bad(c, e))?;
+            return Ok(with_notes(json!({"path": path, "width": width, "height": height, "view": name, "kind": kind}), &notes));
+        }
         let (png, notes) = render::section_png_noted(m, id, render::section_fit(m, id, w3, h3)).map_err(|e| bad(c, e))?;
         return png_reply(c, p, png, with_notes(json!({"width": w3, "height": h3, "view": name, "kind": kind}), &notes));
     }
@@ -3405,7 +3443,7 @@ fn render_view(s: &mut Session, p: &Value) -> R {
     match string(c, p, "path")? {
         Some(path) => {
             let path = PathBuf::from(path);
-            let notes = [d.notes.clone(), write_plan(&d, m, &path, s.dwg_writer.as_ref())?].concat();
+            let notes = [d.notes.clone(), write_drawing(&d, m, &path, s.dwg_writer.as_ref(), 0)?].concat();
             Ok(with_notes(json!({"path": path, "width": w, "height": h, "view": level_name(m, level), "kind": kind}), &notes))
         }
         None => Ok(with_notes(

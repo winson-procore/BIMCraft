@@ -3,7 +3,8 @@
 //! dashes) and a fill a solid `HATCH`. Lettering is the text itself, a `TEXT` (an `MTEXT` for several lines) of style
 //! `Standard` on its element's annotation layer, from the drawing's [`super::Lettering`] records; the strokes the plan draws it
 //! in stay in the picture and are left out here. An aligned or linear dimension is a `DIMENSION` of its type's `DIMSTYLE`, its
-//! lines and ticks held by a block of its own ([`dims`]). Pictures are left out, which [`pictures`] counts for a reply to say.
+//! lines and ticks held by a block of its own ([`dims`]). A door, window or component is an `INSERT` of a block it shares
+//! with the others of its family type, with a `MARK` and a `TYPE` attribute ([`blocks`]). Pictures are left out, which [`pictures`] counts for a reply to say.
 //!
 //! A fill of the paper's colour is a raster trick (what is drawn before it is hidden), and a CAD viewer draws a hatch over
 //! the lines under it. So it is never an entity: [`clipped`] bakes the paint order into the geometry, cutting what came
@@ -61,7 +62,10 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
     let texts = d.view.scale.is_finite() && d.view.scale > 0.0;
     // A dimension written as an entity keeps its strokes in its own block; one that is not stays as drawn.
     let mut dims = dims::Dims::of(d, m, texts, &mut w, &mut ext, &mut layers);
-    for (i, prim) in &clipped(d) {
+    let clip = clipped(d);
+    // A door, window or piece of furniture is an INSERT of a block that all of a kind share; what it draws is the block's.
+    let mut blocks = blocks::Blocks::of(d, m, texts, &clip, &mut w, &mut ltypes, &mut layers);
+    for (i, prim) in &clip {
         let (i, prim) = (*i, prim.as_ref());
         let owner = d.owners.get(i).copied().flatten();
         let part = d.parts.get(i).copied().unwrap_or_default();
@@ -79,69 +83,26 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
             }
             continue;
         }
-        let (ents, parent) = match owner.and_then(|o| dims.blocks.get_mut(&o)) {
-            Some(block) => (&mut block.body, block.record),
+        let Some(ink) = ink(d, prim, part, base) else { continue };
+        ext = ink.grow(ext);
+        let (ents, parent) = match owner {
+            Some(o) if blocks.holds(o) => {
+                if let Some(text) = blocks.take(o) {
+                    ents.push_str(&text);
+                }
+                continue;
+            }
+            Some(o) => match dims.blocks.get_mut(&o) {
+                Some(block) => (&mut block.body, block.record),
+                None => (&mut ents, MODEL_SPACE),
+            },
             None => (&mut ents, MODEL_SPACE),
         };
-        match prim {
-            Prim::Line { pts, width, color, dash, closed } => {
-                let pts: Option<Vec<P2>> = pts.iter().map(mm).collect();
-                let Some(pts) = pts.filter(|p| p.len() >= 2) else { continue };
-                let name = on(base, part, false);
-                let ltype = dash.as_deref().and_then(|dash| linetype(dash, d.view.scale)).map(|(name, dashes)| {
-                    ltypes.insert(name.clone(), dashes);
-                    name
-                });
-                let h = w.handle();
-                pair(ents, 0, "LWPOLYLINE");
-                entity(ents, h, parent, &name, ltype.as_deref(), Some(weight(d, *width)), *color);
-                pair(ents, 100, "AcDbPolyline");
-                pair(ents, 90, pts.len());
-                pair(ents, 70, i32::from(*closed));
-                for p in &pts {
-                    point2(ents, 10, *p);
-                }
-                ext = grow(ext, &pts);
-                layers.insert(name);
-            }
-            Prim::Fill { rings, color } => {
-                let rings: Vec<Vec<P2>> =
-                    rings.iter().filter_map(|r| r.iter().map(mm).collect::<Option<Vec<P2>>>()).filter(|r| r.len() >= 3).collect();
-                if rings.is_empty() {
-                    continue;
-                }
-                let name = on(base, part, true);
-                let h = w.handle();
-                pair(ents, 0, "HATCH");
-                entity(ents, h, parent, &name, None, None, *color);
-                pair(ents, 100, "AcDbHatch");
-                point3(ents, 10, P2(0.0, 0.0));
-                pair(ents, 210, 0);
-                pair(ents, 220, 0);
-                pair(ents, 230, 1);
-                pair(ents, 2, "SOLID");
-                pair(ents, 70, 1);
-                pair(ents, 71, 0);
-                pair(ents, 91, rings.len());
-                for (k, ring) in rings.iter().enumerate() {
-                    // A polyline path; the first the outermost, the rest inside it by odd parity.
-                    pair(ents, 92, if k == 0 { 2 | 1 } else { 2 });
-                    pair(ents, 72, 0);
-                    pair(ents, 73, 1);
-                    pair(ents, 93, ring.len());
-                    for p in ring {
-                        point2(ents, 10, *p);
-                    }
-                    pair(ents, 97, 0);
-                    ext = grow(ext, ring);
-                }
-                pair(ents, 75, 0);
-                pair(ents, 76, 1);
-                pair(ents, 98, 0);
-                layers.insert(name);
-            }
-            Prim::Image { .. } => {}
+        layers.insert(ink.layer.clone());
+        if let Some((name, dashes)) = &ink.ltype {
+            ltypes.insert(name.clone(), dashes.clone());
         }
+        put(ents, w.handle(), parent, &ink);
     }
     for l in d.lettering.iter().filter(|_| texts) {
         let (at, height, angle) = (mm(&l.at), f64::from(l.height) / d.view.scale, -f64::from(l.angle).to_degrees());
@@ -153,6 +114,7 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
         layers.insert(name);
     }
     ents.push_str(&dims.entities);
+    ents.push_str(&blocks.rest());
     let mut tables = String::new();
     table(&mut tables, &mut w, "VPORT", VPORTS, |_, _, _| 0);
     table(&mut tables, &mut w, "LTYPE", LTYPES, |s, w, owner| {
@@ -204,7 +166,8 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
             record(s, 5, h, owner, "AcDbBlockTableRecord", name);
         }
         dims.block_records(s, owner);
-        2 + dims.blocks.len()
+        blocks.block_records(s, owner);
+        2 + dims.blocks.len() + blocks.len()
     });
     let mut rest = String::new();
     section(&mut rest, "TABLES", |s| s.push_str(&tables));
@@ -229,6 +192,7 @@ pub fn dxf(d: &Drawing, m: &Model) -> String {
             pair(s, 100, "AcDbBlockEnd");
         }
         dims.block_section(s);
+        blocks.block_section(s);
     });
     section(&mut rest, "ENTITIES", |s| s.push_str(&ents));
     section(&mut rest, "OBJECTS", |s| {
@@ -537,6 +501,118 @@ fn grow(ext: Option<[P2; 2]>, pts: &[P2]) -> Option<[P2; 2]> {
     crate::dxf::union(ext.into_iter().chain(pts.iter().map(|p| [*p, *p])))
 }
 
+/// What a primitive of a drawing is as a CAD entity: where it goes and how it looks, its points in mm.
+#[derive(Clone)]
+struct Ink {
+    layer: String,
+    /// The line type's name and its dashes.
+    ltype: Option<(String, Vec<f64>)>,
+    color: Rgb,
+    shape: Shape,
+}
+
+#[derive(Clone)]
+enum Shape {
+    /// A `LWPOLYLINE` of this weight (hundredths of a mm).
+    Line { pts: Vec<P2>, closed: bool, weight: i32 },
+    /// A solid `HATCH`, its first ring the outermost.
+    Fill { rings: Vec<Vec<P2>> },
+}
+
+/// `prim`, of `part` of what is on layer `base`, as an entity; none for a picture or one that has nothing to draw.
+fn ink(d: &Drawing, prim: &Prim, part: Part, base: &str) -> Option<Ink> {
+    let mm = |p: &(f32, f32)| (p.0.is_finite() && p.1.is_finite()).then(|| d.view.mm(*p));
+    match prim {
+        Prim::Line { pts, width, color, dash, closed } => {
+            let pts: Option<Vec<P2>> = pts.iter().map(mm).collect();
+            let pts = pts.filter(|p| p.len() >= 2)?;
+            let ltype = dash.as_deref().and_then(|dash| linetype(dash, d.view.scale));
+            let shape = Shape::Line { pts, closed: *closed, weight: weight(d, *width) };
+            Some(Ink { layer: on(base, part, false), ltype, color: *color, shape })
+        }
+        Prim::Fill { rings, color } => {
+            let rings: Vec<Vec<P2>> =
+                rings.iter().filter_map(|r| r.iter().map(mm).collect::<Option<Vec<P2>>>()).filter(|r| r.len() >= 3).collect();
+            (!rings.is_empty()).then(|| Ink { layer: on(base, part, true), ltype: None, color: *color, shape: Shape::Fill { rings } })
+        }
+        Prim::Image { .. } => None,
+    }
+}
+
+impl Ink {
+    /// The box round `ext` and what this draws.
+    fn grow(&self, ext: Option<[P2; 2]>) -> Option<[P2; 2]> {
+        match &self.shape {
+            Shape::Line { pts, .. } => grow(ext, pts),
+            Shape::Fill { rings } => rings.iter().fold(ext, |ext, ring| grow(ext, ring)),
+        }
+    }
+}
+
+/// `ink` as an entity of `s`, with handle `h`, owned by the block record `parent`.
+fn put(s: &mut String, h: u64, parent: u64, ink: &Ink) {
+    match &ink.shape {
+        Shape::Line { pts, closed, weight } => {
+            pair(s, 0, "LWPOLYLINE");
+            entity(s, h, parent, &ink.layer, ink.ltype.as_ref().map(|l| l.0.as_str()), Some(*weight), ink.color);
+            pair(s, 100, "AcDbPolyline");
+            pair(s, 90, pts.len());
+            pair(s, 70, i32::from(*closed));
+            for p in pts {
+                point2(s, 10, *p);
+            }
+        }
+        Shape::Fill { rings } => {
+            pair(s, 0, "HATCH");
+            entity(s, h, parent, &ink.layer, None, None, ink.color);
+            pair(s, 100, "AcDbHatch");
+            point3(s, 10, P2(0.0, 0.0));
+            pair(s, 210, 0);
+            pair(s, 220, 0);
+            pair(s, 230, 1);
+            pair(s, 2, "SOLID");
+            pair(s, 70, 1);
+            pair(s, 71, 0);
+            pair(s, 91, rings.len());
+            for (k, ring) in rings.iter().enumerate() {
+                // A polyline path; the first the outermost, the rest inside it by odd parity.
+                pair(s, 92, if k == 0 { 2 | 1 } else { 2 });
+                pair(s, 72, 0);
+                pair(s, 73, 1);
+                pair(s, 93, ring.len());
+                for p in ring {
+                    point2(s, 10, *p);
+                }
+                pair(s, 97, 0);
+            }
+            pair(s, 75, 0);
+            pair(s, 76, 1);
+            pair(s, 98, 0);
+        }
+    }
+}
+
+/// The characters a table name may not hold in a DXF.
+const ILLEGAL: [char; 13] = ['<', '>', '/', '\\', '"', ':', ';', '?', '*', '|', ',', '=', '`'];
+
+/// The longest name written.
+const MAX_NAME: usize = 100;
+
+/// A name a DXF table may hold, from `raw` (`fallback` if nothing is left of it), which no other of `taken` (compared as a CAD
+/// program does, without case) is, and which is not the `Standard` style every file has.
+fn safe(raw: &str, fallback: &str, taken: &BTreeSet<String>) -> String {
+    let cleaned: String = raw.chars().map(|c| if c.is_control() || ILLEGAL.contains(&c) { '_' } else { c }).take(MAX_NAME).collect();
+    let base = cleaned.trim();
+    let base = if base.is_empty() { fallback } else { base };
+    let mut name = base.to_string();
+    let mut n = 1;
+    while name.eq_ignore_ascii_case("Standard") || taken.contains(&name.to_uppercase()) {
+        n += 1;
+        name = format!("{base}_{n}");
+    }
+    name
+}
+
 /// Handles as they're given out, from [`FIRST`].
 struct Out {
     next: u64,
@@ -744,8 +820,13 @@ fn escaped(text: &str, multi: bool) -> String {
     out
 }
 
+mod blocks;
+#[cfg(test)]
+mod blocks_tests;
 mod dims;
 #[cfg(test)]
 mod dims_tests;
+#[cfg(test)]
+mod sections_tests;
 #[cfg(test)]
 mod tests;
