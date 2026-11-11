@@ -1,8 +1,8 @@
 # The graph building generator
 
-`bimcraft-cli generate --archetype office|clinic --seed N --area M2 --out DIR` (the `generate` command, `crates/core/src/generate.rs`)
+`bimcraft-cli generate --archetype office|clinic|hospital --seed N --area M2 --out DIR` (the `generate` command, `crates/core/src/generate.rs`)
 turns a brief into a run directory. Deterministic code owns the geometry and the pass/fail; nothing in it is asked of a model. The
-spec is `specs/graph-building-generator.md`; this is slice 1, the office and clinic vertical slice.
+spec is `specs/graph-building-generator.md`; the first shipped slices cover office, clinic and a larger hospital archetype.
 
 ## What a run writes
 
@@ -44,8 +44,8 @@ kinds, which is the shape a versioned rule pack will load.
 ## Looking at the result
 
 ```sh
-bimcraft-cli generate --archetype office --seed 1 --area 900 --out /tmp/office-1
-cd /tmp/office-1 && bimcraft-cli run --script script.bimcraft.txt --save model.bimcraft --save plan.png --save plan.dxf
+bimcraft-cli generate --archetype hospital --seed 10 --area 1800 --out /tmp/hospital-1
+cd /tmp/hospital-1 && bimcraft-cli run --script script.bimcraft.txt --save model.bimcraft --save plan.png --save plan.dxf
 ```
 
 Open `plan.png`: named, numbered rooms with their areas, a door in each room's wall to the corridor, windows on the outside wall,
@@ -53,5 +53,5 @@ tags, three dimensions and a note. The sheet `A101` holds the plan (`--save` a `
 
 ## Not yet
 
-No stairs, shafts, structure or MEP; one storey; door swing and hand are BIMCraft's defaults; no hospitals, datacenters or airports;
+No stairs, shafts, structure or MEP; one storey; door swing and hand are BIMCraft's defaults; no datacenters or airports;
 no batch runs, and the rules are still hard-coded: the seed rule packs of [rule packs](rule-packs.md) are written but not read. `report.json` says so in `capability_notes`.

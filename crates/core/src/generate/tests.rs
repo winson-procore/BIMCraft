@@ -32,7 +32,7 @@ fn brief(path: &std::path::Path, archetype: &str, seed: u64, area: f64) -> Value
     json!({"path": path, "archetype": archetype, "seed": seed, "area_m2": area})
 }
 
-pub(super) const BRIEFS: [(&str, u64, f64); 12] = [
+pub(super) const BRIEFS: [(&str, u64, f64); 16] = [
     ("office", 0, 400.0),
     ("office", 1, 900.0),
     ("office", 2, 900.0),
@@ -45,6 +45,10 @@ pub(super) const BRIEFS: [(&str, u64, f64); 12] = [
     ("clinic", 9, 1500.0),
     ("clinic", 12, 5000.0),
     ("clinic", 5, 200.0),
+    ("hospital", 10, 1800.0),
+    ("hospital", 11, 2400.0),
+    ("hospital", 12, 5000.0),
+    ("hospital", 13, 500.0),
 ];
 
 pub(super) fn archetype(name: &str) -> Archetype {
@@ -118,7 +122,7 @@ fn an_area_too_small_for_the_program_is_refused_with_a_typed_diagnostic_and_noth
 
 #[test]
 fn the_least_area_a_brief_is_met_at_works() {
-    for name in ["office", "clinic"] {
+    for name in ["office", "clinic", "hospital"] {
         let a = archetype(name);
         let least = least_area(a, 1).unwrap_or_else(|| panic!("{name} has a least area"));
         assert!(build(a, 1, least).is_ok(), "{name} at {least}");
@@ -148,7 +152,7 @@ fn hostile_briefs_are_refused_before_any_file_is_touched() {
         (json!({"path": "x".repeat(5000), "archetype": "office", "seed": 1, "area_m2": 900}), "invalid_params"),
         (json!({"path": out, "archetype": "", "seed": 1, "area_m2": 900}), "unknown_archetype"),
         (json!({"path": out, "archetype": 5, "seed": 1, "area_m2": 900}), "invalid_params"),
-        (json!({"path": out, "archetype": "hospital", "seed": 1, "area_m2": 900}), "unknown_archetype"),
+        (json!({"path": out, "archetype": "datacenter", "seed": 1, "area_m2": 900}), "unknown_archetype"),
         (json!({"path": out, "archetype": "Office", "seed": 1, "area_m2": 900}), "unknown_archetype"),
         (json!({"path": out, "archetype": "x".repeat(100_000), "seed": 1, "area_m2": 900}), "unknown_archetype"),
     ];
@@ -428,7 +432,7 @@ fn the_same_brief_gives_the_same_bytes_and_other_seeds_give_other_plans() {
         assert_eq!(a.files, b.files);
         assert_eq!(a.topology_hash, b.topology_hash);
     }
-    for name in ["office", "clinic"] {
+    for name in ["office", "clinic", "hospital"] {
         let a = archetype(name);
         let area = if name == "office" { 900.0 } else { 650.0 };
         let runs: Vec<Built> = (1..=10).map(|seed| built(a, seed, area)).collect();
@@ -477,7 +481,7 @@ fn the_report_says_what_was_checked_and_what_the_generator_cannot_do() {
 #[test]
 fn areas_are_met_closely_across_the_range() {
     for area in [250.0, 400.0, 900.0, 1600.0, 3000.0, 5000.0] {
-        for name in ["office", "clinic"] {
+        for name in ["office", "clinic", "hospital"] {
             if let Ok(b) = build(archetype(name), 1, area) {
                 let gross = b.plan.gross_m2();
                 assert!((gross - area).abs() / area <= 0.05, "{name} {area}: {gross}");
@@ -489,7 +493,7 @@ fn areas_are_met_closely_across_the_range() {
 #[test]
 fn the_catalog_lists_the_command_with_a_params_doc() {
     let c = crate::engine::find("generate").unwrap();
-    for key in ["path", "archetype", "seed", "area_m2", "office", "clinic"] {
+    for key in ["path", "archetype", "seed", "area_m2", "office", "clinic", "hospital"] {
         assert!(c.params.contains(key), "the params doc names {key}");
     }
 }

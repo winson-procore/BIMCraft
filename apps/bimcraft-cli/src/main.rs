@@ -19,7 +19,7 @@ const USAGE: &str = "USAGE:
       commands and scripts (one `ID {json}` per line), save. --save writes by extension:
       .bimcraft (the project), .ifc (IFC4), .glb (the 3D view's scene as glTF), .svg or .png (the lowest level's plan).
       --highrise builds an original 20-storey performance sample (about 10,000 elements).
-  bimcraft-cli generate --archetype office|clinic --seed N --area M2 --out DIR
+  bimcraft-cli generate --archetype office|clinic|hospital --seed N --area M2 --out DIR
                                  write a generated plan's run directory: program, topology and building graphs, a script for
                                  `run --script`, a report and a manifest. The same brief gives the same files; a brief that
                                  can't be met (an area too small) exits non-zero, naming why, and writes nothing
@@ -408,7 +408,7 @@ mod tests {
             (vec!["--archetype", "office", "--seed", "-1", "--area", "900", "--out", &at], "--seed"),
             (vec!["--archetype", "office", "--seed", "1", "--area", "big", "--out", &at], "--area"),
             (vec!["--archetype", "office", "--archetype", "clinic", "--seed", "1", "--area", "9", "--out", &at], "twice"),
-            (vec!["--archetype", "hospital", "--seed", "1", "--area", "900", "--out", &at], "unknown_archetype"),
+            (vec!["--archetype", "datacenter", "--seed", "1", "--area", "900", "--out", &at], "unknown_archetype"),
             (vec!["--colour", "red"], "unknown option"),
             (vec!["--seed"], "needs a value"),
         ] {

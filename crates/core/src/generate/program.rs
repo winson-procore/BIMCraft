@@ -7,10 +7,11 @@ use super::Rng;
 pub enum Archetype {
     Office,
     Clinic,
+    Hospital,
 }
 
 impl Archetype {
-    pub const ALL: [Archetype; 2] = [Archetype::Office, Archetype::Clinic];
+    pub const ALL: [Archetype; 3] = [Archetype::Office, Archetype::Clinic, Archetype::Hospital];
 
     pub fn parse(name: &str) -> Option<Archetype> {
         Archetype::ALL.into_iter().find(|a| a.name() == name)
@@ -20,6 +21,7 @@ impl Archetype {
         match self {
             Archetype::Office => "office",
             Archetype::Clinic => "clinic",
+            Archetype::Hospital => "hospital",
         }
     }
 
@@ -31,6 +33,7 @@ impl Archetype {
         match self {
             Archetype::Office => 0x000F_F1CE,
             Archetype::Clinic => 0x00C1_191C,
+            Archetype::Hospital => 0x0000_0A51_17A1,
         }
     }
 }
@@ -108,6 +111,7 @@ pub fn program(archetype: Archetype, area_m2: f64, seed: u64) -> Program {
     let lobby = match archetype {
         Archetype::Office => spec("entry_lobby", "Lobby", Role::Public, 16, 40, true),
         Archetype::Clinic => spec("entry_lobby", "Entry Lobby", Role::Public, 16, 30, true),
+        Archetype::Hospital => spec("entry_lobby", "Hospital Entry Lobby", Role::Public, 24, 70, true),
     };
     let corridor = spec("corridor", "Corridor", Role::Circulation, 0, 0, false);
     match archetype {
@@ -128,6 +132,21 @@ pub fn program(archetype: Archetype, area_m2: f64, seed: u64) -> Program {
             several(&mut cells, 1, spec("staff_room", "Staff Room", Role::Support, 10, 16, true));
             several(&mut cells, 1, spec("nurse_station", "Nurse Station", Role::Support, 8, 12, true));
             several(&mut cells, 1, spec("clean_storage", "Clean Storage", Role::Support, 8, 12, false));
+        }
+        Archetype::Hospital => {
+            several(&mut cells, 1 + a / 2500, spec("waiting_reception", "Waiting and Reception", Role::Public, 30, 80, true));
+            several(&mut cells, 4 + a / 1200 + rng.below(2), spec("exam", "Exam Room", Role::Clinical, 10, 14, true));
+            several(&mut cells, 2 + a / 1800, spec("patient_room", "Patient Room", Role::Clinical, 12, 18, true));
+            several(&mut cells, 1 + rng.below(2), spec("treatment_bay", "Treatment Bay", Role::Clinical, 12, 16, true));
+            several(&mut cells, 1, spec("nurse_station", "Nurse Station", Role::Support, 12, 18, true));
+            several(&mut cells, 1, spec("staff_support", "Staff Support", Role::Support, 12, 18, true));
+            several(&mut cells, 1, spec("clean_utility", "Clean Utility", Role::Support, 8, 12, false));
+            several(&mut cells, 1, spec("dirty_utility", "Dirty Utility", Role::Service, 8, 12, false));
+            several(&mut cells, 1, spec("med_supply", "Medication and Supply", Role::Support, 10, 16, false));
+            several(&mut cells, 1, spec("equipment_storage", "Equipment Storage", Role::Support, 10, 16, false));
+            several(&mut cells, 2 + a / 2500, spec("restroom", "Restroom", Role::Service, 6, 8, false));
+            several(&mut cells, 1, spec("imaging_diagnostic", "Imaging and Diagnostic", Role::Clinical, 18, 30, false));
+            several(&mut cells, rng.below(2), spec("procedure_lab", "Procedure Lab", Role::Clinical, 16, 26, false));
         }
     }
     Program { lobby, corridor, cells }

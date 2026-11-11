@@ -294,6 +294,19 @@ fn minimum(archetype: Archetype) -> Vec<(&'static str, &'static [&'static str], 
             ("a staff or nurse space", &["staff_room", "nurse_station"], 1),
             ("a clean, support or storage space", &["clean_storage"], 1),
         ],
+        Archetype::Hospital => vec![
+            ("an entry or lobby", &["entry_lobby"], 1),
+            ("a waiting or reception space", &["waiting_reception"], 1),
+            ("a corridor", &["corridor"], 1),
+            ("four exam or consult rooms", &["exam", "consult"], 4),
+            ("two patient rooms or treatment bays", &["patient_room", "treatment_bay"], 2),
+            ("a nurse or staff support space", &["nurse_station", "staff_support"], 1),
+            ("a clean utility or storage space", &["clean_utility"], 1),
+            ("a dirty or soiled utility space", &["dirty_utility"], 1),
+            ("a medication, supply or equipment storage space", &["med_supply", "equipment_storage"], 1),
+            ("a restroom", &["restroom"], 1),
+            ("an imaging, procedure, lab or diagnostic support space", &["imaging_diagnostic", "procedure_lab"], 1),
+        ],
     }
 }
 
