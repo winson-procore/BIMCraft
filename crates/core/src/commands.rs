@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
 
-use crate::cad::{Cad, Colors};
+use crate::cad::{Cad, Colors, DwgVersion};
 use crate::cloud::{self, Cloud};
 use crate::engine::{Command, Run, Session};
 use crate::favorites::{self, FamilyEntry, Favorites, MaterialEntry};
@@ -128,13 +128,15 @@ pub static ALL: &[Command] = &[
     other(
         "save",
         "Save",
-        "{path?, view?} .bimcraft saves the project (Save As with a path); .ifc exports IFC4; .glb exports the default 3D view's scene as \
+        "{path?, view?, version?} .bimcraft saves the project (Save As with a path); .ifc exports IFC4; .glb exports the default 3D view's scene as \
          glTF 2.0 (metres, y up, a node for each element named by its id, GUID and category in `extras`; returns `elements` and \
          `triangles`); .svg, .png, .dxf or .dwg exports a level's plan, `view` (a level or plan view by name, id or GUID; the \
          lowest level by default), and a .dxf or .dwg of a section or elevation `view` names draws it as CAD too (the cut, grids, \
          levels and lettering as entities; the picture of what lies beyond is left out, which `notes` say): the DXF is AutoCAD 2018 ASCII in mm, on AIA layers by category (A-WALL, A-DOOR, A-GLAZ, \
          A-AREA-IDEN, A-ANNO-DIMS, …; fills on <layer>-PATT, lettering as strokes), and the DWG the same drawing as AutoCAD \
-         2018 (AC1032), where the build has a DWG writer; a .dxf or .dwg of a sheet `view` names (its number or name) is paper space: \
+         2018 (AC1032), where the build has a DWG writer, or as AutoCAD 2000 (AC1015) with `version` \"2000\" (\"2018\" is the \
+         default; anything else is refused, and `version` is for a .dwg only): AC1015 has no true colour, so each colour is \
+         written as its nearest colour index, which `notes` say; a .dxf or .dwg of a sheet `view` names (its number or name) is paper space: \
          the sheet's title block as an INSERT with its number and name as attributes, a VIEWPORT for each placed view at its scale \
          on the sheet, each view's drawing behind it in model space, and the schedules on the sheet as tables; .pdf prints every \
          sheet, a page each",
@@ -3079,6 +3081,12 @@ fn save(s: &mut Session, p: &Value) -> R {
         None => s.path.clone().ok_or_else(|| bad(c, "`path` is required: this project hasn't been saved yet"))?,
     };
     let format = ext(&path);
+    let version = match string(c, p, "version")? {
+        None => DwgVersion::default(),
+        Some(_) if format != "dwg" => return Err(bad(c, "`version` is for a .dwg; this path isn't one")),
+        Some(name) => DwgVersion::from_name(&name)
+            .ok_or_else(|| bad(c, format!("`version` must be \"2018\" (the default) or \"2000\", got {name:?}")))?,
+    };
     if format == "ifc" {
         std::fs::write(&path, crate::ifc::export(&s.model)).map_err(|e| bad(c, format!("{}: {e}", path.display())))?;
         return Ok(json!({"path": path, "format": "IFC4"}));
@@ -3112,20 +3120,20 @@ fn save(s: &mut Session, p: &Value) -> R {
         if matches!(format.as_str(), "dxf" | "dwg")
             && let Some((id, name, kind)) = cut_view(&seen, p.get("view"))
         {
-            let ((width, height), notes) = write_cut(&seen, id, &path, s.dwg_writer.as_ref()).map_err(|e| bad(c, e))?;
+            let ((width, height), notes) = write_cut(&seen, id, &path, s.dwg_writer.as_ref(), version).map_err(|e| bad(c, e))?;
             let reply = json!({"path": path, "format": format, "view": name, "kind": kind, "width": width, "height": height});
             return Ok(with_notes(reply, &notes));
         }
         if matches!(format.as_str(), "dxf" | "dwg")
             && let Some((id, number, _)) = sheet_view(&seen, p.get("view"))
         {
-            let ((width, height), notes) = write_sheet(&seen, id, &path, s.dwg_writer.as_ref()).map_err(|e| bad(c, e))?;
+            let ((width, height), notes) = write_sheet(&seen, id, &path, s.dwg_writer.as_ref(), version).map_err(|e| bad(c, e))?;
             let reply = json!({"path": path, "format": format, "view": number, "kind": "sheet", "width": width, "height": height});
             return Ok(with_notes(reply, &notes));
         }
         let level = level_param(c, &s.model, p, "view")?;
-        let notes =
-            write_drawing(&render::plan(&seen, level, 1600, 1000), &seen, &path, s.dwg_writer.as_ref(), 0).map_err(|e| bad(c, e))?;
+        let notes = write_drawing(&render::plan(&seen, level, 1600, 1000), &seen, &path, s.dwg_writer.as_ref(), version, 0)
+            .map_err(|e| bad(c, e))?;
         return Ok(with_notes(json!({"path": path, "format": format}), &notes));
     }
     let text = s.model.to_json().map_err(|e| bad(c, e))?;
@@ -3177,6 +3185,7 @@ fn write_drawing(
     m: &Model,
     path: &Path,
     dwg: Option<&crate::cad::DwgWriter>,
+    version: DwgVersion,
     beyond: usize,
 ) -> Result<Vec<String>, String> {
     let mut notes = Vec::new();
@@ -3185,6 +3194,7 @@ fn write_drawing(
         "svg" => render::svg(d).into_bytes(),
         "png" => render::png(d)?,
         "dxf" | "dwg" => {
+            notes.extend(version_notes(&format, version));
             let pictures = render::dxf::pictures(d);
             if pictures > 0 {
                 notes.push(format!("{pictures} picture(s) in the plan aren't written to {}", format.to_ascii_uppercase()));
@@ -3198,7 +3208,7 @@ fn write_drawing(
             let text = render::dxf(d, m);
             match (format.as_str(), dwg) {
                 ("dxf", _) => text.into_bytes(),
-                (_, Some(write)) => write(&text).map_err(|e| format!("{}: {e}", path.display()))?,
+                (_, Some(write)) => write(&text, version).map_err(|e| format!("{}: {e}", path.display()))?,
                 (_, None) => return Err(format!("{}: this build can't write DWG; save as .dxf", path.display())),
             }
         }
@@ -3206,6 +3216,17 @@ fn write_drawing(
     };
     std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(notes)
+}
+
+/// What a DWG of `version` can't keep of the DXF it's made from, for the reply's `notes`: none for a DXF or a 2018 DWG.
+fn version_notes(format: &str, version: DwgVersion) -> Vec<String> {
+    match (format, version) {
+        ("dwg", DwgVersion::Dwg2000) => vec![
+            "AutoCAD 2000 (AC1015) has no true colour: each colour is written as its nearest colour index, so close shades share one"
+                .to_string(),
+        ],
+        _ => Vec::new(),
+    }
 }
 
 /// The section or elevation `view` names, by name or id: its id, name and category.
@@ -3218,9 +3239,15 @@ fn cut_view(m: &Model, view: Option<&Value>) -> Option<(Id, String, &'static str
 }
 
 /// Section or elevation `id` of `m` written to `path`, a .dxf or .dwg: the size in px it was fitted to, and the notes.
-fn write_cut(m: &Model, id: Id, path: &Path, dwg: Option<&crate::cad::DwgWriter>) -> Result<((u32, u32), Vec<String>), String> {
+fn write_cut(
+    m: &Model,
+    id: Id,
+    path: &Path,
+    dwg: Option<&crate::cad::DwgWriter>,
+    version: DwgVersion,
+) -> Result<((u32, u32), Vec<String>), String> {
     let (d, beyond) = render::section_drawn(m, id, render::section_fit(m, id, 1600, 1000))?;
-    let notes = [d.notes.clone(), write_drawing(&d, m, path, dwg, beyond)?].concat();
+    let notes = [d.notes.clone(), write_drawing(&d, m, path, dwg, version, beyond)?].concat();
     Ok(((d.view.width, d.view.height), notes))
 }
 
@@ -3242,11 +3269,18 @@ fn sheet_view(m: &Model, view: Option<&Value>) -> Option<(Id, String, P2)> {
 
 /// Sheet `id` of `m` written to `path`, a .dxf or .dwg, as paper space with its views' viewports: the size in px of its picture
 /// as a PNG would be, and the notes on what the file leaves out.
-fn write_sheet(m: &Model, id: Id, path: &Path, dwg: Option<&crate::cad::DwgWriter>) -> Result<((u32, u32), Vec<String>), String> {
+fn write_sheet(
+    m: &Model,
+    id: Id,
+    path: &Path,
+    dwg: Option<&crate::cad::DwgWriter>,
+    version: DwgVersion,
+) -> Result<((u32, u32), Vec<String>), String> {
     let e = sheet::export(m, id).ok_or_else(|| format!("sheet {id} can't be drawn"))?;
     let size = ((e.paper.0 * sheet::DENSITY).round() as u32, (e.paper.1 * sheet::DENSITY).round() as u32);
     let format = ext(path);
     let mut notes = e.page.notes.clone();
+    notes.extend(version_notes(&format, version));
     if e.pictures > 0 {
         notes.push(format!(
             "{} picture(s) on the sheet (a section's view of what lies beyond its cut, a 3D view) aren't written to {}",
@@ -3257,7 +3291,7 @@ fn write_sheet(m: &Model, id: Id, path: &Path, dwg: Option<&crate::cad::DwgWrite
     let text = render::dxf::sheet_dxf(e, m);
     let bytes = match (format.as_str(), dwg) {
         ("dxf", _) => text.into_bytes(),
-        ("dwg", Some(write)) => write(&text).map_err(|e| format!("{}: {e}", path.display()))?,
+        ("dwg", Some(write)) => write(&text, version).map_err(|e| format!("{}: {e}", path.display()))?,
         ("dwg", None) => return Err(format!("{}: this build can't write DWG; save as .dxf", path.display())),
         (other, _) => return Err(format!("a sheet is written as .dxf or .dwg here, not `.{other}`")),
     };
@@ -3458,7 +3492,7 @@ fn render_view(s: &mut Session, p: &Value) -> R {
     if let Some((id, name, kind)) = cut_view(m, view) {
         // Drawn as CAD when the path says so: the cut as entities, the picture beyond it owned up to.
         if let Some(path) = string(c, p, "path")?.map(PathBuf::from).filter(|path| matches!(ext(path).as_str(), "dxf" | "dwg")) {
-            let ((width, height), notes) = write_cut(m, id, &path, s.dwg_writer.as_ref()).map_err(|e| bad(c, e))?;
+            let ((width, height), notes) = write_cut(m, id, &path, s.dwg_writer.as_ref(), DwgVersion::default()).map_err(|e| bad(c, e))?;
             return Ok(with_notes(json!({"path": path, "width": width, "height": height, "view": name, "kind": kind}), &notes));
         }
         let (png, notes) = render::section_png_noted(m, id, render::section_fit(m, id, w3, h3)).map_err(|e| bad(c, e))?;
@@ -3468,7 +3502,8 @@ fn render_view(s: &mut Session, p: &Value) -> R {
     if let Some((id, number, size)) = sheet_view(m, view) {
         // As CAD when the path says so: paper space and a viewport for each view, the pictures owned up to.
         if let Some(path) = string(c, p, "path")?.map(PathBuf::from).filter(|path| matches!(ext(path).as_str(), "dxf" | "dwg")) {
-            let ((width, height), notes) = write_sheet(m, id, &path, s.dwg_writer.as_ref()).map_err(|e| bad(c, e))?;
+            let ((width, height), notes) =
+                write_sheet(m, id, &path, s.dwg_writer.as_ref(), DwgVersion::default()).map_err(|e| bad(c, e))?;
             return Ok(with_notes(json!({"path": path, "width": width, "height": height, "view": number, "kind": "sheet"}), &notes));
         }
         let d = sheet::draw(m, id).ok_or_else(|| bad(c, format!("sheet {number} can't be drawn")))?;
@@ -3487,7 +3522,7 @@ fn render_view(s: &mut Session, p: &Value) -> R {
     match string(c, p, "path")? {
         Some(path) => {
             let path = PathBuf::from(path);
-            let notes = [d.notes.clone(), write_drawing(&d, m, &path, s.dwg_writer.as_ref(), 0)?].concat();
+            let notes = [d.notes.clone(), write_drawing(&d, m, &path, s.dwg_writer.as_ref(), DwgVersion::default(), 0)?].concat();
             Ok(with_notes(json!({"path": path, "width": w, "height": h, "view": level_name(m, level), "kind": kind}), &notes))
         }
         None => Ok(with_notes(

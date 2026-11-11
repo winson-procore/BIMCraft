@@ -134,7 +134,7 @@ fn per_layer(d: &dxf::Dxf) -> std::collections::BTreeMap<String, usize> {
 #[test]
 fn a_plan_written_as_dwg_2018_reads_back_with_its_layers_and_entities() {
     let text = plan_dxf();
-    let dwg = to_dwg(&text, Limits::DEFAULT).unwrap();
+    let dwg = to_dwg(&text, Limits::DEFAULT, V2018).unwrap();
     assert!(dwg.starts_with(b"AC1032") && is_dwg(&dwg), "{:?}", dwg.get(..6));
     let (before, after) = (dxf::read_text(&text).unwrap(), dxf::read(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).unwrap());
     assert_eq!(after.unit, "mm");
@@ -149,10 +149,99 @@ fn a_plan_written_as_dwg_2018_reads_back_with_its_layers_and_entities() {
     assert!(dwg_from_dxf(&text).unwrap().starts_with(b"AC1032"));
 }
 
+const V2018: DwgVersion = DwgVersion::Dwg2018;
+const V2000: DwgVersion = DwgVersion::Dwg2000;
+
+#[test]
+fn a_plan_written_as_dwg_2000_begins_ac1015_and_reads_back_with_its_layers_and_entities() {
+    let text = plan_dxf();
+    let (d18, d00) = (to_dwg(&text, Limits::DEFAULT, V2018).unwrap(), to_dwg(&text, Limits::DEFAULT, V2000).unwrap());
+    assert!(d00.starts_with(b"AC1015") && is_dwg(&d00), "{:?}", d00.get(..6));
+    assert!(d18.starts_with(b"AC1032"));
+    assert_ne!(d18, d00);
+    let (before, after) =
+        (dxf::read(&to_dxf(&d18, Limits::DEFAULT).unwrap().dxf).unwrap(), dxf::read(&to_dxf(&d00, Limits::DEFAULT).unwrap().dxf).unwrap());
+    assert_eq!(after.unit, "mm");
+    assert!(after.entities.len() * 100 >= before.entities.len() * 95, "{} of {}", after.entities.len(), before.entities.len());
+    assert_eq!(per_layer(&after), per_layer(&before));
+    for layer in &before.layers {
+        assert!(after.layer(&layer.name).is_some(), "{} was lost", layer.name);
+    }
+}
+
+#[test]
+fn a_plans_true_colour_becomes_a_colour_index_in_a_2000_dwg() {
+    let line = |layer: &str, rgb: u32| {
+        pairs(&[
+            (0, "LINE"),
+            (100, "AcDbEntity"),
+            (8, layer),
+            (420, &rgb.to_string()),
+            (100, "AcDbLine"),
+            (10, "0"),
+            (20, "0"),
+            (30, "0"),
+            (11, "5"),
+            (21, "5"),
+            (31, "0"),
+        ])
+    };
+    let mut text = room_dxf();
+    let at = text.rfind("  0\nENDSEC").unwrap();
+    text.insert_str(at, &(line("WALLS", 0xE02020) + &line("COLS", 0x2030E0) + &line("WALLS", 0x808080)));
+    let read = |version| {
+        let dwg = to_dwg(&text, Limits::DEFAULT, version).unwrap();
+        dxf::read(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).unwrap()
+    };
+    let true_colours = |d: &dxf::Dxf| d.entities.iter().filter(|e| matches!(e.color, dxf::Color::True(..))).count();
+    assert_eq!(true_colours(&read(V2018)), 3, "a 2018 file keeps true colour");
+    let after = read(V2000);
+    assert_eq!(true_colours(&after), 0);
+    let indices: Vec<u8> = after
+        .entities
+        .iter()
+        .filter_map(|e| match e.color {
+            dxf::Color::Index(i) if (1..=255).contains(&i) => Some(i),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(indices.len(), 3, "{:?}", after.entities.iter().map(|e| e.color).collect::<Vec<_>>());
+    let distinct: std::collections::BTreeSet<u8> = indices.iter().copied().collect();
+    assert_eq!(distinct.len(), 3, "three far-apart colours flattened onto {distinct:?}");
+}
+
+#[test]
+fn a_sheets_paper_space_and_viewports_in_a_2000_dwg() {
+    let text = sheet_dxf();
+    let before = paper_kinds(&text);
+    let dwg = to_dwg(&text, Limits::DEFAULT, V2000).unwrap();
+    assert!(dwg.starts_with(b"AC1015"));
+    let after = paper_kinds(&String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf));
+    assert_eq!((after.get("LINE"), after.get("VIEWPORT")), (before.get("LINE"), before.get("VIEWPORT")), "{after:?}");
+}
+
+#[test]
+fn a_2000_dwg_is_written_by_the_session_and_its_reply_names_what_it_cannot_keep() {
+    let dir = std::env::temp_dir().join(format!("bimcraft-dwg-2000-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut s = bimcraft_core::engine::Session::new();
+    s.script(bimcraft_core::sample::SAMPLE).unwrap();
+    s.dwg_writer = Some(writer());
+    let path = dir.join("plan.dwg");
+    let save = |s: &mut bimcraft_core::engine::Session, extra: &str| {
+        s.script(&format!("save {{\"path\": {:?}{extra}}}", path.to_string_lossy())).unwrap().remove(0)
+    };
+    let reply = save(&mut s, ", \"version\": \"2000\"");
+    assert!(std::fs::read(&path).unwrap().starts_with(b"AC1015"));
+    assert!(reply["notes"].to_string().contains("true colour"), "{reply}");
+    save(&mut s, "");
+    assert!(std::fs::read(&path).unwrap().starts_with(b"AC1032"));
+}
+
 #[test]
 fn a_plans_lettering_survives_as_text_and_mtext_in_the_dwg() {
     let before = dxf::read_text(&plan_dxf()).unwrap();
-    let dwg = to_dwg(&plan_dxf(), Limits::DEFAULT).unwrap();
+    let dwg = to_dwg(&plan_dxf(), Limits::DEFAULT, V2018).unwrap();
     let after = dxf::read(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).unwrap();
     let words = |d: &dxf::Dxf| {
         let mut w: Vec<String> = d
@@ -177,7 +266,7 @@ fn a_plans_dimensions_survive_as_dimension_entities_with_their_blocks_in_the_dwg
     let count = |t: &str| t.lines().filter(|l| l.trim() == "DIMENSION").count();
     let before = count(&text);
     assert!(before >= 3, "the plan has {before} dimensions to carry");
-    let dwg = to_dwg(&text, Limits::DEFAULT).unwrap();
+    let dwg = to_dwg(&text, Limits::DEFAULT, V2018).unwrap();
     let back = String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).into_owned();
     assert_eq!(count(&back), before);
     // What they draw is still there: the core reads their blocks back as the same lines on the same layer.
@@ -192,7 +281,7 @@ fn a_plans_doors_windows_and_furniture_survive_as_inserts_of_named_blocks_with_t
     let (inserts, attribs) = (count(&text, "INSERT"), count(&text, "ATTRIB"));
     assert!(inserts >= 10, "the plan has {inserts} inserts to carry");
     assert_eq!(attribs, 2 * inserts);
-    let dwg = to_dwg(&text, Limits::DEFAULT).unwrap();
+    let dwg = to_dwg(&text, Limits::DEFAULT, V2018).unwrap();
     let back = String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).into_owned();
     assert_eq!(count(&back, "INSERT"), inserts);
     assert_eq!(count(&back, "ATTRIB"), attribs);
@@ -231,7 +320,7 @@ fn an_mtext_with_a_font_run_keeps_the_run_through_the_dwg() {
         (44, "0.96"),
     ]);
     text.insert_str(at, &mtext);
-    let dwg = to_dwg(&text, Limits::DEFAULT).unwrap();
+    let dwg = to_dwg(&text, Limits::DEFAULT, V2018).unwrap();
     let back = String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).into_owned();
     assert!(
         back.contains("Arial|b0|i0|c0|p34;Oak floor"),
@@ -333,7 +422,7 @@ fn a_dxfs_paper_space_and_viewports_survive_the_dwg() {
     let text = sheet_dxf();
     let before = paper_kinds(&text);
     assert_eq!((before.get("LINE"), before.get("VIEWPORT")), (Some(&4), Some(&3)), "{before:?}");
-    let dwg = to_dwg(&text, Limits::DEFAULT).unwrap();
+    let dwg = to_dwg(&text, Limits::DEFAULT, V2018).unwrap();
     let back = String::from_utf8_lossy(&to_dxf(&dwg, Limits::DEFAULT).unwrap().dxf).into_owned();
     let after = paper_kinds(&back);
     assert_eq!((after.get("LINE"), after.get("VIEWPORT")), (Some(&4), Some(&3)), "{after:?}");
@@ -368,14 +457,15 @@ fn a_saved_sheet_keeps_its_paper_space_and_viewports_in_the_dwg() {
 #[test]
 fn a_dxf_too_large_or_that_isnt_one_or_a_dwg_too_large_is_refused_and_never_panics() {
     let text = plan_dxf();
-    let e = to_dwg(&text, Limits { dxf_bytes: 1000, ..Limits::DEFAULT }).unwrap_err();
+    let e = to_dwg(&text, Limits { dxf_bytes: 1000, ..Limits::DEFAULT }, V2018).unwrap_err();
     assert!(e.contains("larger than"), "{e}");
-    let e = to_dwg(&text, Limits { dwg_bytes: 1000, ..Limits::DEFAULT }).unwrap_err();
+    let e = to_dwg(&text, Limits { dwg_bytes: 1000, ..Limits::DEFAULT }, V2000).unwrap_err();
     assert!(e.contains("more than"), "{e}");
     for bad in ["", "not a drawing", "  0\nSECTION\n  2\nENTITIES\n  0\nLWPOLYLINE\n 90\n99999999\n", &text[..text.len() / 2]] {
-        let _ = to_dwg(bad, Limits::DEFAULT);
+        let _ = to_dwg(bad, Limits::DEFAULT, V2018);
+        let _ = to_dwg(bad, Limits::DEFAULT, V2000);
     }
-    assert!(to_dwg("not a drawing", Limits::DEFAULT).is_err());
+    assert!(to_dwg("not a drawing", Limits::DEFAULT, V2000).is_err());
 }
 
 #[test]

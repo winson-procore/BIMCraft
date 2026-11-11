@@ -50,10 +50,42 @@ fn save_to_dxf_writes_the_lowest_levels_plan_or_the_one_view_names() {
 
 /// A DWG writer as an app hands one: this one says what it was given and writes a header and its length.
 fn fake_writer(given: std::sync::Arc<std::sync::Mutex<String>>) -> crate::cad::DwgWriter {
-    std::sync::Arc::new(move |dxf: &str| {
+    std::sync::Arc::new(move |dxf: &str, _: crate::cad::DwgVersion| {
         *given.lock().unwrap() = dxf.to_string();
         Ok(format!("AC1032 {}", dxf.len()).into_bytes())
     })
+}
+
+#[test]
+fn save_to_dwg_takes_a_version_and_refuses_any_other() {
+    let mut s = sample();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = std::sync::Arc::clone(&seen);
+    s.dwg_writer = Some(std::sync::Arc::new(move |_: &str, v: crate::cad::DwgVersion| {
+        log.lock().unwrap().push(v);
+        Ok(b"AC10".to_vec())
+    }));
+    let path = dir("version").join("plan.dwg");
+    let plain = run(&mut s, "save", json!({"path": path}));
+    let v2018 = run(&mut s, "save", json!({"path": path, "version": "2018"}));
+    let v2000 = run(&mut s, "save", json!({"path": path, "version": " 2000 "}));
+    use crate::cad::DwgVersion::{Dwg2000, Dwg2018};
+    assert_eq!(*seen.lock().unwrap(), [Dwg2018, Dwg2018, Dwg2000]);
+    assert_eq!(plain, v2018);
+    assert!(plain.get("notes").is_none(), "{plain}");
+    let notes = v2000["notes"].to_string();
+    assert!(notes.contains("true colour") && notes.contains("colour index"), "{notes}");
+    // Every other value is an error that names `version`, and nothing is written.
+    let refused = dir("version").join("refused.dwg");
+    for bad in [json!("2004"), json!("R2000"), json!("AC1015"), json!(""), json!(2000)] {
+        let e = s.execute("save", &json!({"path": refused, "version": bad})).unwrap_err();
+        assert!(e.contains("version"), "{bad}: {e}");
+        assert!(!refused.exists());
+    }
+    assert_eq!(seen.lock().unwrap().len(), 3);
+    // It is for a DWG only.
+    let e = s.execute("save", &json!({"path": dir("version").join("plan.dxf"), "version": "2000"})).unwrap_err();
+    assert!(e.contains("version") && e.contains(".dwg"), "{e}");
 }
 
 #[test]
@@ -72,7 +104,7 @@ fn save_to_dwg_hands_the_plans_dxf_to_the_sessions_writer() {
     run(&mut s, "save", json!({"path": as_dxf}));
     assert_eq!(std::fs::read_to_string(&as_dxf).unwrap(), dxf_text);
     // A writer that fails says why, and nothing is written.
-    s.dwg_writer = Some(std::sync::Arc::new(|_: &str| Err("the library gave up".to_string())));
+    s.dwg_writer = Some(std::sync::Arc::new(|_: &str, _: crate::cad::DwgVersion| Err("the library gave up".to_string())));
     let failed = dir("dwg").join("failed.dwg");
     let e = s.execute("save", &json!({"path": failed})).unwrap_err();
     assert!(e.contains("the library gave up"), "{e}");
