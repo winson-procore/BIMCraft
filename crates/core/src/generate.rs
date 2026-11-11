@@ -5,6 +5,9 @@
 
 mod graph;
 mod layout;
+mod lift;
+#[cfg(test)]
+mod lift_tests;
 mod program;
 mod report;
 mod script;
@@ -21,6 +24,7 @@ use crate::engine::Session;
 use crate::model::mix;
 use graph::{SCHEMA_VERSION, Topology};
 use layout::Plan;
+use lift::Building;
 use program::Archetype;
 use report::{Check, Status};
 
@@ -139,7 +143,9 @@ pub fn build(archetype: Archetype, seed: u64, area_m2: f64) -> Result<Built, Ref
         )
     })?;
     let topology = Topology::of(&plan);
+    let building = Building::lift(&plan, &topology);
     let mut checks = report::graph_checks(&topology, archetype);
+    checks.extend(report::lift_checks(&building, &topology));
     let script = script::compile(&plan);
     let mut scratch = Session::new();
     let replies =
@@ -156,7 +162,7 @@ pub fn build(archetype: Archetype, seed: u64, area_m2: f64) -> Result<Built, Ref
     let texts = [
         pretty(&graph::program_json(&plan))?,
         topology_text,
-        pretty(&graph::building_json(&plan))?,
+        pretty(&building.json(&topology_hash, topology.nodes.len(), topology.edges.len()))?,
         script.text.clone(),
         pretty(&report::json(&plan, &checks, &script, &replies))?,
     ];

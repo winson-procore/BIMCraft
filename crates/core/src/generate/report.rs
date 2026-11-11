@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 use super::graph::{SCHEMA_VERSION, Topology};
 use super::layout::Plan;
+use super::lift::Building;
 use super::program::{Archetype, Role};
 use super::script::{REQUIRED, Script};
 
@@ -138,6 +139,134 @@ pub fn graph_checks(t: &Topology, archetype: Archetype) -> Vec<Check> {
         ),
         program_check(t, archetype),
     ]
+}
+
+/// The fewest walls a lifted building holds: four outside walls make a building.
+const MIN_WALLS: usize = 4;
+
+/// The rules on the lift from the 2D topology to the 3D graph: each 2D space, wall and opening is carried over whole and
+/// names what it came from. `LIFT-005` and `LIFT-006` are what BIMCraft made of it, in `run_checks`.
+pub fn lift_checks(b: &Building, t: &Topology) -> Vec<Check> {
+    let level_ok = |id: &str| b.level(id).is_some();
+    let node_ok = |id: &str| t.node(id).is_some();
+
+    let mut spaces: Vec<String> = Vec::new();
+    for n in &t.nodes {
+        match b.spaces.iter().filter(|s| s.source_2d == n.id).count() {
+            1 => {}
+            0 => spaces.push(format!("the 2D space `{}` is not lifted to a 3D space", n.id)),
+            k => spaces.push(format!("the 2D space `{}` is lifted to {k} 3D spaces", n.id)),
+        }
+    }
+    for s in &b.spaces {
+        if !node_ok(&s.source_2d) {
+            spaces.push(format!("the 3D space `{}` comes of `{}`, which is no 2D space", s.id, s.source_2d));
+        }
+        if !level_ok(&s.level) {
+            spaces.push(format!("the 3D space `{}` is on level `{}`, which the building does not have", s.id, s.level));
+        }
+        if s.base_mm >= s.top_mm {
+            spaces.push(format!("the 3D space `{}` has its top ({} mm) at or under its base ({} mm)", s.id, s.top_mm, s.base_mm));
+        }
+    }
+    let lifted = check(
+        "LIFT-001",
+        "every-2d-space-lifted",
+        spaces,
+        format!("all {} 2D spaces are lifted to a 3D space on a level, with a height", t.nodes.len()),
+    );
+
+    let mut walls: Vec<String> = Vec::new();
+    if b.walls.len() < MIN_WALLS {
+        walls.push(format!("the building has {} walls, fewer than {MIN_WALLS}", b.walls.len()));
+    }
+    let mut seen = BTreeSet::new();
+    for w in &b.walls {
+        if !seen.insert(w.id.as_str()) {
+            walls.push(format!("two walls are called `{}`", w.id));
+        }
+        if w.source_2d_refs.is_empty() {
+            walls.push(format!("the wall `{}` names no 2D space it bounds", w.id));
+        }
+        for r in w.source_2d_refs.iter().filter(|r| !node_ok(r)) {
+            walls.push(format!("the wall `{}` bounds `{r}`, which is no 2D space", w.id));
+        }
+        if !level_ok(&w.level) || !level_ok(&w.top_level) {
+            walls.push(format!(
+                "the wall `{}` stands between levels `{}` and `{}`, which the building does not both have",
+                w.id, w.level, w.top_level
+            ));
+        }
+        if w.base_mm >= w.top_mm {
+            walls.push(format!("the wall `{}` has its top ({} mm) at or under its base ({} mm)", w.id, w.top_mm, w.base_mm));
+        }
+        if w.thickness_mm <= 0 || w.wall_type.is_empty() {
+            walls.push(format!("the wall `{}` has no type or thickness", w.id));
+        }
+    }
+    let walls = check(
+        "LIFT-002",
+        "walls-carry-provenance",
+        walls,
+        format!("all {} walls name the 2D spaces they bound, a level, a height and a thickness", b.walls.len()),
+    );
+
+    let mut openings: Vec<String> = Vec::new();
+    if b.openings.is_empty() {
+        openings.push("the building has no doors or windows".into());
+    }
+    let mut seen = BTreeSet::new();
+    for o in &b.openings {
+        if !seen.insert(o.id.as_str()) {
+            openings.push(format!("two openings are called `{}`", o.id));
+        }
+        match b.wall(&o.host) {
+            None => openings.push(format!("the {} `{}` is hosted by `{}`, which is no wall", o.kind, o.id, o.host)),
+            Some(w) if !on_segment(o.at, w.start, w.end) => {
+                openings.push(format!("the {} `{}` at {:?} is not on its host wall `{}`", o.kind, o.id, o.at, w.id));
+            }
+            Some(_) => {}
+        }
+        if !node_ok(&o.source_2d) {
+            openings.push(format!("the {} `{}` comes of `{}`, which is no 2D space", o.kind, o.id, o.source_2d));
+        }
+        match (&o.source_edge, o.kind == "door" && !o.entry) {
+            (Some(e), _) if !t.access().any(|a| a.id() == *e && (a.from == o.source_2d || a.to == o.source_2d)) => {
+                openings.push(format!("the {} `{}` comes of the edge `{e}`, which is no door or open edge of its space", o.kind, o.id));
+            }
+            (None, true) => openings.push(format!("the door `{}` of `{}` names no topology edge", o.id, o.source_2d)),
+            _ => {}
+        }
+    }
+    let openings = check(
+        "LIFT-003",
+        "openings-hosted",
+        openings,
+        format!("all {} openings stand on a wall of the building and name their 2D source", b.openings.len()),
+    );
+
+    let mut slabs: Vec<String> = Vec::new();
+    if b.slabs.is_empty() {
+        slabs.push("the building has no slab".into());
+    }
+    for s in &b.slabs {
+        if !level_ok(&s.level) {
+            slabs.push(format!("the slab `{}` is on level `{}`, which the building does not have", s.id, s.level));
+        }
+        if s.boundary.len() < 3 {
+            slabs.push(format!("the slab `{}` has no outline", s.id));
+        }
+    }
+    let slabs = check("LIFT-004", "slabs-on-levels", slabs, format!("all {} slabs are on a level of the building", b.slabs.len()));
+    vec![lifted, walls, openings, slabs]
+}
+
+/// Whether `p` is on the straight segment from `a` to `b`, to the millimetre.
+fn on_segment(p: [i64; 2], a: [i64; 2], b: [i64; 2]) -> bool {
+    let cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+    let length = (((b[0] - a[0]).pow(2) + (b[1] - a[1]).pow(2)) as f64).sqrt();
+    let within = |lo: i64, hi: i64, v: i64| v >= lo.min(hi) && v <= lo.max(hi);
+    length > 0.0 && (cross as f64 / length).abs() <= 1.0 && within(a[0], b[0], p[0]) && within(a[1], b[1], p[1])
 }
 
 /// The kinds a program must hold at least once, each group with how many of them it needs.
