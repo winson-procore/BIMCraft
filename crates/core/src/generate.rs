@@ -5,6 +5,9 @@
 
 mod graph;
 mod layout;
+mod lift;
+#[cfg(test)]
+mod lift_tests;
 mod program;
 mod report;
 mod script;
@@ -21,6 +24,7 @@ use crate::engine::Session;
 use crate::model::mix;
 use graph::{SCHEMA_VERSION, Topology};
 use layout::Plan;
+use lift::Building;
 use program::Archetype;
 use report::{Check, Status};
 
@@ -139,12 +143,14 @@ pub fn build(archetype: Archetype, seed: u64, area_m2: f64) -> Result<Built, Ref
         )
     })?;
     let topology = Topology::of(&plan);
+    let building = Building::lift(&plan, &topology);
     let mut checks = report::graph_checks(&topology, archetype);
-    let script = script::compile(&plan);
+    checks.extend(report::lift_checks(&building, &topology));
+    let script = script::compile(&plan, &building);
     let mut scratch = Session::new();
     let replies =
         scratch.script(&script.text).map_err(|e| refuse("generation_failed", format!("the generated script does not run: {e}")))?;
-    checks.extend(report::run_checks(&plan, &script, &replies, scratch.model.check()));
+    checks.extend(report::run_checks(&plan, &building, &script, &replies, &scratch.model));
     let failed = report::failures(&checks);
     if let Some(first) = failed.first() {
         let more = if failed.len() > 1 { format!(" (and {} more)", failed.len() - 1) } else { String::new() };
@@ -156,7 +162,7 @@ pub fn build(archetype: Archetype, seed: u64, area_m2: f64) -> Result<Built, Ref
     let texts = [
         pretty(&graph::program_json(&plan))?,
         topology_text,
-        pretty(&graph::building_json(&plan))?,
+        pretty(&building.json(&topology_hash, topology.nodes.len(), topology.edges.len()))?,
         script.text.clone(),
         pretty(&report::json(&plan, &checks, &script, &replies))?,
     ];

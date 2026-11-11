@@ -6,8 +6,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
+use crate::geom::P2;
+use crate::ids::Id;
+use crate::model::{Element, Model};
+
 use super::graph::{SCHEMA_VERSION, Topology};
 use super::layout::Plan;
+use super::lift::Building;
 use super::program::{Archetype, Role};
 use super::script::{REQUIRED, Script};
 
@@ -140,6 +145,134 @@ pub fn graph_checks(t: &Topology, archetype: Archetype) -> Vec<Check> {
     ]
 }
 
+/// The fewest walls a lifted building holds: four outside walls make a building.
+const MIN_WALLS: usize = 4;
+
+/// The rules on the lift from the 2D topology to the 3D graph: each 2D space, wall and opening is carried over whole and
+/// names what it came from. `LIFT-005` and `LIFT-006` are what BIMCraft made of it, in `run_checks`.
+pub fn lift_checks(b: &Building, t: &Topology) -> Vec<Check> {
+    let level_ok = |id: &str| b.level(id).is_some();
+    let node_ok = |id: &str| t.node(id).is_some();
+
+    let mut spaces: Vec<String> = Vec::new();
+    for n in &t.nodes {
+        match b.spaces.iter().filter(|s| s.source_2d == n.id).count() {
+            1 => {}
+            0 => spaces.push(format!("the 2D space `{}` is not lifted to a 3D space", n.id)),
+            k => spaces.push(format!("the 2D space `{}` is lifted to {k} 3D spaces", n.id)),
+        }
+    }
+    for s in &b.spaces {
+        if !node_ok(&s.source_2d) {
+            spaces.push(format!("the 3D space `{}` comes of `{}`, which is no 2D space", s.id, s.source_2d));
+        }
+        if !level_ok(&s.level) {
+            spaces.push(format!("the 3D space `{}` is on level `{}`, which the building does not have", s.id, s.level));
+        }
+        if s.base_mm >= s.top_mm {
+            spaces.push(format!("the 3D space `{}` has its top ({} mm) at or under its base ({} mm)", s.id, s.top_mm, s.base_mm));
+        }
+    }
+    let lifted = check(
+        "LIFT-001",
+        "every-2d-space-lifted",
+        spaces,
+        format!("all {} 2D spaces are lifted to a 3D space on a level, with a height", t.nodes.len()),
+    );
+
+    let mut walls: Vec<String> = Vec::new();
+    if b.walls.len() < MIN_WALLS {
+        walls.push(format!("the building has {} walls, fewer than {MIN_WALLS}", b.walls.len()));
+    }
+    let mut seen = BTreeSet::new();
+    for w in &b.walls {
+        if !seen.insert(w.id.as_str()) {
+            walls.push(format!("two walls are called `{}`", w.id));
+        }
+        if w.source_2d_refs.is_empty() {
+            walls.push(format!("the wall `{}` names no 2D space it bounds", w.id));
+        }
+        for r in w.source_2d_refs.iter().filter(|r| !node_ok(r)) {
+            walls.push(format!("the wall `{}` bounds `{r}`, which is no 2D space", w.id));
+        }
+        if !level_ok(&w.level) || !level_ok(&w.top_level) {
+            walls.push(format!(
+                "the wall `{}` stands between levels `{}` and `{}`, which the building does not both have",
+                w.id, w.level, w.top_level
+            ));
+        }
+        if w.base_mm >= w.top_mm {
+            walls.push(format!("the wall `{}` has its top ({} mm) at or under its base ({} mm)", w.id, w.top_mm, w.base_mm));
+        }
+        if w.thickness_mm <= 0 || w.wall_type.is_empty() {
+            walls.push(format!("the wall `{}` has no type or thickness", w.id));
+        }
+    }
+    let walls = check(
+        "LIFT-002",
+        "walls-carry-provenance",
+        walls,
+        format!("all {} walls name the 2D spaces they bound, a level, a height and a thickness", b.walls.len()),
+    );
+
+    let mut openings: Vec<String> = Vec::new();
+    if b.openings.is_empty() {
+        openings.push("the building has no doors or windows".into());
+    }
+    let mut seen = BTreeSet::new();
+    for o in &b.openings {
+        if !seen.insert(o.id.as_str()) {
+            openings.push(format!("two openings are called `{}`", o.id));
+        }
+        match b.wall(&o.host) {
+            None => openings.push(format!("the {} `{}` is hosted by `{}`, which is no wall", o.kind, o.id, o.host)),
+            Some(w) if !on_segment(o.at, w.start, w.end) => {
+                openings.push(format!("the {} `{}` at {:?} is not on its host wall `{}`", o.kind, o.id, o.at, w.id));
+            }
+            Some(_) => {}
+        }
+        if !node_ok(&o.source_2d) {
+            openings.push(format!("the {} `{}` comes of `{}`, which is no 2D space", o.kind, o.id, o.source_2d));
+        }
+        match (&o.source_edge, o.kind == "door" && !o.entry) {
+            (Some(e), _) if !t.access().any(|a| a.id() == *e && (a.from == o.source_2d || a.to == o.source_2d)) => {
+                openings.push(format!("the {} `{}` comes of the edge `{e}`, which is no door or open edge of its space", o.kind, o.id));
+            }
+            (None, true) => openings.push(format!("the door `{}` of `{}` names no topology edge", o.id, o.source_2d)),
+            _ => {}
+        }
+    }
+    let openings = check(
+        "LIFT-003",
+        "openings-hosted",
+        openings,
+        format!("all {} openings stand on a wall of the building and name their 2D source", b.openings.len()),
+    );
+
+    let mut slabs: Vec<String> = Vec::new();
+    if b.slabs.is_empty() {
+        slabs.push("the building has no slab".into());
+    }
+    for s in &b.slabs {
+        if !level_ok(&s.level) {
+            slabs.push(format!("the slab `{}` is on level `{}`, which the building does not have", s.id, s.level));
+        }
+        if s.boundary.len() < 3 {
+            slabs.push(format!("the slab `{}` has no outline", s.id));
+        }
+    }
+    let slabs = check("LIFT-004", "slabs-on-levels", slabs, format!("all {} slabs are on a level of the building", b.slabs.len()));
+    vec![lifted, walls, openings, slabs]
+}
+
+/// Whether `p` is on the straight segment from `a` to `b`, to the millimetre.
+fn on_segment(p: [i64; 2], a: [i64; 2], b: [i64; 2]) -> bool {
+    let cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+    let length = (((b[0] - a[0]).pow(2) + (b[1] - a[1]).pow(2)) as f64).sqrt();
+    let within = |lo: i64, hi: i64, v: i64| v >= lo.min(hi) && v <= lo.max(hi);
+    length > 0.0 && (cross as f64 / length).abs() <= 1.0 && within(a[0], b[0], p[0]) && within(a[1], b[1], p[1])
+}
+
 /// The kinds a program must hold at least once, each group with how many of them it needs.
 fn minimum(archetype: Archetype) -> Vec<(&'static str, &'static [&'static str], usize)> {
     match archetype {
@@ -173,8 +306,106 @@ fn program_check(t: &Topology, archetype: Archetype) -> Check {
     check("PR-001", "minimum-program", problems, format!("the {} minimum program is present", archetype.name()))
 }
 
+/// The wall elements BIMCraft made, by the id of the building's wall each command was for.
+fn made_walls<'a>(script: &'a Script, replies: &[Value]) -> BTreeMap<&'a str, Id> {
+    script.lines.iter().zip(replies).filter_map(|(l, r)| Some((l.wall_of.as_deref()?, r.get("ids")?.get(0)?.as_u64()?))).collect()
+}
+
+/// LIFT-005: each door and window is in the wall the building says, as BIMCraft hosted it when the script ran.
+fn hosting_check(building: &Building, script: &Script, replies: &[Value]) -> Check {
+    let walls = made_walls(script, replies);
+    let mut problems = Vec::new();
+    let mut made: BTreeSet<&str> = BTreeSet::new();
+    for (l, r) in script.lines.iter().zip(replies) {
+        let Some(id) = l.opening_of.as_deref() else { continue };
+        made.insert(id);
+        let Some(o) = building.openings.iter().find(|o| o.id == id) else {
+            problems.push(format!("the script makes `{id}`, which the building does not have"));
+            continue;
+        };
+        let Some(wanted) = walls.get(o.host.as_str()) else {
+            problems.push(format!("`{id}` is hosted by `{}`, which the script does not make", o.host));
+            continue;
+        };
+        match r.get("host").and_then(Value::as_u64) {
+            Some(got) if got == *wanted => {}
+            Some(got) => problems.push(format!("`{id}` is in the wall {got} in BIMCraft, not in `{}` ({wanted})", o.host)),
+            None => problems.push(format!("BIMCraft hosted `{id}` in no wall, not in `{}`", o.host)),
+        }
+    }
+    problems.extend(
+        building.openings.iter().filter(|o| !made.contains(o.id.as_str())).map(|o| format!("`{}` is not made by the script", o.id)),
+    );
+    check(
+        "LIFT-005",
+        "openings-hosted-as-lifted",
+        problems,
+        format!("all {} openings are in the walls the building names, as BIMCraft hosts them", building.openings.len()),
+    )
+}
+
+/// LIFT-006: BIMCraft's walls and levels are the building's: the same walls, the same place, the same heights.
+fn matching_check(building: &Building, script: &Script, replies: &[Value], model: &Model) -> Check {
+    let walls = made_walls(script, replies);
+    let mut problems = Vec::new();
+    for l in script.lines.iter().filter_map(|l| l.wall_of.as_deref()) {
+        if !building.walls.iter().any(|w| w.id == l) {
+            problems.push(format!("the script makes the wall `{l}`, which the building does not have"));
+        }
+    }
+    let wall_elements = model.elements.values().filter(|e| matches!(e, Element::Wall(_))).count();
+    if wall_elements != building.walls.len() {
+        problems.push(format!("BIMCraft has {wall_elements} walls, the building {}", building.walls.len()));
+    }
+    let level = |id: &str| building.levels.iter().find(|l| l.id == id);
+    for w in &building.walls {
+        let Some(&element) = walls.get(w.id.as_str()) else {
+            problems.push(format!("the wall `{}` is not made by the script", w.id));
+            continue;
+        };
+        let Some(made) = model.wall(element) else {
+            problems.push(format!("the wall `{}` is not in the project", w.id));
+            continue;
+        };
+        let at = |p: P2| [p.0.round() as i64, p.1.round() as i64];
+        let mut differs = Vec::new();
+        if made.type_name != w.wall_type || model.thickness(made).round() as i64 != w.thickness_mm {
+            differs.push(format!("type {} ({} mm) for {} ({} mm)", made.type_name, model.thickness(made), w.wall_type, w.thickness_mm));
+        }
+        if at(made.start) != w.start || at(made.end) != w.end {
+            differs.push(format!("from {:?} to {:?} for {:?} to {:?}", at(made.start), at(made.end), w.start, w.end));
+        }
+        if model.own_base(made).round() as i64 != w.base_mm || model.own_top(made).round() as i64 != w.top_mm {
+            differs.push(format!("{} to {} mm for {} to {} mm", model.own_base(made), model.own_top(made), w.base_mm, w.top_mm));
+        }
+        let base = model.level(made.level).map(|l| (l.name.as_str(), l.elevation.round() as i64));
+        if base != level(&w.level).map(|l| (l.name, l.elevation_mm)) {
+            differs.push(format!("base level {base:?}"));
+        }
+        let top = made.top_level.and_then(|t| model.level(t)).map(|l| (l.name.as_str(), l.elevation.round() as i64));
+        if top != level(&w.top_level).map(|l| (l.name, l.elevation_mm)) {
+            differs.push(format!("top level {top:?}"));
+        }
+        if !differs.is_empty() {
+            problems.push(format!("the wall `{}` is in BIMCraft as {}", w.id, differs.join(", ")));
+        }
+    }
+    for l in &building.levels {
+        let found = model.levels().iter().any(|(_, m)| m.name == l.name && m.elevation.round() as i64 == l.elevation_mm);
+        if !found {
+            problems.push(format!("the level `{}` at {} mm is not in the project", l.name, l.elevation_mm));
+        }
+    }
+    check(
+        "LIFT-006",
+        "ir-matches-bimcraft",
+        problems,
+        format!("BIMCraft holds the building's {} walls and {} levels as the graph has them", building.walls.len(), building.levels.len()),
+    )
+}
+
 /// The rules on the script and on what BIMCraft did with it. `replies` are the commands' answers, line for line.
-pub fn run_checks(plan: &Plan, script: &Script, replies: &[Value], model: Result<(), String>) -> Vec<Check> {
+pub fn run_checks(plan: &Plan, building: &Building, script: &Script, replies: &[Value], model: &Model) -> Vec<Check> {
     let ids: BTreeSet<&str> = script.lines.iter().map(|l| l.id).collect();
     let mut problems: Vec<String> =
         REQUIRED.iter().filter(|id| !ids.contains(*id)).map(|id| format!("the script has no `{id}` command")).collect();
@@ -214,7 +445,10 @@ pub fn run_checks(plan: &Plan, script: &Script, replies: &[Value], model: Result
         })
         .collect();
     let rooms = check("RT-002", "rooms-bounded", unbounded, format!("all {} rooms are bounded by walls", plan.cells.len() + 1));
-    let model = check("RT-003", "model-valid", model.err().into_iter().collect(), "the project passes the model's own check".into());
+    let valid =
+        check("RT-003", "model-valid", model.check().err().into_iter().collect(), "the project passes the model's own check".into());
+    let hosting = hosting_check(building, script, replies);
+    let matching = matching_check(building, script, replies, model);
     let deviation = (plan.gross_m2() - plan.requested_m2).abs() / plan.requested_m2.max(f64::MIN_POSITIVE);
     let area = if deviation <= AREA_TOLERANCE {
         Check {
@@ -235,7 +469,7 @@ pub fn run_checks(plan: &Plan, script: &Script, replies: &[Value], model: Result
             ),
         }
     };
-    vec![commands, closed, ran, rooms, model, area]
+    vec![commands, closed, ran, rooms, valid, hosting, matching, area]
 }
 
 /// The report: checks, warnings, what the generator could not do, and scores a ranking can start from.

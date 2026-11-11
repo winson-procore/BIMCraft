@@ -12,15 +12,15 @@ use super::*;
 use crate::engine::Session;
 use crate::model::Element;
 
-fn built(archetype: Archetype, seed: u64, area: f64) -> Built {
+pub(super) fn built(archetype: Archetype, seed: u64, area: f64) -> Built {
     build(archetype, seed, area).unwrap_or_else(|e| panic!("{} {seed} {area}: {e}", archetype.name()))
 }
 
-fn text(b: &Built, name: &str) -> String {
+pub(super) fn text(b: &Built, name: &str) -> String {
     b.files.iter().find(|(n, _)| *n == name).map(|(_, t)| t.clone()).unwrap_or_else(|| panic!("no {name}"))
 }
 
-fn doc(b: &Built, name: &str) -> Value {
+pub(super) fn doc(b: &Built, name: &str) -> Value {
     serde_json::from_str(&text(b, name)).unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 
@@ -32,7 +32,7 @@ fn brief(path: &std::path::Path, archetype: &str, seed: u64, area: f64) -> Value
     json!({"path": path, "archetype": archetype, "seed": seed, "area_m2": area})
 }
 
-const BRIEFS: [(&str, u64, f64); 12] = [
+pub(super) const BRIEFS: [(&str, u64, f64); 12] = [
     ("office", 0, 400.0),
     ("office", 1, 900.0),
     ("office", 2, 900.0),
@@ -47,7 +47,7 @@ const BRIEFS: [(&str, u64, f64); 12] = [
     ("clinic", 5, 200.0),
 ];
 
-fn archetype(name: &str) -> Archetype {
+pub(super) fn archetype(name: &str) -> Archetype {
     Archetype::parse(name).unwrap_or_else(|| panic!("{name}"))
 }
 
@@ -356,7 +356,7 @@ fn each_rule_fails_on_a_graph_that_breaks_it_and_only_that_one() {
     assert!(c.detail.contains("waiting room"), "{}", c.detail);
 }
 
-fn count(s: &Session, f: impl Fn(&Element) -> bool) -> usize {
+pub(super) fn count(s: &Session, f: impl Fn(&Element) -> bool) -> usize {
     s.model.elements.values().filter(|e| f(e)).count()
 }
 
@@ -453,7 +453,10 @@ fn the_report_says_what_was_checked_and_what_the_generator_cannot_do() {
     let ids: Vec<&str> = checks.iter().map(|c| c["id"].as_str().unwrap()).collect();
     assert_eq!(
         ids,
-        ["GR-001", "GR-002", "GR-003", "GR-004", "GR-005", "GR-006", "PR-001", "SC-001", "SC-002", "RT-001", "RT-002", "RT-003", "GM-001"]
+        [
+            "GR-001", "GR-002", "GR-003", "GR-004", "GR-005", "GR-006", "PR-001", "LIFT-001", "LIFT-002", "LIFT-003", "LIFT-004", "SC-001",
+            "SC-002", "RT-001", "RT-002", "RT-003", "LIFT-005", "LIFT-006", "GM-001"
+        ]
     );
     assert!(checks.iter().all(|c| matches!(c["status"].as_str(), Some("PASS" | "WARN")) && !c["detail"].as_str().unwrap().is_empty()));
     assert_eq!(r["summary"]["fail"], 0);

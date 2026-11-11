@@ -4,7 +4,8 @@
 
 use serde_json::{Value, json};
 
-use super::layout::{EXTERIOR, INTERIOR, Plan};
+use super::layout::Plan;
+use super::lift::Building;
 
 /// A command of the script, and the space it makes a room for, when it is one.
 #[derive(Clone, Debug)]
@@ -12,6 +13,10 @@ pub struct Line {
     pub id: &'static str,
     pub params: Value,
     pub room_of: Option<String>,
+    /// The id of the building's wall this command makes.
+    pub wall_of: Option<String>,
+    /// The id of the building's door or window this command makes.
+    pub opening_of: Option<String>,
 }
 
 pub struct Script {
@@ -46,10 +51,11 @@ fn sheet_for(plan: &Plan) -> (&'static str, i64) {
 }
 
 fn line(id: &'static str, params: Value) -> Line {
-    Line { id, params, room_of: None }
+    Line { id, params, room_of: None, wall_of: None, opening_of: None }
 }
 
-pub fn compile(plan: &Plan) -> Script {
+/// The script of a building: its walls and openings as the lifted graph has them, the rest as the plan has it.
+pub fn compile(plan: &Plan, building: &Building) -> Script {
     let (w, d) = (plan.width, plan.depth);
     let title = format!("{} {} m2, seed {}", plan.archetype.name(), plan.gross_m2().round(), plan.seed);
     let mut lines = vec![
@@ -69,13 +75,19 @@ pub fn compile(plan: &Plan) -> Script {
         }
         lines.push(line("grid", params));
     }
-    for wall in &plan.walls {
-        let ty = if wall.kind == "exterior" { EXTERIOR } else { INTERIOR };
-        lines.push(line("wall", json!({"points": wall.points, "closed": wall.closed, "type": ty})));
+    for wall in &building.walls {
+        let params = json!({"points": [wall.start, wall.end], "closed": false, "type": wall.wall_type});
+        lines.push(Line { wall_of: Some(wall.id.clone()), ..line("wall", params) });
     }
     lines.push(line("floor", json!({"boundary": [[0, 0], [w, 0], [w, d], [0, d]]})));
     for id in ["door", "window"] {
-        lines.extend(plan.openings.iter().filter(|o| o.kind == id).map(|o| line(id, json!({"at": o.at}))));
+        lines.extend(
+            building
+                .openings
+                .iter()
+                .filter(|o| o.kind == id)
+                .map(|o| Line { opening_of: Some(o.id.clone()), ..line(id, json!({"at": o.at})) }),
+        );
     }
     let corridor = &plan.program.corridor;
     let mut rooms = vec![(corridor.id.clone(), corridor.label.clone(), [w / 2, (plan.corridor_bottom + plan.corridor_top) / 2])];
