@@ -23,6 +23,10 @@ const USAGE: &str = "USAGE:
                                  write a generated plan's run directory: program, topology and building graphs, a script for
                                  `run --script`, a report and a manifest. The same brief gives the same files; a brief that
                                  can't be met (an area too small) exits non-zero, naming why, and writes nothing
+  bimcraft-cli rule-pack seed --out DIR
+                                 write the frontier-model rule pack seed library: a manifest, a validation report and one pack of
+                                 rules for each of office, clinic, hospital, datacenter and airport. The same files every time; a
+                                 library that fails its own checks exits non-zero, naming why, and writes nothing
   bimcraft-cli info FILE         levels, element counts, types and warnings of a project or an IFC file; of a Revit .rvt or
                                  .rfa file, its release, last save, levels and element counts by category
   bimcraft-cli convert IN OUT    a project, an IFC file or a Revit .rvt file to .ifc, .glb, .svg, .png or .bimcraft
@@ -74,6 +78,10 @@ fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
             let params = generate_params(rest)?;
             print(out, &s.execute("generate", &params)?)
         }
+        [cmd, sub, rest @ ..] if cmd == "rule-pack" && sub == "seed" => {
+            let params = rule_pack_params(rest)?;
+            print(out, &s.execute("rule_pack", &params)?)
+        }
         [cmd, file] if cmd == "info" && revit::is_revit(file) => print_pretty(out, &revit::info(file)?),
         [cmd, file] if cmd == "info" => {
             s.execute("open", &json!({ "path": file }))?;
@@ -121,6 +129,23 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
         "area_m2": area.parse::<f64>().map_err(|_| format!("--area is a number of square metres, got `{area}`"))?,
         "path": need(out, "--out")?,
     }))
+}
+
+/// What follows `rule-pack seed`, as the command's params: `--out`, once.
+fn rule_pack_params(args: &[String]) -> Result<Value, String> {
+    let mut out: Option<&String> = None;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        let value = rest.next().ok_or_else(|| format!("{arg} needs a value\n\n{USAGE}"))?;
+        if arg != "--out" {
+            return Err(format!("unknown option `{arg}` for rule-pack seed\n\n{USAGE}"));
+        }
+        if out.replace(value).is_some() {
+            return Err(format!("{arg} given twice\n\n{USAGE}"));
+        }
+    }
+    let out = out.ok_or_else(|| format!("rule-pack seed needs --out\n\n{USAGE}"))?;
+    Ok(json!({ "path": out }))
 }
 
 /// What follows `mcp`.
@@ -364,6 +389,37 @@ mod tests {
             all.extend(args);
             let e = cli_out(&all).unwrap_err();
             assert!(e.contains(says), "{all:?}: {e}");
+        }
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn rule_pack_seed_writes_the_library() {
+        let dir = std::env::temp_dir().join(format!("bimcraft-cli-rule-pack-{}", std::process::id()));
+        let at = dir.to_string_lossy().into_owned();
+        let out = cli_out(&["rule-pack", "seed", "--out", &at]).unwrap();
+        let reply: Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(reply["packs"].as_array().unwrap().len(), 5);
+        let manifest: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("rule-pack-manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["library_id"], "frontier-model-seed-library");
+        assert!(dir.join("validation-report.json").is_file() && dir.join("packs").join("airport.json").is_file());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn rule_pack_seed_names_what_is_wrong_with_its_arguments() {
+        let dir = std::env::temp_dir().join(format!("bimcraft-cli-rule-pack-bad-{}", std::process::id()));
+        let at = dir.to_string_lossy().into_owned();
+        for (args, says) in [
+            (vec!["rule-pack", "seed"], "--out"),
+            (vec!["rule-pack", "seed", "--out", &at, "--out", &at], "twice"),
+            (vec!["rule-pack", "seed", "--colour", "red"], "unknown option"),
+            (vec!["rule-pack", "seed", "--out"], "needs a value"),
+            (vec!["rule-pack", "grow", "--out", &at], "USAGE"),
+            (vec!["rule-pack"], "USAGE"),
+        ] {
+            let e = cli_out(&args).unwrap_err();
+            assert!(e.contains(says), "{args:?}: {e}");
         }
         assert!(!dir.exists());
     }
