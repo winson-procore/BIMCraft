@@ -27,6 +27,10 @@ const USAGE: &str = "USAGE:
                                  write the frontier-model rule pack seed library: a manifest, a validation report and one pack of
                                  rules for each of office, clinic, hospital, datacenter and airport. The same files every time; a
                                  library that fails its own checks exits non-zero, naming why, and writes nothing
+  bimcraft-cli drawing-miner cad --corpus DIR --out DIR
+                                 mine a CAD corpus described by DIR/sources.json into normalized scene, semantic element, space graph,
+                                 overlay, candidate-rule, report and manifest artifacts. Oracles in the corpus are used for fixture
+                                 metrics; candidate rules are exploratory only
   bimcraft-cli info FILE         levels, element counts, types and warnings of a project or an IFC file; of a Revit .rvt or
                                  .rfa file, its release, last save, levels and element counts by category
   bimcraft-cli convert IN OUT    a project, an IFC file or a Revit .rvt file to .ifc, .glb, .svg, .png or .bimcraft
@@ -81,6 +85,10 @@ fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
         [cmd, sub, rest @ ..] if cmd == "rule-pack" && sub == "seed" => {
             let params = rule_pack_params(rest)?;
             print(out, &s.execute("rule_pack", &params)?)
+        }
+        [cmd, sub, rest @ ..] if cmd == "drawing-miner" && sub == "cad" => {
+            let params = drawing_miner_params(rest)?;
+            print(out, &s.execute("drawing_miner", &params)?)
         }
         [cmd, file] if cmd == "info" && revit::is_revit(file) => print_pretty(out, &revit::info(file)?),
         [cmd, file] if cmd == "info" => {
@@ -146,6 +154,25 @@ fn rule_pack_params(args: &[String]) -> Result<Value, String> {
     }
     let out = out.ok_or_else(|| format!("rule-pack seed needs --out\n\n{USAGE}"))?;
     Ok(json!({ "path": out }))
+}
+
+/// What follows `drawing-miner cad`, as the command's params: `--corpus` and `--out`, each once.
+fn drawing_miner_params(args: &[String]) -> Result<Value, String> {
+    let (mut corpus, mut out) = (None, None);
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        let value = rest.next().ok_or_else(|| format!("{arg} needs a value\n\n{USAGE}"))?;
+        let slot = match arg.as_str() {
+            "--corpus" => &mut corpus,
+            "--out" => &mut out,
+            other => return Err(format!("unknown option `{other}` for drawing-miner cad\n\n{USAGE}")),
+        };
+        if slot.replace(value).is_some() {
+            return Err(format!("{arg} given twice\n\n{USAGE}"));
+        }
+    }
+    let need = |what: Option<&String>, flag: &str| what.cloned().ok_or_else(|| format!("drawing-miner cad needs {flag}\n\n{USAGE}"));
+    Ok(json!({"corpus": need(corpus, "--corpus")?, "out": need(out, "--out")?}))
 }
 
 /// What follows `mcp`.
