@@ -69,7 +69,7 @@ pub static ALL: &[Command] = &[
     other(
         "generate",
         "Generate Building",
-        "{path, archetype: office|clinic, seed, area_m2} write a run directory at `path` for a generated one-storey plan of about \
+        "{path, archetype: office|clinic|hospital, seed, area_m2} write a run directory at `path` for a generated one-storey plan of about \
          `area_m2` gross (above 0, at most 5000): program-graph.json, topology-graph.json, building-ir.json, script.bimcraft.txt (a \
          script for `run`, which builds the plan, its sheet and its annotation), report.json and manifest.json. `seed` is an integer \
          from 0: the same brief gives the same bytes, other seeds other plans. A brief that can't be met (an area too small for the \
