@@ -134,7 +134,10 @@ pub static ALL: &[Command] = &[
          lowest level by default), and a .dxf or .dwg of a section or elevation `view` names draws it as CAD too (the cut, grids, \
          levels and lettering as entities; the picture of what lies beyond is left out, which `notes` say): the DXF is AutoCAD 2018 ASCII in mm, on AIA layers by category (A-WALL, A-DOOR, A-GLAZ, \
          A-AREA-IDEN, A-ANNO-DIMS, …; fills on <layer>-PATT, lettering as strokes), and the DWG the same drawing as AutoCAD \
-         2018 (AC1032), where the build has a DWG writer; .pdf prints every sheet, a page each",
+         2018 (AC1032), where the build has a DWG writer; a .dxf or .dwg of a sheet `view` names (its number or name) is paper space: \
+         the sheet's title block as an INSERT with its number and name as attributes, a VIEWPORT for each placed view at its scale \
+         on the sheet, each view's drawing behind it in model space, and the schedules on the sheet as tables; .pdf prints every \
+         sheet, a page each",
         save,
     ),
     other("undo", "Undo", "{count?} takes back the last `count` steps (1 by default)", undo),
@@ -1572,7 +1575,7 @@ pub static ALL: &[Command] = &[
          reflected ceiling plan, looking up from 2300 mm), a section, an elevation, a sheet (at 5 px a paper mm), or the 3D view seen from \
          `azimuth` degrees round from east (counter-clockwise) and `elevation` degrees up (by default from the south-east, \
          30° up), fitted; in perspective (see `perspective`) through its lens, and with `eye_elevation` from an eye that high \
-         (mm) looking at the same point, as a PNG (pngBase64), or written to a path: .png, .svg, .dxf or .dwg for a plan, .png, .dxf or .dwg for a section or elevation, .pdf for a sheet. A plan, section, \
+         (mm) looking at the same point, as a PNG (pngBase64), or written to a path: .png, .svg, .dxf or .dwg for a plan, .png, .dxf or .dwg for a section or elevation, .pdf for a sheet, .dxf or .dwg for a sheet as paper space with a viewport for each view (see `save`). A plan, section, \
          elevation or sheet that could not draw something as asked (a fill pattern too dense for the view, more ink behind \
          a region than is kept above it) says so in the reply's `notes`",
         render_view,
@@ -3113,6 +3116,13 @@ fn save(s: &mut Session, p: &Value) -> R {
             let reply = json!({"path": path, "format": format, "view": name, "kind": kind, "width": width, "height": height});
             return Ok(with_notes(reply, &notes));
         }
+        if matches!(format.as_str(), "dxf" | "dwg")
+            && let Some((id, number, _)) = sheet_view(&seen, p.get("view"))
+        {
+            let ((width, height), notes) = write_sheet(&seen, id, &path, s.dwg_writer.as_ref()).map_err(|e| bad(c, e))?;
+            let reply = json!({"path": path, "format": format, "view": number, "kind": "sheet", "width": width, "height": height});
+            return Ok(with_notes(reply, &notes));
+        }
         let level = level_param(c, &s.model, p, "view")?;
         let notes =
             write_drawing(&render::plan(&seen, level, 1600, 1000), &seen, &path, s.dwg_writer.as_ref(), 0).map_err(|e| bad(c, e))?;
@@ -3212,6 +3222,47 @@ fn write_cut(m: &Model, id: Id, path: &Path, dwg: Option<&crate::cad::DwgWriter>
     let (d, beyond) = render::section_drawn(m, id, render::section_fit(m, id, 1600, 1000))?;
     let notes = [d.notes.clone(), write_drawing(&d, m, path, dwg, beyond)?].concat();
     Ok(((d.view.width, d.view.height), notes))
+}
+
+/// The sheet `view` names, by number, name or id, unless a level is called that: its id, number and paper, mm.
+fn sheet_view(m: &Model, view: Option<&Value>) -> Option<(Id, String, P2)> {
+    let level = match view {
+        None => true,
+        Some(Value::String(n)) => m.levels().iter().any(|(_, l)| l.name == *n),
+        Some(v) => v.as_u64().is_some_and(|id| m.level(id).is_some()),
+    };
+    let named = |id: &Id, sh: &Sheet| {
+        view.and_then(Value::as_str).is_some_and(|n| n == sh.number || n == sh.name) || view.and_then(Value::as_u64) == Some(*id)
+    };
+    m.elements.iter().find_map(|(id, e)| match e {
+        Element::Sheet(sh) if !level && named(id, sh) => Some((*id, sh.number.clone(), paper(&sh.size)?)),
+        _ => None,
+    })
+}
+
+/// Sheet `id` of `m` written to `path`, a .dxf or .dwg, as paper space with its views' viewports: the size in px of its picture
+/// as a PNG would be, and the notes on what the file leaves out.
+fn write_sheet(m: &Model, id: Id, path: &Path, dwg: Option<&crate::cad::DwgWriter>) -> Result<((u32, u32), Vec<String>), String> {
+    let e = sheet::export(m, id).ok_or_else(|| format!("sheet {id} can't be drawn"))?;
+    let size = ((e.paper.0 * sheet::DENSITY).round() as u32, (e.paper.1 * sheet::DENSITY).round() as u32);
+    let format = ext(path);
+    let mut notes = e.page.notes.clone();
+    if e.pictures > 0 {
+        notes.push(format!(
+            "{} picture(s) on the sheet (a section's view of what lies beyond its cut, a 3D view) aren't written to {}",
+            e.pictures,
+            format.to_ascii_uppercase()
+        ));
+    }
+    let text = render::dxf::sheet_dxf(e, m);
+    let bytes = match (format.as_str(), dwg) {
+        ("dxf", _) => text.into_bytes(),
+        ("dwg", Some(write)) => write(&text).map_err(|e| format!("{}: {e}", path.display()))?,
+        ("dwg", None) => return Err(format!("{}: this build can't write DWG; save as .dxf", path.display())),
+        (other, _) => return Err(format!("a sheet is written as .dxf or .dwg here, not `.{other}`")),
+    };
+    std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok((size, notes))
 }
 
 /// A picture that only comes as PNG (the 3D view, a section): written to `path`, a .png, when
@@ -3414,19 +3465,12 @@ fn render_view(s: &mut Session, p: &Value) -> R {
         return png_reply(c, p, png, with_notes(json!({"width": w3, "height": h3, "view": name, "kind": kind}), &notes));
     }
     // A sheet, by number, name or id, unless a level is called that.
-    let level = match view {
-        None => true,
-        Some(Value::String(n)) => m.levels().iter().any(|(_, l)| l.name == *n),
-        Some(v) => v.as_u64().is_some_and(|id| m.level(id).is_some()),
-    };
-    let named = |id: &Id, sh: &Sheet| {
-        view.and_then(Value::as_str).is_some_and(|n| n == sh.number || n == sh.name) || view.and_then(Value::as_u64) == Some(*id)
-    };
-    let paper_of = m.elements.iter().find_map(|(id, e)| match e {
-        Element::Sheet(sh) if !level && named(id, sh) => Some((*id, sh.number.clone(), paper(&sh.size)?)),
-        _ => None,
-    });
-    if let Some((id, number, size)) = paper_of {
+    if let Some((id, number, size)) = sheet_view(m, view) {
+        // As CAD when the path says so: paper space and a viewport for each view, the pictures owned up to.
+        if let Some(path) = string(c, p, "path")?.map(PathBuf::from).filter(|path| matches!(ext(path).as_str(), "dxf" | "dwg")) {
+            let ((width, height), notes) = write_sheet(m, id, &path, s.dwg_writer.as_ref()).map_err(|e| bad(c, e))?;
+            return Ok(with_notes(json!({"path": path, "width": width, "height": height, "view": number, "kind": "sheet"}), &notes));
+        }
         let d = sheet::draw(m, id).ok_or_else(|| bad(c, format!("sheet {number} can't be drawn")))?;
         let info = with_notes(json!({"width": d.view.width, "height": d.view.height, "view": number, "kind": "sheet"}), &d.notes);
         if let Some(path) = string(c, p, "path")?.filter(|path| ext(Path::new(path)) == "pdf") {

@@ -4,7 +4,7 @@
 //! carries it once and a reader that does not rebuild a dimension still draws it. The number is the `TEXT` beside it, so the
 //! entity's own is blank.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use super::*;
 use crate::render::DimensionRecord;
@@ -51,30 +51,31 @@ fn placeable(r: &DimensionRecord) -> bool {
 
 impl Dims {
     /// The dimension entities `d` holds that can be written, with a block for each element and a style for each type; empty for a
-    /// view that cannot place them. Handles come from `w`; what they cover grows `ext` and what they are on goes in `layers`.
-    pub fn of(d: &Drawing, m: &Model, texts: bool, w: &mut Out, ext: &mut Option<[P2; 2]>, layers: &mut BTreeSet<String>) -> Dims {
+    /// view that cannot place them. Handles and names come from `sh`, which the file's other drawings draw on too (a style a
+    /// dimension type names is written once); what they cover grows `ext` and what they are on goes in its layers. `space` owns
+    /// the entities.
+    pub fn of(d: &Drawing, m: &Model, texts: bool, sh: &mut Shared, ext: &mut Option<[P2; 2]>, space: u64) -> Dims {
         let mut out = Dims::default();
         if !texts {
             return out;
         }
-        let mut names: BTreeMap<&str, String> = BTreeMap::new();
-        let mut taken = BTreeSet::new();
         for r in d.dimensions.iter().filter(|r| placeable(r)).take(MAX_DIMENSIONS) {
             let Some(owner) = r.owner else { continue };
-            let name = match names.get(r.style.as_str()) {
+            let name = match sh.names.style_of.get(r.style.as_str()) {
                 Some(name) => name.clone(),
                 None => {
-                    let name = safe(&r.style, "BIM-DIM", &taken);
-                    taken.insert(name.to_uppercase());
-                    names.insert(r.style.as_str(), name.clone());
+                    let name = safe(&r.style, "BIM-DIM", &sh.names.styles);
+                    sh.names.styles.insert(name.to_uppercase());
+                    sh.names.style_of.insert(r.style.clone(), name.clone());
                     out.styles.push(Style { name: name.clone(), record: r.clone() });
                     name
                 }
             };
             let first = !out.blocks.contains_key(&owner);
             if first {
-                let n = out.blocks.len() + 1;
-                let block = Block { name: format!("*D{n}"), record: w.handle(), begin: w.handle(), end: w.handle(), body: String::new() };
+                sh.names.dimensions += 1;
+                let name = format!("*D{}", sh.names.dimensions);
+                let block = Block { name, record: sh.w.handle(), begin: sh.w.handle(), end: sh.w.handle(), body: String::new() };
                 out.blocks.insert(owner, block);
             }
             let block = out.blocks.get(&owner).filter(|_| first).map(|b| b.name.as_str());
@@ -86,9 +87,9 @@ impl Dims {
                 }
                 _ => Rgb(0, 0, 0),
             };
-            entity_of(&mut out.entities, w.handle(), layer, color, &name, block, r);
+            entity_of(&mut out.entities, (sh.w.handle(), space), (layer, color), &name, block, r);
             *ext = grow(*ext, &[r.from, r.to, r.line, r.text]);
-            layers.insert(layer.to_string());
+            sh.layers.insert(layer.to_string());
         }
         out
     }
@@ -155,9 +156,9 @@ impl Dims {
 
 /// One segment as a `DIMENSION`: aligned, or rotated for a linear one, of the style `style`, holding `block` if it is the first
 /// of its element's.
-fn entity_of(s: &mut String, h: u64, layer: &str, color: Rgb, style: &str, block: Option<&str>, r: &DimensionRecord) {
+fn entity_of(s: &mut String, (h, owner): (u64, u64), (layer, color): (&str, Rgb), style: &str, block: Option<&str>, r: &DimensionRecord) {
     pair(s, 0, "DIMENSION");
-    entity(s, h, MODEL_SPACE, layer, None, None, color);
+    entity(s, h, owner, layer, None, None, color);
     pair(s, 100, "AcDbDimension");
     if let Some(name) = block {
         pair(s, 2, name);
