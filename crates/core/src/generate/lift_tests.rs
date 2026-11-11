@@ -5,12 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
+use super::Built;
 use super::graph::Topology;
 use super::lift::Building;
 use super::report::{self, Status};
 use super::script::{self, Script};
 use super::tests::{BRIEFS, archetype, built, count, doc, text};
-use super::Built;
 use crate::engine::Session;
 use crate::model::Element;
 
@@ -251,11 +251,19 @@ fn every_opening_is_hosted_on_the_wall_bimcraft_chose() {
         for (l, r) in script.lines.iter().zip(&replies) {
             let Some(o) = &l.opening_of else { continue };
             let declared = &building.openings.iter().find(|x| &x.id == o).unwrap_or_else(|| panic!("{label}: {o}")).host;
-            assert_eq!(r["host"].as_u64(), element.get(declared.as_str()).copied(), "{label}: {o} is not in {declared} as BIMCraft hosts it");
+            assert_eq!(
+                r["host"].as_u64(),
+                element.get(declared.as_str()).copied(),
+                "{label}: {o} is not in {declared} as BIMCraft hosts it"
+            );
             hosted += 1;
         }
         assert_eq!(hosted, building.openings.len(), "{label}: a command for each opening of the building");
-        assert_eq!(count(&s, |e| matches!(e, Element::Wall(_))), building.walls.len(), "{label}: a wall element for each wall of the building");
+        assert_eq!(
+            count(&s, |e| matches!(e, Element::Wall(_))),
+            building.walls.len(),
+            "{label}: a wall element for each wall of the building"
+        );
         let through = run_status(&b, &building, &script, &replies, &s);
         assert_eq!(through["LIFT-005"], Status::Pass, "{label}");
         assert_eq!(through["LIFT-006"], Status::Pass, "{label}");

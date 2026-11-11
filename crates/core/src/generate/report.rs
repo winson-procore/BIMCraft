@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
-use crate::ids::Id;
 use crate::geom::P2;
+use crate::ids::Id;
 use crate::model::{Element, Model};
 
 use super::graph::{SCHEMA_VERSION, Topology};
@@ -308,12 +308,7 @@ fn program_check(t: &Topology, archetype: Archetype) -> Check {
 
 /// The wall elements BIMCraft made, by the id of the building's wall each command was for.
 fn made_walls<'a>(script: &'a Script, replies: &[Value]) -> BTreeMap<&'a str, Id> {
-    script
-        .lines
-        .iter()
-        .zip(replies)
-        .filter_map(|(l, r)| Some((l.wall_of.as_deref()?, r.get("ids")?.get(0)?.as_u64()?)))
-        .collect()
+    script.lines.iter().zip(replies).filter_map(|(l, r)| Some((l.wall_of.as_deref()?, r.get("ids")?.get(0)?.as_u64()?))).collect()
 }
 
 /// LIFT-005: each door and window is in the wall the building says, as BIMCraft hosted it when the script ran.
@@ -338,7 +333,9 @@ fn hosting_check(building: &Building, script: &Script, replies: &[Value]) -> Che
             None => problems.push(format!("BIMCraft hosted `{id}` in no wall, not in `{}`", o.host)),
         }
     }
-    problems.extend(building.openings.iter().filter(|o| !made.contains(o.id.as_str())).map(|o| format!("`{}` is not made by the script", o.id)));
+    problems.extend(
+        building.openings.iter().filter(|o| !made.contains(o.id.as_str())).map(|o| format!("`{}` is not made by the script", o.id)),
+    );
     check(
         "LIFT-005",
         "openings-hosted-as-lifted",
@@ -379,13 +376,7 @@ fn matching_check(building: &Building, script: &Script, replies: &[Value], model
             differs.push(format!("from {:?} to {:?} for {:?} to {:?}", at(made.start), at(made.end), w.start, w.end));
         }
         if model.own_base(made).round() as i64 != w.base_mm || model.own_top(made).round() as i64 != w.top_mm {
-            differs.push(format!(
-                "{} to {} mm for {} to {} mm",
-                model.own_base(made),
-                model.own_top(made),
-                w.base_mm,
-                w.top_mm
-            ));
+            differs.push(format!("{} to {} mm for {} to {} mm", model.own_base(made), model.own_top(made), w.base_mm, w.top_mm));
         }
         let base = model.level(made.level).map(|l| (l.name.as_str(), l.elevation.round() as i64));
         if base != level(&w.level).map(|l| (l.name, l.elevation_mm)) {
@@ -454,7 +445,8 @@ pub fn run_checks(plan: &Plan, building: &Building, script: &Script, replies: &[
         })
         .collect();
     let rooms = check("RT-002", "rooms-bounded", unbounded, format!("all {} rooms are bounded by walls", plan.cells.len() + 1));
-    let valid = check("RT-003", "model-valid", model.check().err().into_iter().collect(), "the project passes the model's own check".into());
+    let valid =
+        check("RT-003", "model-valid", model.check().err().into_iter().collect(), "the project passes the model's own check".into());
     let hosting = hosting_check(building, script, replies);
     let matching = matching_check(building, script, replies, model);
     let deviation = (plan.gross_m2() - plan.requested_m2).abs() / plan.requested_m2.max(f64::MIN_POSITIVE);
