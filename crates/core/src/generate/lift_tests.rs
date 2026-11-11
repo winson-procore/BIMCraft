@@ -5,11 +5,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
-use super::Built;
 use super::graph::Topology;
 use super::lift::Building;
 use super::report::{self, Status};
-use super::tests::{BRIEFS, archetype, built, doc};
+use super::script::{self, Script};
+use super::tests::{BRIEFS, archetype, built, count, doc, text};
+use super::Built;
+use crate::engine::Session;
+use crate::model::Element;
 
 fn lifted(name: &str, seed: u64, area: f64) -> (Built, Topology, Building) {
     let b = built(archetype(name), seed, area);
@@ -214,4 +217,115 @@ fn a_failed_lift_rule_says_what_to_fix() {
     let c = report::lift_checks(&b, &topology).into_iter().find(|c| c.id == "LIFT-002").unwrap();
     assert_eq!(c.status, Status::Fail);
     assert!(c.detail.contains(&b.walls[2].id), "the wall is named: {}", c.detail);
+}
+
+/// A brief's building, its script as compiled from it, and the answers of a fresh project that ran it.
+fn ran(name: &str, seed: u64, area: f64) -> (Built, Building, Script, Vec<Value>, Session) {
+    let (b, _, building) = lifted(name, seed, area);
+    let script = script::compile(&b.plan, &building);
+    assert_eq!(script.text, text(&b, "script.bimcraft.txt"), "the file holds the script compiled from the building");
+    let mut s = Session::new();
+    let replies = s.script(&script.text).unwrap_or_else(|e| panic!("{name} {seed} {area}: {e}"));
+    (b, building, script, replies, s)
+}
+
+fn run_status(b: &Built, building: &Building, script: &Script, replies: &[Value], s: &Session) -> BTreeMap<&'static str, Status> {
+    report::run_checks(&b.plan, building, script, replies, &s.model).into_iter().map(|c| (c.id, c.status)).collect()
+}
+
+#[test]
+fn every_opening_is_hosted_on_the_wall_bimcraft_chose() {
+    for (name, seed, area) in BRIEFS {
+        let (b, building, script, replies, s) = ran(name, seed, area);
+        let label = format!("{name} {seed} {area}");
+        // The wall elements, by the building's wall they were made for.
+        let mut element: BTreeMap<&str, u64> = BTreeMap::new();
+        for (l, r) in script.lines.iter().zip(&replies) {
+            if let Some(w) = &l.wall_of {
+                assert_eq!(r["ids"].as_array().map(Vec::len), Some(1), "{label}: a wall command makes one wall");
+                element.insert(w, r["ids"][0].as_u64().unwrap());
+            }
+        }
+        assert_eq!(element.len(), building.walls.len(), "{label}: a command for each wall of the building");
+        let mut hosted = 0;
+        for (l, r) in script.lines.iter().zip(&replies) {
+            let Some(o) = &l.opening_of else { continue };
+            let declared = &building.openings.iter().find(|x| &x.id == o).unwrap_or_else(|| panic!("{label}: {o}")).host;
+            assert_eq!(r["host"].as_u64(), element.get(declared.as_str()).copied(), "{label}: {o} is not in {declared} as BIMCraft hosts it");
+            hosted += 1;
+        }
+        assert_eq!(hosted, building.openings.len(), "{label}: a command for each opening of the building");
+        assert_eq!(count(&s, |e| matches!(e, Element::Wall(_))), building.walls.len(), "{label}: a wall element for each wall of the building");
+        let through = run_status(&b, &building, &script, &replies, &s);
+        assert_eq!(through["LIFT-005"], Status::Pass, "{label}");
+        assert_eq!(through["LIFT-006"], Status::Pass, "{label}");
+    }
+}
+
+#[test]
+fn the_script_makes_the_walls_of_the_plan_where_the_plan_put_them() {
+    for (name, seed, area) in BRIEFS {
+        let (b, building, _, _, s) = ran(name, seed, area);
+        let made: Vec<([i64; 2], [i64; 2])> = s
+            .model
+            .elements
+            .values()
+            .filter_map(|e| match e {
+                Element::Wall(w) => Some(([w.start.0 as i64, w.start.1 as i64], [w.end.0 as i64, w.end.1 as i64])),
+                _ => None,
+            })
+            .collect();
+        // The plan's polylines, a segment to a wall, in the order the plan lists them.
+        let planned: Vec<([i64; 2], [i64; 2])> = b
+            .plan
+            .walls
+            .iter()
+            .flat_map(|w| {
+                let mut pts = w.points.clone();
+                if w.closed {
+                    pts.extend(w.points.first().copied());
+                }
+                pts.windows(2).map(|p| (p[0], p[1])).collect::<Vec<_>>()
+            })
+            .collect();
+        assert_eq!(made, planned, "{name} {seed} {area}");
+        assert_eq!(building.walls.iter().map(|w| (w.start, w.end)).collect::<Vec<_>>(), planned);
+    }
+}
+
+#[test]
+fn each_run_time_lift_rule_fails_on_a_building_that_breaks_it_and_only_that_one() {
+    let (b, good, script, replies, s) = ran("office", 1, 900.0);
+    let rules = ["LIFT-005", "LIFT-006"];
+    let now = run_status(&b, &good, &script, &replies, &s);
+    assert!(rules.iter().all(|r| now[r] == Status::Pass), "{now:?}");
+
+    let with = |change: &dyn Fn(&mut Building)| {
+        let mut x = good.clone();
+        change(&mut x);
+        x
+    };
+    let door = good.openings.iter().position(|o| o.kind == "door" && !o.entry).unwrap();
+    let window = good.openings.iter().position(|o| o.kind == "window").unwrap();
+    let other = |host: &str| if host == "wall_ext_south" { "wall_ext_north" } else { "wall_ext_south" }.to_string();
+    let part = good.walls.iter().position(|w| w.id.starts_with("wall_part_")).unwrap();
+    let cases: Vec<(&str, Building)> = vec![
+        ("LIFT-005", with(&|x| x.openings[door].host = other(&good.openings[door].host))),
+        ("LIFT-005", with(&|x| x.openings[window].host = "wall_corr_south".into())),
+        ("LIFT-005", with(&|x| x.openings[window].host = "wall_nowhere".into())),
+        ("LIFT-005", with(&|x| drop(x.openings.pop()))),
+        ("LIFT-006", with(&|x| x.walls[part].thickness_mm = 200)),
+        ("LIFT-006", with(&|x| x.walls[part].top_mm = 3600)),
+        ("LIFT-006", with(&|x| x.walls[part].base_mm = 100)),
+        ("LIFT-006", with(&|x| x.walls[part].start[1] += 100)),
+        ("LIFT-006", with(&|x| x.levels[1].elevation_mm = 3300)),
+        ("LIFT-006", with(&|x| drop(x.walls.pop()))),
+    ];
+    for (broken, building) in &cases {
+        let got = run_status(&b, building, &script, &replies, &s);
+        for id in rules {
+            let want = if id == *broken { Status::Fail } else { Status::Pass };
+            assert_eq!(got[id], want, "{broken} broken, rule {id}: {got:?}");
+        }
+    }
 }

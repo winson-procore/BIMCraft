@@ -11,9 +11,12 @@ use super::graph::{BUILDING_KIND, SCHEMA_VERSION, Topology};
 use super::layout::{Band, EXTERIOR, INTERIOR, Plan};
 
 pub const LEVEL_1: &str = "level_1";
+pub const LEVEL_2: &str = "level_2";
 pub const ROOF: &str = "level_roof";
-/// The storey's height: the level `new` makes and the one the script adds above it.
-const STOREY_MM: i64 = 3600;
+/// The storey's height: `new` makes Level 2 here, and a wall with no top given is topped at it.
+const STOREY_MM: i64 = 3000;
+/// The level the script adds above the storey.
+const ROOF_MM: i64 = 3600;
 
 #[derive(Clone, Debug)]
 pub struct Level {
@@ -115,7 +118,8 @@ impl Building {
     pub fn lift(plan: &Plan, topology: &Topology) -> Building {
         let levels = vec![
             Level { id: LEVEL_1.into(), name: "Level 1", elevation_mm: 0 },
-            Level { id: ROOF.into(), name: "Roof", elevation_mm: STOREY_MM },
+            Level { id: LEVEL_2.into(), name: "Level 2", elevation_mm: STOREY_MM },
+            Level { id: ROOF.into(), name: "Roof", elevation_mm: ROOF_MM },
         ];
         let corridor = &plan.program.corridor.id;
         let rect = |id: &str| -> Option<[i64; 4]> {
@@ -170,7 +174,7 @@ impl Building {
                     kind: w.kind,
                     wall_type,
                     level: LEVEL_1.into(),
-                    top_level: ROOF.into(),
+                    top_level: LEVEL_2.into(),
                     base_mm: 0,
                     top_mm: STOREY_MM,
                     thickness_mm: thickness_of(wall_type),

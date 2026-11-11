@@ -455,7 +455,7 @@ fn the_report_says_what_was_checked_and_what_the_generator_cannot_do() {
         ids,
         [
             "GR-001", "GR-002", "GR-003", "GR-004", "GR-005", "GR-006", "PR-001", "LIFT-001", "LIFT-002", "LIFT-003", "LIFT-004", "SC-001",
-            "SC-002", "RT-001", "RT-002", "RT-003", "GM-001"
+            "SC-002", "RT-001", "RT-002", "RT-003", "LIFT-005", "LIFT-006", "GM-001"
         ]
     );
     assert!(checks.iter().all(|c| matches!(c["status"].as_str(), Some("PASS" | "WARN")) && !c["detail"].as_str().unwrap().is_empty()));

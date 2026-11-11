@@ -146,11 +146,11 @@ pub fn build(archetype: Archetype, seed: u64, area_m2: f64) -> Result<Built, Ref
     let building = Building::lift(&plan, &topology);
     let mut checks = report::graph_checks(&topology, archetype);
     checks.extend(report::lift_checks(&building, &topology));
-    let script = script::compile(&plan);
+    let script = script::compile(&plan, &building);
     let mut scratch = Session::new();
     let replies =
         scratch.script(&script.text).map_err(|e| refuse("generation_failed", format!("the generated script does not run: {e}")))?;
-    checks.extend(report::run_checks(&plan, &script, &replies, scratch.model.check()));
+    checks.extend(report::run_checks(&plan, &building, &script, &replies, &scratch.model));
     let failed = report::failures(&checks);
     if let Some(first) = failed.first() {
         let more = if failed.len() > 1 { format!(" (and {} more)", failed.len() - 1) } else { String::new() };
