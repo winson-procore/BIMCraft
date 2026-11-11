@@ -827,4 +827,6 @@ mod dims;
 #[cfg(test)]
 mod dims_tests;
 #[cfg(test)]
+mod sections_tests;
+#[cfg(test)]
 mod tests;

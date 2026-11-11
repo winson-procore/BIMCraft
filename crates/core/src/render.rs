@@ -2491,6 +2491,14 @@ pub fn section_png_noted(m: &Model, id: impl Key, view: View) -> Result<(Vec<u8>
     Ok((pm.encode_png().map_err(|e| e.to_string())?, drawing.notes))
 }
 
+/// Section or elevation `id` through `view`, drawn over the picture of what lies beyond its line as [`section_png`] draws it,
+/// and how many pictures it is over: what a CAD file leaves out.
+pub fn section_drawn(m: &Model, id: impl Key, view: View) -> Result<(Drawing, usize), String> {
+    let w = SectionWork::new(m);
+    let image = section_picture_in(m, &w, id, view, &[]).ok_or_else(|| format!("{id} is not a section or an elevation"))?;
+    Ok((section_in(m, &w, id, view, annotation(m, id, view), scale_of(m, id), Some(&image)), 1))
+}
+
 /// The plan of `level` as `view` shows it: what a canvas that pans and zooms draws.
 pub fn draw(m: &Model, level: impl Key, view: View) -> Drawing {
     draw_plan(m, level, view, false, annotation(m, level, view), scale_of(m, level), false)
