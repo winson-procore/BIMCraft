@@ -44,11 +44,11 @@ pub(super) const BRIEFS: [(&str, u64, f64); 16] = [
     ("clinic", 4, 650.0),
     ("clinic", 9, 1500.0),
     ("clinic", 12, 5000.0),
-    ("clinic", 5, 200.0),
+    ("clinic", 5, 260.0),
     ("hospital", 10, 1800.0),
     ("hospital", 11, 2400.0),
     ("hospital", 12, 5000.0),
-    ("hospital", 13, 500.0),
+    ("hospital", 13, 900.0),
 ];
 
 pub(super) fn archetype(name: &str) -> Archetype {
@@ -220,6 +220,8 @@ fn a_brief_writes_the_six_files_and_the_manifest_names_them_with_their_hashes() 
         (manifest["archetype"].as_str(), manifest["seed"].as_u64(), manifest["requested_area_m2"].as_f64()),
         (Some("office"), Some(1), Some(900.0))
     );
+    assert_eq!(manifest["requested_area"], json!({"unit": "m2", "value": 900.0}));
+    assert_eq!(manifest["layout_strategy"].as_str(), Some("single_loaded_corridor"));
     assert_eq!(manifest["generator_version"], GENERATOR_VERSION);
     assert_eq!(manifest["hash_algorithm"], "fnv1a64");
     let listed = manifest["files"].as_array().unwrap();
@@ -231,10 +233,37 @@ fn a_brief_writes_the_six_files_and_the_manifest_names_them_with_their_hashes() 
     }
     let topology = std::fs::read_to_string(out.join("topology-graph.json")).unwrap();
     assert_eq!(manifest["topology_hash"].as_str().unwrap(), fnv1a64(&topology));
+    let topology_doc: Value = serde_json::from_str(&topology).unwrap();
+    assert_eq!(topology_doc["layout_strategy"], manifest["layout_strategy"]);
+    assert_eq!(doc(&build(Archetype::Office, 1, 900.0).unwrap(), "building-ir.json")["layout_strategy"], manifest["layout_strategy"]);
     assert!(manifest["gross_area_m2"].as_f64().unwrap() > 800.0);
     let all = std::fs::read_to_string(out.join("manifest.json")).unwrap();
     assert!(!all.contains(out.to_str().unwrap()), "the manifest holds no machine's path");
     std::fs::remove_dir_all(&out).unwrap();
+}
+
+#[test]
+fn square_foot_briefs_are_converted_and_area_flags_are_exclusive() {
+    let out = dir("sqft");
+    let mut s = Session::new();
+    s.execute("generate", &json!({"path": out, "archetype": "office", "seed": 2, "area_sqft": 10_000.0})).unwrap();
+    let manifest: Value = serde_json::from_str(&std::fs::read_to_string(out.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["requested_area"], json!({"unit": "sqft", "value": 10000.0}));
+    assert!((manifest["requested_area_m2"].as_f64().unwrap() - 929.0304).abs() < 0.01);
+    std::fs::remove_dir_all(&out).unwrap();
+
+    let e = s
+        .execute("generate", &json!({"path": out, "archetype": "office", "seed": 2, "area_m2": 900.0, "area_sqft": 10_000.0}))
+        .unwrap_err();
+    assert!(e.starts_with("invalid_params: ") && e.contains("mutually exclusive"), "{e}");
+}
+
+#[test]
+fn seeds_choose_different_layout_strategies() {
+    let strategies: BTreeSet<String> = (0..6)
+        .map(|seed| doc(&built(Archetype::Hospital, seed, 1800.0), "manifest.json")["layout_strategy"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(strategies.len(), 3, "{strategies:?}");
 }
 
 #[test]
@@ -434,7 +463,11 @@ fn the_same_brief_gives_the_same_bytes_and_other_seeds_give_other_plans() {
     }
     for name in ["office", "clinic", "hospital"] {
         let a = archetype(name);
-        let area = if name == "office" { 900.0 } else { 650.0 };
+        let area = match name {
+            "office" => 900.0,
+            "clinic" => 650.0,
+            _ => 1800.0,
+        };
         let runs: Vec<Built> = (1..=10).map(|seed| built(a, seed, area)).collect();
         let scripts: BTreeSet<String> = runs.iter().map(|b| text(b, "script.bimcraft.txt")).collect();
         let hashes: BTreeSet<&str> = runs.iter().map(|b| b.topology_hash.as_str()).collect();

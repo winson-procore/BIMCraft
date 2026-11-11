@@ -76,6 +76,7 @@ pub struct Slab {
 pub struct Building {
     pub archetype: &'static str,
     pub seed: u64,
+    pub layout_strategy: &'static str,
     pub width: i64,
     pub depth: i64,
     pub levels: Vec<Level>,
@@ -219,7 +220,18 @@ impl Building {
             boundary: vec![[0, 0], [w, 0], [w, d], [0, d]],
             source_2d_refs: topology.nodes.iter().map(|n| n.id.clone()).collect(),
         }];
-        Building { archetype: plan.archetype.name(), seed: plan.seed, width: w, depth: d, levels, spaces, walls, openings, slabs }
+        Building {
+            archetype: plan.archetype.name(),
+            seed: plan.seed,
+            layout_strategy: plan.layout_strategy.name(),
+            width: w,
+            depth: d,
+            levels,
+            spaces,
+            walls,
+            openings,
+            slabs,
+        }
     }
 
     pub fn level(&self, id: &str) -> Option<&Level> {
@@ -237,6 +249,7 @@ impl Building {
             "graph_kind": BUILDING_KIND,
             "archetype": self.archetype,
             "seed": self.seed,
+            "layout_strategy": self.layout_strategy,
             "units": "mm",
             "source_2d": {"file": "topology-graph.json", "topology_hash": topology_hash, "nodes": nodes, "edges": edges},
             "footprint": {"width": self.width, "depth": self.depth},

@@ -19,7 +19,7 @@ const USAGE: &str = "USAGE:
       commands and scripts (one `ID {json}` per line), save. --save writes by extension:
       .bimcraft (the project), .ifc (IFC4), .glb (the 3D view's scene as glTF), .svg or .png (the lowest level's plan).
       --highrise builds an original 20-storey performance sample (about 10,000 elements).
-  bimcraft-cli generate --archetype office|clinic|hospital --seed N --area M2 --out DIR
+  bimcraft-cli generate --archetype office|clinic|hospital --seed N (--area M2 | --area-sqft SQFT) --out DIR
                                  write a generated plan's run directory: program, topology and building graphs, a script for
                                  `run --script`, a report and a manifest. The same brief gives the same files; a brief that
                                  can't be met (an area too small) exits non-zero, naming why, and writes nothing
@@ -113,7 +113,7 @@ fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
 
 /// What follows `generate`, as the command's params: all four options, each once.
 fn generate_params(args: &[String]) -> Result<Value, String> {
-    let (mut archetype, mut seed, mut area, mut out) = (None, None, None, None);
+    let (mut archetype, mut seed, mut area, mut area_sqft, mut out) = (None, None, None, None, None);
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         let value = rest.next().ok_or_else(|| format!("{arg} needs a value\n\n{USAGE}"))?;
@@ -121,6 +121,7 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
             "--archetype" => &mut archetype,
             "--seed" => &mut seed,
             "--area" => &mut area,
+            "--area-sqft" => &mut area_sqft,
             "--out" => &mut out,
             other => return Err(format!("unknown option `{other}` for generate\n\n{USAGE}")),
         };
@@ -130,13 +131,32 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
     }
     let need = |what: Option<&String>, flag: &str| what.cloned().ok_or_else(|| format!("generate needs {flag}\n\n{USAGE}"));
     let seed = need(seed, "--seed")?;
-    let area = need(area, "--area")?;
-    Ok(json!({
+    if area.is_some() && area_sqft.is_some() {
+        return Err(format!("generate needs only one of --area or --area-sqft, not both\n\n{USAGE}"));
+    }
+    if area.is_none() && area_sqft.is_none() {
+        return Err(format!("generate needs one of --area or --area-sqft\n\n{USAGE}"));
+    }
+    let area_m2 = match area {
+        Some(area) => Some(area.parse::<f64>().map_err(|_| format!("--area is a number of square metres, got `{area}`"))?),
+        None => None,
+    };
+    let sqft = match area_sqft {
+        Some(area) => Some(area.parse::<f64>().map_err(|_| format!("--area-sqft is a number of square feet, got `{area}`"))?),
+        None => None,
+    };
+    let mut p = json!({
         "archetype": need(archetype, "--archetype")?,
         "seed": seed.parse::<u64>().map_err(|_| format!("--seed is a whole number from 0, got `{seed}`"))?,
-        "area_m2": area.parse::<f64>().map_err(|_| format!("--area is a number of square metres, got `{area}`"))?,
         "path": need(out, "--out")?,
-    }))
+    });
+    if let Some(area) = area_m2 {
+        p["area_m2"] = json!(area);
+    }
+    if let Some(area) = sqft {
+        p["area_sqft"] = json!(area);
+    }
+    Ok(p)
 }
 
 /// What follows `rule-pack seed`, as the command's params: `--out`, once.
@@ -407,6 +427,8 @@ mod tests {
             (vec!["--archetype", "office", "--seed", "1", "--area", "900"], "--out"),
             (vec!["--archetype", "office", "--seed", "-1", "--area", "900", "--out", &at], "--seed"),
             (vec!["--archetype", "office", "--seed", "1", "--area", "big", "--out", &at], "--area"),
+            (vec!["--archetype", "office", "--seed", "1", "--area-sqft", "big", "--out", &at], "--area-sqft"),
+            (vec!["--archetype", "office", "--seed", "1", "--area", "900", "--area-sqft", "10000", "--out", &at], "only one"),
             (vec!["--archetype", "office", "--archetype", "clinic", "--seed", "1", "--area", "9", "--out", &at], "twice"),
             (vec!["--archetype", "datacenter", "--seed", "1", "--area", "900", "--out", &at], "unknown_archetype"),
             (vec!["--colour", "red"], "unknown option"),
