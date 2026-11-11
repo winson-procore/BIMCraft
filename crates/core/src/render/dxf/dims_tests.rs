@@ -11,10 +11,10 @@ use crate::geom::P2;
 use crate::model::Element;
 use crate::render::{Part, plan};
 
-type Pairs = Vec<(i32, String)>;
+pub(super) type Pairs = Vec<(i32, String)>;
 
 /// What a DXF's text holds in `section` ("TABLES", "BLOCKS", "ENTITIES"): each record's name (its group 0) and its other pairs.
-fn records(text: &str, section: &str) -> Vec<(String, Pairs)> {
+pub(super) fn records(text: &str, section: &str) -> Vec<(String, Pairs)> {
     let lines: Vec<&str> = text.lines().collect();
     let (mut out, mut inside, mut next) = (Vec::new(), false, 0);
     while let (Some(code), Some(value)) = (lines.get(next), lines.get(next + 1)) {
@@ -35,11 +35,11 @@ fn records(text: &str, section: &str) -> Vec<(String, Pairs)> {
     out
 }
 
-fn group(pairs: &Pairs, code: i32) -> Option<&str> {
+pub(super) fn group(pairs: &Pairs, code: i32) -> Option<&str> {
     pairs.iter().find(|(c, _)| *c == code).map(|(_, v)| v.as_str())
 }
 
-fn number(pairs: &Pairs, code: i32) -> Option<f64> {
+pub(super) fn number(pairs: &Pairs, code: i32) -> Option<f64> {
     group(pairs, code).and_then(|v| v.parse().ok())
 }
 

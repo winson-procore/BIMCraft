@@ -12,12 +12,6 @@ use crate::render::DimensionRecord;
 /// The most segments written; a drawing with more keeps the rest stroked.
 const MAX_DIMENSIONS: usize = 20_000;
 
-/// The characters a table name may not hold in a DXF.
-const ILLEGAL: [char; 13] = ['<', '>', '/', '\\', '"', ':', ';', '?', '*', '|', ',', '=', '`'];
-
-/// The longest style name written.
-const MAX_NAME: usize = 100;
-
 /// What one dimension element draws, held under a block of its own.
 pub(super) struct Block {
     pub name: String,
@@ -42,21 +36,6 @@ pub(super) struct Dims {
     /// The block of each dimension element written, by element.
     pub blocks: BTreeMap<Id, Block>,
     styles: Vec<Style>,
-}
-
-/// A name a DXF table may hold, which no other of `taken` (compared as a CAD program does, without case) is, and which is not
-/// the `Standard` style every file has.
-fn safe(raw: &str, taken: &BTreeSet<String>) -> String {
-    let cleaned: String = raw.chars().map(|c| if c.is_control() || ILLEGAL.contains(&c) { '_' } else { c }).take(MAX_NAME).collect();
-    let base = cleaned.trim();
-    let base = if base.is_empty() { "BIM-DIM" } else { base };
-    let mut name = base.to_string();
-    let mut n = 1;
-    while name.eq_ignore_ascii_case("Standard") || taken.contains(&name.to_uppercase()) {
-        n += 1;
-        name = format!("{base}_{n}");
-    }
-    name
 }
 
 fn placeable(r: &DimensionRecord) -> bool {
@@ -85,7 +64,7 @@ impl Dims {
             let name = match names.get(r.style.as_str()) {
                 Some(name) => name.clone(),
                 None => {
-                    let name = safe(&r.style, &taken);
+                    let name = safe(&r.style, "BIM-DIM", &taken);
                     taken.insert(name.to_uppercase());
                     names.insert(r.style.as_str(), name.clone());
                     out.styles.push(Style { name: name.clone(), record: r.clone() });
