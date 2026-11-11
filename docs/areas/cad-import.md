@@ -130,11 +130,20 @@ DWG the session's `DwgWriter` turns that text into the file.
   and an attribute definition that has no attribute drawn is invisible in a CAD program. The cost is that a CAD user edits the
   block, not an attribute value.
 - **The DWG** comes from `crates/dwg`: `bimcraft_dwg::to_dwg` reads the DXF with acadrust's `DxfReader`, sets the document to
-  AC1032 and writes it with its `DwgWriter`, under `catch_unwind`, the DXF held to `Limits::dxf_bytes` and the DWG to
+  AC1032 (or AC1015, below) and writes it with its `DwgWriter`, under `catch_unwind`, the DXF held to `Limits::dxf_bytes` and the DWG to
   `Limits::dwg_bytes`. It runs in the app's own process: what it reads is the core's DXF, not a stranger's file. A session
   writes a DWG through the `DwgWriter` it is given (`Session::dwg_writer`), as it reads one through its `DwgReader`; the desktop
   and the command line (so MCP too) hand theirs `bimcraft_dwg::writer()` behind their default `dwg` feature, and a session
   without one says "this build can't write DWG; save as .dxf".
+- **DWG 2000.** `save` takes `version` for a .dwg: `"2018"` (the default) or `"2000"` (AC1015), anything else refused, and
+  refused for any other extension. The core's `cad::DwgVersion` is what travels (the writer is `Fn(&str, DwgVersion)`), so
+  the core never names acadrust's own enum; `to_dwg` maps it to `AC1032` or `AC1015` and changes nothing else, so the 2018
+  bytes are what they were. The DXF the core writes doesn't depend on the version. AC1015 has no true colour: acadrust writes
+  each 420 as its nearest ACI (`Color::approximate_index`), which the reply's `notes` say; BIMCraft does no mapping of its own.
+  Measured on the sample's plan, a sheet and an elevation, libredwg reads the 2000 files as AC1015 with no warnings beyond the
+  two known 2018 ones, and every entity kind (TEXT, MTEXT, DIMENSION, INSERT, ATTRIB, HATCH, LWPOLYLINE, paper-space
+  VIEWPORTs, the title block's block) comes back at the 2018 count. If a later acadrust loses a kind, `version_notes` in
+  `commands.rs` is where its name goes. `render` stays at 2018: `version` belongs to `save`.
 
 Tests: `render::dxf::tests` reads the sample house's plan back with `dxf::read_text` (layers, entities per layer, mm, extents,
 dashes, weights); `render::dxf::dims_tests` reads the DIMENSION, DIMSTYLE and block records as a plain group-code walk; `render::dxf::blocks_tests` does the same for the blocks, inserts and attributes; `plan_export_tests.rs` drives `save` with a fake writer; `render::dxf::sheets_tests` saves the sample's sheets and reads their paper space, viewports, model space and title block back; `crates/dwg`'s tests round-trip the plan, and a saved sheet, through
