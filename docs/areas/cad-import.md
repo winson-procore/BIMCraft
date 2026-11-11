@@ -106,6 +106,14 @@ DWG the session's `DwgWriter` turns that text into the file.
   element's first stroke stood, so what the plan draws over it (the grid across a window) still does. An element that cannot be
   placed, or past a cap, keeps its strokes. Known limit: libredwg's `dwg2dxf` reads the DWG's inserts and attributes but prints
   `Invalid ATTRIB.keep_duplicate_records` for each `ATTRIB` acadrust writes in AC1032; acadrust reads them back whole.
+- **Sections and elevations** go out through the same writer, in the view's own plane (x along the cut line, y the elevation, in
+  mm), by `save` or `render` with a `.dxf` or `.dwg` path and `view` naming one. `render::section_drawn` builds the drawing as
+  the PNG does (cut poché on `A-WALL-PATT`, cut edges, grids, level datums lettered as `TEXT` on their element's layer, notes,
+  dimensions), and `commands::write_cut` hands it to `write_drawing`. The hidden-line picture of what lies beyond the cut is
+  the ground the PNG is painted on, not a primitive, so it never reaches the DXF and is never traced into polylines; the reply's
+  `notes` say `1 picture(s) of what lies beyond the cut aren't written to DXF; the cut itself is`. No `IMAGE` entity: it names
+  its pixels in an `IMAGEDEF` pointing at a file beside the DXF, which a save would have to write too. A section's `.png`
+  still comes from `render`; its `.svg` is not made.
 - **The DWG** comes from `crates/dwg`: `bimcraft_dwg::to_dwg` reads the DXF with acadrust's `DxfReader`, sets the document to
   AC1032 and writes it with its `DwgWriter`, under `catch_unwind`, the DXF held to `Limits::dxf_bytes` and the DWG to
   `Limits::dwg_bytes`. It runs in the app's own process: what it reads is the core's DXF, not a stranger's file. A session
