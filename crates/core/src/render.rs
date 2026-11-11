@@ -413,6 +413,31 @@ impl Drawing {
             }
         }
     }
+    /// Only what an element draws: the view's own title, which no element owns, and its lettering are left out, as a sheet leaves
+    /// them out for the viewport's.
+    pub(crate) fn keep_owned(&mut self) {
+        let keep: Vec<bool> = self.owners.iter().map(Option::is_some).collect();
+        let before: Vec<usize> = keep
+            .iter()
+            .scan(0, |n, k| {
+                let at = *n;
+                *n += usize::from(*k);
+                Some(at)
+            })
+            .collect();
+        let mut kept = keep.iter().copied();
+        self.prims.retain(|_| kept.next().unwrap_or(false));
+        let mut kept = keep.iter().copied();
+        self.owners.retain(|_| kept.next().unwrap_or(false));
+        let mut kept = keep.iter().copied();
+        self.parts.retain(|_| kept.next().unwrap_or(false));
+        let mut kept = keep.iter().copied();
+        self.pens.retain(|_| kept.next().unwrap_or(false));
+        self.lettering.retain(|l| l.owner.is_some());
+        for l in &mut self.lettering {
+            l.from = before.get(l.from).copied().unwrap_or(self.prims.len());
+        }
+    }
     /// What a link builds, first, so what the project draws lies over it: each kept in the order it was drawn in.
     pub(crate) fn linked_under(&mut self) {
         let under = |o: &Option<Id>| o.is_some_and(crate::link::is_linked);

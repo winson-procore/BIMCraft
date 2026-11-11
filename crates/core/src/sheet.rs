@@ -158,9 +158,9 @@ fn draw_folding_marks(d: &mut Drawing, paper: P2, size: &str, margins: crate::st
     }
 }
 
-/// The border, filing margin on the left and borders on the other sides, and the title
-/// box in the bottom right corner, adapted to `std`: the project, the sheet's name, its scale, and its number.
-fn title_block(d: &mut Drawing, project: &str, sheet: &Sheet, paper: P2, scale: &str, std: crate::standards::TechnicalStandard) {
+/// The border and the title box's rules, which the title block's letters go in; the title box's bottom left and top right
+/// corners.
+fn title_lines(d: &mut Drawing, sheet: &Sheet, paper: P2, std: crate::standards::TechnicalStandard) -> (P2, P2) {
     let margins = std.sheet_margins(&sheet.size);
     let rect = |a: P2, b: P2| vec![a, P2(b.0, a.1), b, P2(a.0, b.1)];
     d.line(&rect(P2(margins.left, margins.bottom), P2(paper.0 - margins.right, paper.1 - margins.top)), Pen::BORDER, INK, true);
@@ -170,6 +170,14 @@ fn title_block(d: &mut Drawing, project: &str, sheet: &Sheet, paper: P2, scale: 
     d.line(&rect(P2(x0, y0), P2(x1, y1)), Pen::BORDER, INK, true);
     d.line(&[P2(x0, y0 + 26.0), P2(x1, y0 + 26.0)], Pen::PROJECTION, INK, false);
     d.line(&[P2(x1 - 50.0, y0), P2(x1 - 50.0, y0 + 26.0)], Pen::PROJECTION, INK, false);
+    (P2(x0, y0), P2(x1, y1))
+}
+
+/// The border, filing margin on the left and borders on the other sides, and the title
+/// box in the bottom right corner, adapted to `std`: the project, the sheet's name, its scale, and its number.
+fn title_block(d: &mut Drawing, project: &str, sheet: &Sheet, paper: P2, scale: &str, std: crate::standards::TechnicalStandard) {
+    let margins = std.sheet_margins(&sheet.size);
+    let (P2(x0, y0), P2(x1, _)) = title_lines(d, sheet, paper, std);
     left(d, project, P2(x0 + 4.0, y0 + 33.0), 5.0);
     left(d, &sheet.name, P2(x0 + 4.0, y0 + 17.0), 3.5);
     left(d, scale, P2(x0 + 4.0, y0 + 7.0), 2.0);
@@ -345,53 +353,193 @@ pub fn draw(m: &Model, id: impl Key) -> Option<Drawing> {
                 d.push(prim.moved(ox, oy));
             }
         }
-        d.part(Part::Projection);
-        // The title, under it: the view's name over a line, its scale under that.
-        let name = m.view_name(vp.view).unwrap_or_default();
-        let corner = d.view.mm((ox, oy + view.height as f32));
-        let x = corner.0 + ROOM;
-        left(&mut d, name, P2(x, corner.1 - 5.0), 3.0);
-        let line = f64::from(font::width(name, (3.0 * DENSITY) as f32)) / DENSITY + 10.0;
-        d.line(&[P2(x, corner.1 - 8.0), P2(x + line, corner.1 - 8.0)], Pen::MEDIUM, INK, false);
-        left(&mut d, &m.units.scale(vp.scale), P2(x, corner.1 - 11.0), 2.0);
+        view_title(&mut d, m, vp, view, (ox, oy));
     }
-    for &(nid, e) in &on {
+    annotations(&mut d, m, &on, guid);
+    d.own(None);
+    d.weigh(|_| true);
+    Some(d)
+}
+
+/// The title under a view: its name over a line, its scale under that; `view` is its frame and `(ox, oy)` that frame's top left
+/// corner on the paper, px.
+fn view_title(d: &mut Drawing, m: &Model, vp: &Viewport, view: View, (ox, oy): (f32, f32)) {
+    d.part(Part::Projection);
+    let name = m.view_name(vp.view).unwrap_or_default();
+    let corner = d.view.mm((ox, oy + view.height as f32));
+    let x = corner.0 + ROOM;
+    left(d, name, P2(x, corner.1 - 5.0), 3.0);
+    let line = f64::from(font::width(name, (3.0 * DENSITY) as f32)) / DENSITY + 10.0;
+    d.line(&[P2(x, corner.1 - 8.0), P2(x + line, corner.1 - 8.0)], Pen::MEDIUM, INK, false);
+    left(d, &m.units.scale(vp.scale), P2(x, corner.1 - 11.0), 2.0);
+}
+
+/// What is drawn on the paper itself: filled regions, detail groups, notes and detail lines of the sheet `guid`; `on` is what is
+/// on it.
+fn annotations(d: &mut Drawing, m: &Model, on: &[(Id, &Element)], guid: crate::ids::Guid) {
+    for &(nid, e) in on {
         if let Element::FilledRegion(r) = e
             && r.view == guid
         {
             d.own(Some(nid));
-            render::filled_region(&mut d, m, r);
+            render::filled_region(d, m, r);
         }
     }
-    for &(nid, e) in &on {
+    for &(nid, e) in on {
         if let Element::DetailGroup(g) = e
             && g.view == guid
         {
             d.own(Some(nid));
-            render::detail_group(&mut d, m, g);
+            render::detail_group(d, m, g);
         }
         if let Element::RepeatingDetail(r) = e
             && r.view == guid
         {
             d.own(Some(nid));
-            r.groups().iter().for_each(|g| render::detail_group(&mut d, m, g));
+            r.groups().iter().for_each(|g| render::detail_group(d, m, g));
         }
         if let Element::Text(n) = e
             && n.view == guid
         {
             d.own(Some(nid));
-            render::note(&mut d, m, n);
+            render::note(d, m, n);
         }
         if let Element::DetailLine(l) = e
             && l.view == guid
         {
             d.own(Some(nid));
-            render::detail_line(&mut d, m, l);
+            render::detail_line(d, m, l);
         }
     }
-    d.own(None);
-    d.weigh(|_| true);
-    Some(d)
+}
+
+/// A line of the title block that a CAD file letters as an attribute: its tag, its text, where its baseline starts on the paper
+/// and how tall its capitals are, mm.
+pub struct Field {
+    pub tag: &'static str,
+    pub text: String,
+    pub at: P2,
+    pub height: f64,
+}
+
+/// A view on a sheet, as a CAD file holds it: drawn as its own view draws it, in its own model millimetres and not moved onto the
+/// paper, with the window of paper it is seen through.
+pub struct Placed {
+    pub id: Id,
+    pub drawing: Drawing,
+    /// The viewport's middle on the paper and how much paper it takes, mm.
+    pub at: P2,
+    pub size: P2,
+    /// The 1 : `scale` it is drawn at.
+    pub scale: f64,
+}
+
+/// A sheet for a CAD file: the paper's own lines (`title`, the title block's rules, in paper mm) and letters (`fields`), what is
+/// drawn on it (`page`), and each view as a drawing of its own.
+pub struct Export {
+    pub paper: P2,
+    pub title: Drawing,
+    pub fields: Vec<Field>,
+    pub page: Drawing,
+    pub views: Vec<Placed>,
+    /// How many pictures (a section's view of what lies beyond, a 3D view's) it leaves out.
+    pub pictures: usize,
+}
+
+/// Sheet `id` as a CAD file holds it. What [`draw`] puts together as one picture comes apart: the title block, the views, and
+/// what is drawn on the paper.
+pub fn export(m: &Model, id: impl Key) -> Option<Export> {
+    let sheet = m.sheet(id)?;
+    let guid = m.guid(id);
+    let paper = paper(&sheet.size)?;
+    let on: Vec<(Id, &Element)> = m.on_sheet(id).into_iter().filter_map(|id| Some((id, m.elements.get(id)?))).collect();
+    let views: Vec<(Id, &Viewport)> = on
+        .iter()
+        .filter_map(|&(vid, e)| match e {
+            Element::Viewport(v) if v.sheet == guid => Some((vid, v)),
+            _ => None,
+        })
+        .collect();
+    let weights = m.line_weights().at(m.units.default_scale());
+    let mut title = Drawing::new(page(paper));
+    title.weights = weights;
+    title.own(m.elements.id(id));
+    let scaled: Vec<&Viewport> =
+        views.iter().filter(|(_, v)| !matches!(m.elements.get(v.view), Some(Element::Schedule(_)))).map(|(_, v)| *v).collect();
+    let (P2(x0, y0), P2(x1, _)) = title_lines(&mut title, sheet, paper, m.standard());
+    let margins = m.standard().sheet_margins(&sheet.size);
+    if margins.folding_marks {
+        draw_folding_marks(&mut title, paper, &sheet.size, margins);
+    }
+    title.weigh(|_| true);
+    let field = |tag, text: &str, at: P2, height| Field { tag, text: text.to_string(), at, height };
+    let fields = vec![
+        field("PROJECT", &m.name, P2(x0 + 4.0, y0 + 31.0), 5.0),
+        field("SHEETNAME", &sheet.name, P2(x0 + 4.0, y0 + 15.5), 3.5),
+        field("SCALE", &scale_note(&scaled, m.language, m.units), P2(x0 + 4.0, y0 + 6.0), 2.0),
+        field("SHEETNUMBER", &sheet.number, P2(x1 - 47.0, y0 + 10.0), 7.0),
+    ];
+    let mut page_d = Drawing::new(page(paper));
+    page_d.weights = weights;
+    let mut out = Export { paper, title, fields, page: Drawing::new(page(paper)), views: Vec::new(), pictures: 0 };
+    let work = Work::new();
+    for (vid, vp) in views {
+        let Some((view, (ox, oy))) = frame_in(m, &work, vid) else { continue };
+        page_d.own(Some(vid));
+        let size = P2(f64::from(view.width) / DENSITY, f64::from(view.height) / DENSITY);
+        let mut inner = match m.elements.get(vp.view) {
+            Some(Element::Level(_) | Element::PlanView(_)) => render::draw_at(m, vp.view, view, 1.0),
+            Some(Element::Section(_) | Element::Elevation(_)) => {
+                let w = work.get_or_init(|| render::SectionWork::new(m));
+                let img = render::section_picture_in(m, w, vp.view, view, &[]);
+                out.pictures += usize::from(img.is_some());
+                match &img {
+                    Some(img) => render::section_at_over_in(m, w, vp.view, view, 1.0, img),
+                    None => render::section_at(m, vp.view, view, 1.0),
+                }
+            }
+            Some(Element::Schedule(sc)) => {
+                let t = table_of(m, sc);
+                let (w, h) = table_size(&sc.name, &t);
+                let frame =
+                    View { scale: DENSITY, cx: f64::from(w) / DENSITY / 2.0, cy: f64::from(h) / DENSITY / 2.0, width: w, height: h };
+                let mut d = Drawing::new(frame);
+                d.weights = weights;
+                d.own(Some(vid));
+                table(&mut d, m, sc, (0.0, 0.0));
+                d.own(None);
+                d.weigh(|_| true);
+                out.views.push(Placed { id: vid, drawing: d, at: vp.at, size, scale: 1.0 });
+                continue;
+            }
+            Some(Element::View3D(v)) => {
+                let look = Look::of(m, vp.view);
+                let cam = view3d::camera_of(m, v, view.scale, ROOM * DENSITY, &look);
+                out.pictures += 1;
+                let mut inner = Drawing::new(view);
+                for mk in crate::dims3d::marks(m, vp.view, &cam, &look, DENSITY) {
+                    inner.own(Some(mk.owner));
+                    inner.push(Prim::Line { pts: mk.pts, width: mk.width, color: mk.color, dash: None, closed: false });
+                }
+                inner
+            }
+            _ => continue,
+        };
+        out.pictures += render::dxf::pictures(&inner);
+        for note in std::mem::take(&mut inner.notes) {
+            if page_d.notes.len() < 32 && !page_d.notes.contains(&note) {
+                page_d.notes.push(note);
+            }
+        }
+        inner.keep_owned();
+        out.views.push(Placed { id: vid, drawing: inner, at: vp.at, size, scale: vp.scale });
+        view_title(&mut page_d, m, vp, view, (ox, oy));
+    }
+    annotations(&mut page_d, m, &on, guid);
+    page_d.own(None);
+    page_d.weigh(|_| true);
+    out.page = page_d;
+    Some(out)
 }
 
 #[cfg(test)]
