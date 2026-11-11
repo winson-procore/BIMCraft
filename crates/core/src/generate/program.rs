@@ -1,0 +1,134 @@
+//! What a building must hold: the archetypes' programs, as data a layout deals out. A space has a kind, a role the rules
+//! read, the least area it needs and the area it would like.
+
+use super::Rng;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Archetype {
+    Office,
+    Clinic,
+}
+
+impl Archetype {
+    pub const ALL: [Archetype; 2] = [Archetype::Office, Archetype::Clinic];
+
+    pub fn parse(name: &str) -> Option<Archetype> {
+        Archetype::ALL.into_iter().find(|a| a.name() == name)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Archetype::Office => "office",
+            Archetype::Clinic => "clinic",
+        }
+    }
+
+    pub fn names() -> String {
+        Archetype::ALL.map(Archetype::name).join(", ")
+    }
+
+    fn salt(self) -> u64 {
+        match self {
+            Archetype::Office => 0x000F_F1CE,
+            Archetype::Clinic => 0x00C1_191C,
+        }
+    }
+}
+
+/// What a space is to the rules: who may door into whom is a matter of roles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Private,
+    Circulation,
+    Shared,
+    Public,
+    Service,
+    Clinical,
+    Support,
+}
+
+impl Role {
+    pub fn name(self) -> &'static str {
+        match self {
+            Role::Private => "private",
+            Role::Circulation => "circulation",
+            Role::Shared => "shared",
+            Role::Public => "public",
+            Role::Service => "service",
+            Role::Clinical => "clinical",
+            Role::Support => "support",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Spec {
+    pub id: String,
+    pub kind: &'static str,
+    pub label: String,
+    pub role: Role,
+    pub min_m2: u32,
+    pub target_m2: u32,
+    /// Whether it wants a window in the outside wall.
+    pub window: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct Program {
+    pub lobby: Spec,
+    pub corridor: Spec,
+    pub cells: Vec<Spec>,
+}
+
+impl Program {
+    /// Every space, the lobby and the corridor first.
+    pub fn all(&self) -> impl Iterator<Item = &Spec> {
+        [&self.lobby, &self.corridor].into_iter().chain(&self.cells)
+    }
+}
+
+fn spec(kind: &'static str, label: &str, role: Role, min_m2: u32, target_m2: u32, window: bool) -> Spec {
+    Spec { id: kind.to_string(), kind, label: label.to_string(), role, min_m2, target_m2, window }
+}
+
+/// `n` spaces of one kind, numbered when there are several.
+fn several(out: &mut Vec<Spec>, n: u64, one: Spec) {
+    for i in 1..=n {
+        let (id, label) =
+            if n == 1 { (one.id.clone(), one.label.clone()) } else { (format!("{}_{i}", one.id), format!("{} {i}", one.label)) };
+        out.push(Spec { id, label, ..one.clone() });
+    }
+}
+
+/// The program of a building of about `area_m2` square metres: more rooms for more floor, a few of them by the seed.
+pub fn program(archetype: Archetype, area_m2: f64, seed: u64) -> Program {
+    let mut rng = Rng::new(seed, archetype.salt());
+    let a = area_m2.clamp(0.0, 1.0e6) as u64;
+    let mut cells = Vec::new();
+    let lobby = match archetype {
+        Archetype::Office => spec("entry_lobby", "Lobby", Role::Public, 16, 40, true),
+        Archetype::Clinic => spec("entry_lobby", "Entry Lobby", Role::Public, 16, 30, true),
+    };
+    let corridor = spec("corridor", "Corridor", Role::Circulation, 0, 0, false);
+    match archetype {
+        Archetype::Office => {
+            several(&mut cells, 1 + a / 1500, spec("open_office", "Open Office", Role::Shared, 36, 150, true));
+            several(&mut cells, 1 + a / 600 + rng.below(2), spec("conference", "Conference", Role::Shared, 14, 24, true));
+            several(&mut cells, 2 + a / 200 + rng.below(3), spec("private_office", "Private Office", Role::Private, 9, 16, true));
+            several(&mut cells, rng.below(2), spec("focus_room", "Focus Room", Role::Private, 5, 8, true));
+            several(&mut cells, 1 + a / 700, spec("restroom", "Restroom", Role::Service, 8, 14, false));
+            several(&mut cells, 1, spec("it_storage", "IT and Storage", Role::Support, 6, 10, false));
+            several(&mut cells, 1 + a / 1500, spec("pantry", "Pantry", Role::Support, 8, 16, true));
+        }
+        Archetype::Clinic => {
+            several(&mut cells, 1 + a / 1200, spec("waiting", "Waiting", Role::Public, 18, 40, true));
+            several(&mut cells, 2 + a / 150 + rng.below(3), spec("exam", "Exam Room", Role::Clinical, 10, 14, true));
+            several(&mut cells, rng.below(2), spec("procedure", "Procedure Room", Role::Clinical, 14, 20, true));
+            several(&mut cells, 1 + a / 500, spec("restroom", "Restroom", Role::Service, 6, 8, false));
+            several(&mut cells, 1, spec("staff_room", "Staff Room", Role::Support, 10, 16, true));
+            several(&mut cells, 1, spec("nurse_station", "Nurse Station", Role::Support, 8, 12, true));
+            several(&mut cells, 1, spec("clean_storage", "Clean Storage", Role::Support, 8, 12, false));
+        }
+    }
+    Program { lobby, corridor, cells }
+}

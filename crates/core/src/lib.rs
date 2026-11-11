@@ -46,6 +46,7 @@ pub mod favorites;
 pub mod fills;
 mod fixtures;
 mod font;
+pub mod generate;
 pub mod geom;
 #[cfg(test)]
 mod georef_tests;
