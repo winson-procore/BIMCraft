@@ -442,7 +442,13 @@ fn the_script_runs_in_a_fresh_project_and_makes_a_plan_with_bounded_rooms() {
         let rooms = b.plan.cells.len() + 1;
         assert_eq!(count(&s, |e| matches!(e, Element::Room(_))), rooms, "{label}");
         assert!(count(&s, |e| matches!(e, Element::Wall(_))) >= rooms, "{label}: walls");
-        assert_eq!(count(&s, |e| matches!(e, Element::Door(_))), rooms, "{label}: a door for each room but the corridor, and the way in");
+        let exits = b.plan.openings.iter().filter(|o| matches!(o.role, "back_door" | "service_exit")).count();
+        assert!(exits >= 1, "{label}: a way out the back");
+        assert_eq!(
+            count(&s, |e| matches!(e, Element::Door(_))),
+            rooms + exits,
+            "{label}: a door for each room but the corridor, the way in, and each exit to outside"
+        );
         assert!(count(&s, |e| matches!(e, Element::Window(_))) > 0, "{label}: windows");
         assert_eq!(count(&s, |e| matches!(e, Element::Sheet(_))), 1, "{label}");
         assert_eq!(count(&s, |e| matches!(e, Element::Viewport(_))), 1, "{label}");
@@ -517,7 +523,7 @@ fn the_report_says_what_was_checked_and_what_the_generator_cannot_do() {
         ids,
         [
             "GR-001", "GR-002", "GR-003", "GR-004", "GR-005", "GR-006", "PR-001", "LIFT-001", "LIFT-002", "LIFT-003", "LIFT-004", "SC-001",
-            "SC-002", "RT-001", "RT-002", "RT-003", "LIFT-005", "LIFT-006", "GM-001"
+            "SC-002", "RT-001", "RT-002", "RT-003", "LIFT-005", "LIFT-006", "LIFT-007", "GM-001"
         ]
     );
     assert!(checks.iter().all(|c| matches!(c["status"].as_str(), Some("PASS" | "WARN")) && !c["detail"].as_str().unwrap().is_empty()));
@@ -534,6 +540,37 @@ fn the_report_says_what_was_checked_and_what_the_generator_cannot_do() {
     let wide_report = doc(&wide, "report.json");
     let drift: Vec<&str> = wide_report["warnings"].as_array().unwrap().iter().map(|w| w.as_str().unwrap()).collect();
     assert!(drift.iter().all(|w| w.starts_with("GM-001")), "{drift:?}");
+}
+
+#[test]
+fn opening_symbol_profiles_are_exported_for_training_labels() {
+    let b = built(Archetype::Hospital, 3, 1800.0);
+    let manifest = doc(&b, "manifest.json");
+    let topology = doc(&b, "topology-graph.json");
+    let building = doc(&b, "building-ir.json");
+    let report = doc(&b, "report.json");
+    for doc in [&topology, &building, &report] {
+        assert_eq!(doc["opening_symbol_profile"], manifest["opening_symbol_profile"]);
+    }
+    let edges = topology["edges"].as_array().unwrap();
+    assert!(
+        edges
+            .iter()
+            .filter(|e| e["kind"] == "door")
+            .all(|e| e["opening_symbol"].as_str().is_some() && e["opening_role"].as_str().is_some()),
+        "{edges:#?}"
+    );
+    let openings = building["openings"].as_array().unwrap();
+    let door_symbols: BTreeSet<&str> = openings.iter().filter(|o| o["kind"] == "door").filter_map(|o| o["symbol"].as_str()).collect();
+    let window_symbols: BTreeSet<&str> = openings.iter().filter(|o| o["kind"] == "window").filter_map(|o| o["symbol"].as_str()).collect();
+    assert!(door_symbols.len() >= 3, "{door_symbols:?}");
+    assert!(window_symbols.len() >= 2, "{window_symbols:?}");
+    assert!(openings.iter().all(|o| o["width_mm"].as_i64().unwrap_or(0) > 0));
+    let script = text(&b, "script.bimcraft.txt");
+    assert!(
+        script.contains("\ntype ") && script.contains("\"category\":\"door\"") && script.contains("\"category\":\"window\""),
+        "{script}"
+    );
 }
 
 #[test]

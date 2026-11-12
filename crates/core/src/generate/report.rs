@@ -13,6 +13,7 @@ use crate::model::{Element, Model};
 use super::graph::{SCHEMA_VERSION, Topology};
 use super::layout::Plan;
 use super::lift::Building;
+use super::openings::{self, DOOR_SYMBOLS, WINDOW_SYMBOLS};
 use super::program::{Archetype, Role};
 use super::script::{REQUIRED, Script};
 
@@ -145,6 +146,12 @@ pub fn graph_checks(t: &Topology, archetype: Archetype) -> Vec<Check> {
     ]
 }
 
+/// How many openings of each symbol a plan has, doors and windows apart: what the manifest and the report say.
+pub fn opening_symbols(plan: &Plan) -> Value {
+    let (doors, windows) = openings::symbol_counts(plan.openings.iter().map(|o| (o.kind, o.symbol)));
+    json!({"doors": doors, "windows": windows})
+}
+
 /// The fewest walls a lifted building holds: four outside walls make a building.
 const MIN_WALLS: usize = 4;
 
@@ -234,7 +241,14 @@ pub fn lift_checks(b: &Building, t: &Topology) -> Vec<Check> {
         if !node_ok(&o.source_2d) {
             openings.push(format!("the {} `{}` comes of `{}`, which is no 2D space", o.kind, o.id, o.source_2d));
         }
-        match (&o.source_edge, o.kind == "door" && !o.entry) {
+        let known = if o.kind == "door" { DOOR_SYMBOLS.contains(&o.symbol) } else { WINDOW_SYMBOLS.contains(&o.symbol) };
+        if !known {
+            openings.push(format!("the {} `{}` has the symbol `{}`, which no {} has", o.kind, o.id, o.symbol, o.kind));
+        }
+        if o.width_mm <= 0 || o.height_mm <= 0 || o.sill_mm < 0 || o.type_name.is_empty() {
+            openings.push(format!("the {} `{}` has no size or type", o.kind, o.id));
+        }
+        match (&o.source_edge, o.kind == "door" && o.role == "room_access") {
             (Some(e), _) if !t.access().any(|a| a.id() == *e && (a.from == o.source_2d || a.to == o.source_2d)) => {
                 openings.push(format!("the {} `{}` comes of the edge `{e}`, which is no door or open edge of its space", o.kind, o.id));
             }
@@ -357,6 +371,54 @@ fn hosting_check(building: &Building, script: &Script, replies: &[Value]) -> Che
     )
 }
 
+/// LIFT-007: each door and window is in BIMCraft with the type, size and operation its symbol gives it in the building.
+fn symbol_check(building: &Building, script: &Script, replies: &[Value], model: &Model) -> Check {
+    let mut problems = Vec::new();
+    for (l, r) in script.lines.iter().zip(replies) {
+        let Some(id) = l.opening_of.as_deref() else { continue };
+        let Some(o) = building.openings.iter().find(|o| o.id == id) else { continue };
+        let Some(element) = r.get("id").and_then(Value::as_u64).and_then(|e| model.elements.get(e)) else {
+            problems.push(format!("`{id}` is not in the project"));
+            continue;
+        };
+        let (Element::Door(made) | Element::Window(made)) = element else {
+            problems.push(format!("`{id}` is no door or window in the project"));
+            continue;
+        };
+        let types = if o.kind == "door" { &model.types.door } else { &model.types.window };
+        let Some(t) = types.get(&made.type_name) else {
+            problems.push(format!("`{id}` has the type `{}`, which the project does not have", made.type_name));
+            continue;
+        };
+        let operation = t.operation.map(|op| op.name());
+        let mut differs = Vec::new();
+        if made.type_name != o.type_name {
+            differs.push(format!("type `{}` for `{}`", made.type_name, o.type_name));
+        }
+        if t.width.round() as i64 != o.width_mm || t.height.round() as i64 != o.height_mm {
+            differs.push(format!("{} x {} mm for {} x {} mm", t.width, t.height, o.width_mm, o.height_mm));
+        }
+        if o.kind == "window" && made.sill.round() as i64 != o.sill_mm {
+            differs.push(format!("sill {} mm for {} mm", made.sill, o.sill_mm));
+        }
+        if operation != Some(o.operation) {
+            differs.push(format!("operation {operation:?} for {:?}", o.operation));
+        }
+        if made.flip_hand != o.flip_hand {
+            differs.push(format!("flip_hand {} for {}", made.flip_hand, o.flip_hand));
+        }
+        if !differs.is_empty() {
+            problems.push(format!("`{id}` is in BIMCraft as {}", differs.join(", ")));
+        }
+    }
+    check(
+        "LIFT-007",
+        "opening-symbols-as-lifted",
+        problems,
+        format!("all {} openings are in BIMCraft with the type, size and operation of their symbol", building.openings.len()),
+    )
+}
+
 /// LIFT-006: BIMCraft's walls and levels are the building's: the same walls, the same place, the same heights.
 fn matching_check(building: &Building, script: &Script, replies: &[Value], model: &Model) -> Check {
     let walls = made_walls(script, replies);
@@ -462,6 +524,7 @@ pub fn run_checks(plan: &Plan, building: &Building, script: &Script, replies: &[
         check("RT-003", "model-valid", model.check().err().into_iter().collect(), "the project passes the model's own check".into());
     let hosting = hosting_check(building, script, replies);
     let matching = matching_check(building, script, replies, model);
+    let symbols = symbol_check(building, script, replies, model);
     let deviation = (plan.gross_m2() - plan.requested_m2).abs() / plan.requested_m2.max(f64::MIN_POSITIVE);
     let area = if deviation <= AREA_TOLERANCE {
         Check {
@@ -482,7 +545,7 @@ pub fn run_checks(plan: &Plan, building: &Building, script: &Script, replies: &[
             ),
         }
     };
-    vec![commands, closed, ran, rooms, valid, hosting, matching, area]
+    vec![commands, closed, ran, rooms, valid, hosting, matching, symbols, area]
 }
 
 /// The report: checks, warnings, what the generator could not do, and scores a ranking can start from.
@@ -504,6 +567,8 @@ pub fn json(plan: &Plan, checks: &[Check], script: &Script, replies: &[Value]) -
         "layout_family": plan.layout_family.name(),
         "layout_strategy": plan.layout_strategy.name(),
         "boundary_shape": plan.boundary_shape.name(),
+        "opening_symbol_profile": plan.opening_symbol_profile.name(),
+        "opening_symbols": opening_symbols(plan),
         "rule_set": RULE_SET,
         "summary": {"pass": count(Status::Pass), "warn": count(Status::Warn), "fail": count(Status::Fail)},
         "checks": checks.iter().map(|c| json!({"id": c.id, "name": c.name, "status": c.status.name(), "detail": c.detail})).collect::<Vec<_>>(),
@@ -511,7 +576,7 @@ pub fn json(plan: &Plan, checks: &[Check], script: &Script, replies: &[Value]) -
         "capability_notes": [
             "Areas in the topology and building graphs are gross, measured to wall centre lines; `measured_rooms` holds the net areas BIMCraft computed for each room.",
             "One storey with seeded corridor-bar, central-commons, or clustered-commons layout families; rectangle, L-shaped, or stepped-bar footprints; and double-loaded, single-loaded or offset corridor strategies. No stairs, shafts, structure or MEP.",
-            "Every room has one door, to the corridor; the lobby is also the building's entry. Door swing and hand are BIMCraft's defaults.",
+            "Every room has one door, to the corridor; the lobby is also the building's entry, and one or two back-of-house rooms have an exit to outside. Doors and windows take their symbol (`opening_symbol_profile`, `opening_symbols`) from the seed: each symbol is a BIMCraft door or window type with its own width, height, sill and operation, so the drawing shows the width and the swing of each; BIMCraft's plan symbols do not draw a double leaf or a window style apart from its width.",
             "The rules are hard-coded in this slice (rule set slice1-hard-rules/1); versioned rule packs are future work.",
         ],
         "scores": {

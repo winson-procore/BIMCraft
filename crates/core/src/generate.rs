@@ -8,6 +8,7 @@ mod layout;
 mod lift;
 #[cfg(test)]
 mod lift_tests;
+mod openings;
 mod program;
 mod report;
 mod script;
@@ -201,6 +202,8 @@ fn build_with_area(archetype: Archetype, seed: u64, area: AreaRequest) -> Result
         "layout_family": plan.layout_family.name(),
         "layout_strategy": plan.layout_strategy.name(),
         "boundary_shape": plan.boundary_shape.name(),
+        "opening_symbol_profile": plan.opening_symbol_profile.name(),
+        "opening_symbols": report::opening_symbols(&plan),
         "requested_area": {"value": area.value, "unit": area.unit},
         "requested_area_m2": area.m2,
         "gross_area_m2": plan.gross_m2(),
