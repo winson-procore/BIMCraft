@@ -50,6 +50,15 @@ fn sheet_for(plan: &Plan) -> (&'static str, i64) {
     ("A0", 500)
 }
 
+fn horizontal_span(points: &[[i64; 2]], y: i64) -> Option<(i64, i64)> {
+    points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .filter(|(a, b)| a[1] == y && b[1] == y)
+        .map(|(a, b)| (a[0].min(b[0]), a[0].max(b[0])))
+        .max_by_key(|(x0, x1)| x1 - x0)
+}
+
 fn line(id: &'static str, params: Value) -> Line {
     Line { id, params, room_of: None, wall_of: None, opening_of: None }
 }
@@ -79,7 +88,7 @@ pub fn compile(plan: &Plan, building: &Building) -> Script {
         let params = json!({"points": [wall.start, wall.end], "closed": false, "type": wall.wall_type});
         lines.push(Line { wall_of: Some(wall.id.clone()), ..line("wall", params) });
     }
-    lines.push(line("floor", json!({"boundary": [[0, 0], [w, 0], [w, d], [0, d]]})));
+    lines.push(line("floor", json!({"boundary": building.boundary})));
     for id in ["door", "window"] {
         lines.extend(
             building
@@ -96,9 +105,17 @@ pub fn compile(plan: &Plan, building: &Building) -> Script {
         let number = (101 + i).to_string();
         lines.push(Line { room_of: Some(space), ..line("room", json!({"point": point, "name": name, "number": number})) });
     }
-    lines.push(line("dimension", json!({"refs": [[-150, 500], [w + 150, 500]], "at": [w / 2, -1300]})));
-    lines.push(line("dimension", json!({"refs": [[300, -150], [300, d + 150]], "at": [w + 900, d / 2]})));
-    lines.push(line("dimension", json!({"refs": [[0, d + 1000], [w, d + 1000]], "at": [w / 2, d + 1000]})));
+    let bottom_span = horizontal_span(&building.boundary, 0).unwrap_or((0, w));
+    let top_span = horizontal_span(&building.boundary, d).unwrap_or((0, w));
+    let overlap = (bottom_span.0.max(top_span.0), bottom_span.1.min(top_span.1));
+    let depth_x = if overlap.0 < overlap.1 { (overlap.0 + overlap.1) / 2 } else { w / 2 };
+    let corridor_y = (plan.corridor_bottom + plan.corridor_top) / 2;
+    lines.push(line("dimension", json!({"refs": [[0, corridor_y], [w, corridor_y]], "at": [w / 2, -1300]})));
+    lines.push(line("dimension", json!({"refs": [[depth_x, 0], [depth_x, d]], "at": [w + 900, d / 2]})));
+    lines.push(line(
+        "dimension",
+        json!({"refs": [[top_span.0, d - 500], [top_span.1, d - 500]], "at": [(top_span.0 + top_span.1) / 2, d + 1000]}),
+    ));
     lines.push(line("tag", json!({})));
     let note = format!("{} of {} m2 gross, seed {}", capital(plan.archetype.name()), plan.gross_m2().round(), plan.seed);
     lines.push(line("text", json!({"text": note, "at": [0, -2400]})));

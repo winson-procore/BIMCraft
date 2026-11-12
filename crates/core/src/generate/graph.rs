@@ -88,6 +88,7 @@ impl Topology {
             "archetype": plan.archetype.name(),
             "seed": plan.seed,
             "layout_strategy": plan.layout_strategy.name(),
+            "boundary_shape": plan.boundary_shape.name(),
             "entry": self.entry,
             "nodes": self.nodes.iter().map(|n| json!({
                 "id": n.id, "kind": n.kind, "role": n.role.name(), "area_m2": n.area_m2, "level": "Level 1",
@@ -104,6 +105,7 @@ pub fn program_json(plan: &Plan) -> Value {
         "archetype": plan.archetype.name(),
         "seed": plan.seed,
         "layout_strategy": plan.layout_strategy.name(),
+        "boundary_shape": plan.boundary_shape.name(),
         "requested_area_m2": plan.requested_m2,
         "spaces": plan.program.all().map(|s| json!({
             "id": s.id, "kind": s.kind, "label": s.label, "role": s.role.name(),

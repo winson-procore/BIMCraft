@@ -222,6 +222,7 @@ fn a_brief_writes_the_six_files_and_the_manifest_names_them_with_their_hashes() 
     );
     assert_eq!(manifest["requested_area"], json!({"unit": "m2", "value": 900.0}));
     assert_eq!(manifest["layout_strategy"].as_str(), Some("single_loaded_corridor"));
+    assert_eq!(manifest["boundary_shape"].as_str(), Some("l_shape"));
     assert_eq!(manifest["generator_version"], GENERATOR_VERSION);
     assert_eq!(manifest["hash_algorithm"], "fnv1a64");
     let listed = manifest["files"].as_array().unwrap();
@@ -235,7 +236,11 @@ fn a_brief_writes_the_six_files_and_the_manifest_names_them_with_their_hashes() 
     assert_eq!(manifest["topology_hash"].as_str().unwrap(), fnv1a64(&topology));
     let topology_doc: Value = serde_json::from_str(&topology).unwrap();
     assert_eq!(topology_doc["layout_strategy"], manifest["layout_strategy"]);
-    assert_eq!(doc(&build(Archetype::Office, 1, 900.0).unwrap(), "building-ir.json")["layout_strategy"], manifest["layout_strategy"]);
+    assert_eq!(topology_doc["boundary_shape"], manifest["boundary_shape"]);
+    let building_doc = doc(&build(Archetype::Office, 1, 900.0).unwrap(), "building-ir.json");
+    assert_eq!(building_doc["layout_strategy"], manifest["layout_strategy"]);
+    assert_eq!(building_doc["boundary_shape"], manifest["boundary_shape"]);
+    assert!(building_doc["footprint"]["boundary"].as_array().unwrap().len() > 4);
     assert!(manifest["gross_area_m2"].as_f64().unwrap() > 800.0);
     let all = std::fs::read_to_string(out.join("manifest.json")).unwrap();
     assert!(!all.contains(out.to_str().unwrap()), "the manifest holds no machine's path");
@@ -264,6 +269,14 @@ fn seeds_choose_different_layout_strategies() {
         .map(|seed| doc(&built(Archetype::Hospital, seed, 1800.0), "manifest.json")["layout_strategy"].as_str().unwrap().to_string())
         .collect();
     assert_eq!(strategies.len(), 3, "{strategies:?}");
+}
+
+#[test]
+fn seeds_choose_different_boundary_shapes() {
+    let shapes: BTreeSet<String> = (0..6)
+        .map(|seed| doc(&built(Archetype::Hospital, seed, 1800.0), "manifest.json")["boundary_shape"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(shapes.len(), 3, "{shapes:?}");
 }
 
 #[test]
