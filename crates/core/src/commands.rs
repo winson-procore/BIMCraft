@@ -88,6 +88,19 @@ pub static ALL: &[Command] = &[
         crate::rulepack::rule_pack,
     ),
     other(
+        "topology",
+        "Topology Graph",
+        "{path?} the project's 2D topology graph from its geometry alone (it only reads), and with `path` the same written there as \
+         JSON. `nodes`: its enclosed rooms (id: the room number, else room-<element id>; boundary, holes, area_m2, level). `edges`: \
+         `door` (the rooms either side of a door's host wall, with its family, type, operation swing|sliding|…, width_mm; a door \
+         with a room on one side only goes to `exterior`), `open` (rooms sharing at least 300 mm of room separation line), \
+         `adjacent` (rooms sharing at least 300 mm of wall, with no door or open edge between them). `entry`: the room of the \
+         exterior door a swing door, then the widest, then the lowest id picks. `footprint`: outline, area_m2, area_over_bbox, \
+         bbox. `diagnostics`, each with a `code`: room_not_enclosed, room_shares_space, door_without_room, door_type_unknown; a \
+         room that isn't enclosed is no node and its boundary is never made up",
+        crate::topology::topology,
+    ),
+    other(
         "drawing_miner",
         "Drawing Miner",
         "{corpus, out} mine a CAD corpus described by `corpus/sources.json` into normalized-scene, semantic-graph, space-graph, \

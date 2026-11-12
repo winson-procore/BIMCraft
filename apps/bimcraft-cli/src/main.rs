@@ -23,6 +23,10 @@ const USAGE: &str = "USAGE:
                                  write a generated plan's run directory: program, topology and building graphs, a script for
                                  `run --script`, a report and a manifest. The same brief gives the same files; a brief that
                                  can't be met (an area too small) exits non-zero, naming why, and writes nothing
+  bimcraft-cli topology --model FILE.bimcraft --out FILE.json
+                                 read a saved project and write its 2D topology graph from geometry alone: rooms as nodes, door,
+                                 open and adjacent edges, the entry, the footprint and typed diagnostics (a room no walls enclose).
+                                 Written even with diagnostics; prints a one-line summary
   bimcraft-cli rule-pack seed --out DIR
                                  write the frontier-model rule pack seed library: a manifest, a validation report and one pack of
                                  rules for each of office, clinic, hospital, datacenter and airport. The same files every time; a
@@ -81,6 +85,20 @@ fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
         [cmd, rest @ ..] if cmd == "generate" => {
             let params = generate_params(rest)?;
             print(out, &s.execute("generate", &params)?)
+        }
+        [cmd, rest @ ..] if cmd == "topology" => {
+            let (model, params) = topology_params(rest)?;
+            s.execute("open", &json!({ "path": model }))?;
+            let g = s.execute("topology", &params)?;
+            let count = |k: &str| g[k].as_array().map_or(0, Vec::len);
+            let kinds = |kind: &str| g["edges"].as_array().map_or(0, |e| e.iter().filter(|e| e["kind"] == kind).count());
+            print(
+                out,
+                &json!({
+                    "path": g["path"], "nodes": count("nodes"), "door": kinds("door"), "open": kinds("open"),
+                    "adjacent": kinds("adjacent"), "entry": g["entry"]["room"], "diagnostics": count("diagnostics"),
+                }),
+            )
         }
         [cmd, sub, rest @ ..] if cmd == "rule-pack" && sub == "seed" => {
             let params = rule_pack_params(rest)?;
@@ -174,6 +192,25 @@ fn rule_pack_params(args: &[String]) -> Result<Value, String> {
     }
     let out = out.ok_or_else(|| format!("rule-pack seed needs --out\n\n{USAGE}"))?;
     Ok(json!({ "path": out }))
+}
+
+/// What follows `topology`: the model to read, and the `topology` command's params (`--out` as `path`); each option once.
+fn topology_params(args: &[String]) -> Result<(String, Value), String> {
+    let (mut model, mut out) = (None, None);
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        let value = rest.next().ok_or_else(|| format!("{arg} needs a value\n\n{USAGE}"))?;
+        let slot = match arg.as_str() {
+            "--model" => &mut model,
+            "--out" => &mut out,
+            other => return Err(format!("unknown option `{other}` for topology\n\n{USAGE}")),
+        };
+        if slot.replace(value).is_some() {
+            return Err(format!("{arg} given twice\n\n{USAGE}"));
+        }
+    }
+    let need = |what: Option<&String>, flag: &str| what.cloned().ok_or_else(|| format!("topology needs {flag}\n\n{USAGE}"));
+    Ok((need(model, "--model")?, json!({"path": need(out, "--out")?})))
 }
 
 /// What follows `drawing-miner cad`, as the command's params: `--corpus` and `--out`, each once.
@@ -471,6 +508,35 @@ mod tests {
             assert!(e.contains(says), "{args:?}: {e}");
         }
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn topology_writes_the_graph_of_a_saved_model() {
+        let dir = std::env::temp_dir().join(format!("bimcraft-cli-topology-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let model = dir.join("m.bimcraft").to_string_lossy().into_owned();
+        let out = dir.join("t.json").to_string_lossy().into_owned();
+        cli_out(&["run", "--sample", "--save", &model]).unwrap();
+        let reply: Value = serde_json::from_str(cli_out(&["topology", "--model", &model, "--out", &out]).unwrap().trim()).unwrap();
+        assert!(reply["nodes"].as_u64().unwrap() >= 2, "{reply}");
+        let g: Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        assert_eq!(g["graph_kind"], "extracted");
+        assert!(g["nodes"].as_array().unwrap().len() >= 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn topology_names_what_is_wrong_with_its_arguments() {
+        for (args, says) in [
+            (vec!["topology", "--out", "o.json"], "--model"),
+            (vec!["topology", "--model", "m.bimcraft"], "--out"),
+            (vec!["topology", "--model", "a", "--model", "b", "--out", "o"], "twice"),
+            (vec!["topology", "--colour", "red"], "unknown option"),
+            (vec!["topology", "--model"], "needs a value"),
+        ] {
+            let e = cli_out(&args).unwrap_err();
+            assert!(e.contains(says), "{args:?}: {e}");
+        }
     }
 
     #[test]

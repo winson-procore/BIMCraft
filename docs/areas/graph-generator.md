@@ -82,6 +82,25 @@ bimcraft-cli generate --archetype office --seed 2 --area-sqft 10000 --out /tmp/o
 Open `plan.png`: named, numbered rooms with their areas, a door in each room's wall to the corridor, windows on the outside wall,
 tags, three dimensions and a note. The sheet `A101` holds the plan (`--save` a `.pdf` for it).
 
+## The topology extractor
+
+`topology` (`topology.rs`; `bimcraft-cli topology --model FILE.bimcraft --out FILE.json`) is the reverse: a model's 2D graph from its
+geometry alone, in the shape of `topology-graph.json` with `graph_kind: "extracted"`. Nodes are the enclosed rooms (id: the room
+number if unique, else `room-<element id>`; boundary, holes, area, level). Every edge is found by sampling points either side of a
+line and asking which room holds each (`Spaces::room_at`):
+
+- `door`: the rooms either side of a door's host wall (at the wall's centre ± half its thickness + 150 mm), with the door's family
+  (a typed door's type), type, `operation` and `width_mm` from `Model::opening_dims`. A room on one side only is an exterior door
+  (`to: "exterior"`). `entry` is the room of the exterior door that is a swing door, then the widest, then the lowest id.
+- `open`: rooms sharing at least `MIN_SHARED` (300 mm) of room separation line; a shorter touch (a separator's end grazing a third
+  room) is no link, and a separator with a room on one side only gives nothing.
+- `adjacent`: rooms sharing at least 300 mm of wall, with no door or open edge between them.
+- `footprint`: the largest outline of the lowest level's bounding lines at the wall centres, dangling stubs trimmed, corners only.
+- `diagnostics`, each with a `code`: `room_not_enclosed` and `room_shares_space` (the room is no node: no boundary is made up),
+  `door_without_room`, `door_type_unknown`. Written even then. Nodes carry no kind: the house rule checker will need one.
+
+It gives the same graph measured at the wall centres or faces, and the same bytes for the same model.
+
 ## Not yet
 
 No stairs, shafts, structure or MEP; one storey; no datacenters or airports;
