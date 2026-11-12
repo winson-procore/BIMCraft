@@ -276,19 +276,19 @@ fn seeds_choose_different_layout_strategies() {
 
 #[test]
 fn seeds_choose_different_boundary_shapes() {
-    let shapes: BTreeSet<String> = (0..6)
+    let shapes: BTreeSet<String> = (0..10)
         .map(|seed| doc(&built(Archetype::Hospital, seed, 1800.0), "manifest.json")["boundary_shape"].as_str().unwrap().to_string())
         .collect();
-    assert_eq!(shapes.len(), 3, "{shapes:?}");
+    assert_eq!(shapes.len(), 5, "{shapes:?}");
 }
 
 #[test]
 fn seeds_choose_different_layout_families() {
-    let families: BTreeSet<String> = [1, 4, 7]
+    let families: BTreeSet<String> = [1, 4, 7, 10]
         .into_iter()
         .map(|seed| doc(&built(Archetype::Hospital, seed, 1800.0), "manifest.json")["layout_family"].as_str().unwrap().to_string())
         .collect();
-    assert_eq!(families.len(), 3, "{families:?}");
+    assert_eq!(families.len(), 4, "{families:?}");
 }
 
 #[test]
