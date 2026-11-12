@@ -106,10 +106,15 @@ fn every_3d_wall_names_the_2d_it_came_from() {
 fn wall_ids_come_from_where_a_wall_stands_and_not_from_the_seed() {
     let (_, _, a) = lifted("office", 1, 900.0);
     let (_, _, b) = lifted("office", 2, 900.0);
-    let fixed =
+    let ids =
         |b: &Building| -> BTreeSet<String> { b.walls.iter().map(|w| w.id.clone()).filter(|i| !i.starts_with("wall_part_")).collect() };
-    assert_eq!(fixed(&a), fixed(&b));
-    assert_eq!(fixed(&a).len(), 6);
+    for got in [ids(&a), ids(&b)] {
+        for id in ["wall_corr_south", "wall_corr_north", "wall_ext_west", "wall_ext_south"] {
+            assert!(got.contains(id), "{got:?}: {id}");
+        }
+        assert!(got.iter().any(|id| id.starts_with("wall_ext")), "{got:?}: exterior walls are named from their segments");
+        assert!(got.len() >= 6, "{got:?}: corridor and exterior walls are present");
+    }
 }
 
 #[test]

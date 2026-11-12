@@ -77,8 +77,10 @@ pub struct Building {
     pub archetype: &'static str,
     pub seed: u64,
     pub layout_strategy: &'static str,
+    pub boundary_shape: &'static str,
     pub width: i64,
     pub depth: i64,
+    pub boundary: Vec<[i64; 2]>,
     pub levels: Vec<Level>,
     pub spaces: Vec<Space>,
     pub walls: Vec<Wall>,
@@ -110,6 +112,22 @@ fn bounds_along(a: [i64; 2], b: [i64; 2], r: [i64; 4]) -> bool {
         (a[1] == y0 || a[1] == y1) && overlap((a[0].min(b[0]), a[0].max(b[0])), (x0, x1)) > 0
     } else {
         false
+    }
+}
+
+fn on_segment(p: [i64; 2], a: [i64; 2], b: [i64; 2]) -> bool {
+    let cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+    let within = |lo: i64, hi: i64, v: i64| v >= lo.min(hi) && v <= lo.max(hi);
+    cross == 0 && within(a[0], b[0], p[0]) && within(a[1], b[1], p[1])
+}
+
+fn exterior_id(plan: &Plan, index: usize, a: [i64; 2], b: [i64; 2]) -> String {
+    match (a, b) {
+        ([0, _], [0, _]) => "wall_ext_west".to_string(),
+        ([x, _], [x2, _]) if x == x2 && x == plan.width => "wall_ext_east".into(),
+        ([_, 0], [_, 0]) => "wall_ext_south".into(),
+        ([_, y], [_, y2]) if y == y2 && y == plan.depth => "wall_ext_north".into(),
+        _ => format!("wall_ext_{index}"),
     }
 }
 
@@ -152,13 +170,10 @@ impl Building {
                 points.push(first);
             }
             let wall_type = if w.kind == "exterior" { EXTERIOR } else { INTERIOR };
-            for seg in points.windows(2) {
+            for (seg_index, seg) in points.windows(2).enumerate() {
                 let [a, b] = [seg[0], seg[1]];
                 let id = match (w.kind, a, b) {
-                    ("exterior", [0, _], [0, _]) => "wall_ext_west".to_string(),
-                    ("exterior", [x, _], [x2, _]) if x == x2 && x == plan.width => "wall_ext_east".into(),
-                    ("exterior", [_, 0], [_, 0]) => "wall_ext_south".into(),
-                    ("exterior", [_, y], [_, y2]) if y == y2 && y == plan.depth => "wall_ext_north".into(),
+                    ("exterior", ..) => exterior_id(plan, seg_index, a, b),
                     ("corridor", [_, y], [_, y2]) if y == y2 && y == plan.corridor_bottom => "wall_corr_south".into(),
                     ("corridor", [_, y], [_, y2]) if y == y2 && y == plan.corridor_top => "wall_corr_north".into(),
                     ("partition", ..) => plan
@@ -190,42 +205,38 @@ impl Building {
         for o in &plan.openings {
             let band = plan.cells.iter().find(|c| c.spec.id == o.space).map(|c| c.band);
             let (host, id, source_edge) = match (o.kind, o.entry, band) {
-                ("door", true, _) => ("wall_ext_west", "door_entry".to_string(), None),
-                ("door", false, Some(Band::North)) => ("wall_corr_north", format!("door_{}", o.space), door_edge(topology, &o.space)),
-                ("door", false, _) => ("wall_corr_south", format!("door_{}", o.space), door_edge(topology, &o.space)),
+                ("door", true, _) => (exterior_host(&walls, o.at), "door_entry".to_string(), None),
+                ("door", false, Some(Band::North)) => {
+                    ("wall_corr_north".to_string(), format!("door_{}", o.space), door_edge(topology, &o.space))
+                }
+                ("door", false, _) => ("wall_corr_south".to_string(), format!("door_{}", o.space), door_edge(topology, &o.space)),
                 (_, _, Some(Band::North)) => {
                     windows += 1;
-                    ("wall_ext_north", format!("window_{windows}_{}", o.space), None)
+                    (exterior_host(&walls, o.at), format!("window_{windows}_{}", o.space), None)
                 }
                 _ => {
                     windows += 1;
-                    ("wall_ext_south", format!("window_{windows}_{}", o.space), None)
+                    (exterior_host(&walls, o.at), format!("window_{windows}_{}", o.space), None)
                 }
             };
-            openings.push(Opening {
-                id,
-                kind: o.kind,
-                host: host.into(),
-                at: o.at,
-                source_2d: o.space.clone(),
-                source_edge,
-                entry: o.entry,
-            });
+            openings.push(Opening { id, kind: o.kind, host, at: o.at, source_2d: o.space.clone(), source_edge, entry: o.entry });
         }
 
         let (w, d) = (plan.width, plan.depth);
         let slabs = vec![Slab {
             id: "slab_level_1".into(),
             level: LEVEL_1.into(),
-            boundary: vec![[0, 0], [w, 0], [w, d], [0, d]],
+            boundary: plan.boundary.clone(),
             source_2d_refs: topology.nodes.iter().map(|n| n.id.clone()).collect(),
         }];
         Building {
             archetype: plan.archetype.name(),
             seed: plan.seed,
             layout_strategy: plan.layout_strategy.name(),
+            boundary_shape: plan.boundary_shape.name(),
             width: w,
             depth: d,
+            boundary: plan.boundary.clone(),
             levels,
             spaces,
             walls,
@@ -250,9 +261,10 @@ impl Building {
             "archetype": self.archetype,
             "seed": self.seed,
             "layout_strategy": self.layout_strategy,
+            "boundary_shape": self.boundary_shape,
             "units": "mm",
             "source_2d": {"file": "topology-graph.json", "topology_hash": topology_hash, "nodes": nodes, "edges": edges},
-            "footprint": {"width": self.width, "depth": self.depth},
+            "footprint": {"width": self.width, "depth": self.depth, "boundary": self.boundary},
             "levels": self.levels.iter().map(|l| json!({"id": l.id, "name": l.name, "elevation_mm": l.elevation_mm})).collect::<Vec<_>>(),
             "spaces": self.spaces.iter().map(|s| json!({
                 "id": s.id, "source_2d": s.source_2d, "level": s.level, "base_mm": s.base_mm, "top_mm": s.top_mm,
@@ -275,6 +287,14 @@ impl Building {
             "systems": [],
         })
     }
+}
+
+fn exterior_host(walls: &[Wall], at: [i64; 2]) -> String {
+    walls
+        .iter()
+        .find(|w| w.kind == "exterior" && on_segment(at, w.start, w.end))
+        .map(|w| w.id.clone())
+        .unwrap_or_else(|| "wall_unplaced_opening".into())
 }
 
 /// The door edge of a room to the corridor, by its id.

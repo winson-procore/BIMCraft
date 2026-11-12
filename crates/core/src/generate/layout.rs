@@ -50,12 +50,41 @@ impl Strategy {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoundaryShape {
+    Rectangle,
+    LShape,
+    SteppedBar,
+}
+
+impl BoundaryShape {
+    pub fn name(self) -> &'static str {
+        match self {
+            BoundaryShape::Rectangle => "rectangle",
+            BoundaryShape::LShape => "l_shape",
+            BoundaryShape::SteppedBar => "stepped_bar",
+        }
+    }
+}
+
 impl Band {
     pub fn name(self) -> &'static str {
         match self {
             Band::North => "north",
             Band::South => "south",
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Span {
+    pub x0: i64,
+    pub x1: i64,
+}
+
+impl Span {
+    fn width(self) -> i64 {
+        self.x1 - self.x0
     }
 }
 
@@ -101,11 +130,13 @@ pub struct Plan {
     pub archetype: Archetype,
     pub seed: u64,
     pub layout_strategy: Strategy,
+    pub boundary_shape: BoundaryShape,
     pub requested_m2: f64,
     pub width: i64,
     pub depth: i64,
     pub corridor_bottom: i64,
     pub corridor_top: i64,
+    pub boundary: Vec<[i64; 2]>,
     pub program: Program,
     /// The lobby first, then the south band west to east, then the north band.
     pub cells: Vec<Cell>,
@@ -151,6 +182,7 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     let program = program(archetype, area_m2, seed);
     let mut rng = Rng::new(seed, 0x1A7_0001);
     let layout_strategy = strategy(seed);
+    let boundary_shape = boundary_shape(seed);
     let corridor_width = CORRIDOR_WIDTHS[rng.below(CORRIDOR_WIDTHS.len() as u64) as usize];
     let corridor_bottom = match layout_strategy {
         Strategy::DoubleLoaded => (depth - corridor_width) / 2 / 100 * 100,
@@ -175,28 +207,34 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
         }
     }
 
+    let (south_span, north_span) = spans(boundary_shape, width, corridor_bottom, depth - corridor_top, &south, &north);
     let mut cells = Vec::new();
     if layout_strategy == Strategy::SingleLoaded {
         south.extend(north);
-        cells.extend(deal(Band::North, south, depth - corridor_top, width, corridor_top, depth)?);
+        let (_, north_span) = spans(boundary_shape, width, 0, depth - corridor_top, &[], &south);
+        cells.extend(deal(Band::North, south, depth - corridor_top, north_span, corridor_top, depth)?);
     } else {
-        for (band, specs, depth_of_band, y0, y1) in
-            [(Band::South, south, corridor_bottom, 0, corridor_bottom), (Band::North, north, depth - corridor_top, corridor_top, depth)]
-        {
-            cells.extend(deal(band, specs, depth_of_band, width, y0, y1)?);
+        for (band, specs, depth_of_band, span, y0, y1) in [
+            (Band::South, south, corridor_bottom, south_span, 0, corridor_bottom),
+            (Band::North, north, depth - corridor_top, north_span, corridor_top, depth),
+        ] {
+            cells.extend(deal(band, specs, depth_of_band, span, y0, y1)?);
         }
     }
-    let walls = walls(width, depth, corridor_bottom, corridor_top, &cells);
+    let boundary = boundary(width, depth, corridor_bottom, corridor_top, &cells);
+    let walls = walls(width, corridor_bottom, corridor_top, &boundary, &cells);
     let openings = openings(&cells, corridor_bottom, corridor_top, depth);
     Ok(Plan {
         archetype,
         seed,
         layout_strategy,
+        boundary_shape,
         requested_m2: area_m2,
         width,
         depth,
         corridor_bottom,
         corridor_top,
+        boundary,
         program,
         cells,
         walls,
@@ -212,8 +250,43 @@ fn strategy(seed: u64) -> Strategy {
     }
 }
 
+fn boundary_shape(seed: u64) -> BoundaryShape {
+    match seed % 3 {
+        0 => BoundaryShape::Rectangle,
+        1 => BoundaryShape::LShape,
+        _ => BoundaryShape::SteppedBar,
+    }
+}
+
+fn least_width(specs: &[Spec], band_depth: i64) -> i64 {
+    specs
+        .iter()
+        .map(|s| {
+            let for_area = (i64::from(s.min_m2) * 1_000_000 + band_depth - 1) / band_depth.max(1);
+            MIN_CELL_WIDTH.max((for_area + 99) / 100 * 100)
+        })
+        .sum()
+}
+
+fn inset(width: i64, band_depth: i64, specs: &[Spec]) -> i64 {
+    let spare = (width - least_width(specs, band_depth)).max(0);
+    if spare < MIN_CELL_WIDTH * 2 { 0 } else { (width / 5).clamp(MIN_CELL_WIDTH, spare / 2) / 100 * 100 }
+}
+
+fn spans(shape: BoundaryShape, width: i64, south_depth: i64, north_depth: i64, south: &[Spec], north: &[Spec]) -> (Span, Span) {
+    let full = Span { x0: 0, x1: width };
+    let south_inset = inset(width, south_depth, south);
+    let north_inset = inset(width, north_depth, north);
+    match shape {
+        BoundaryShape::Rectangle => (full, full),
+        BoundaryShape::LShape => (full, Span { x0: 0, x1: width - north_inset }),
+        BoundaryShape::SteppedBar => (Span { x0: 0, x1: width - south_inset }, Span { x0: north_inset, x1: width }),
+    }
+}
+
 /// A band's rooms along its length: each as wide as its least area asks, the rest shared out by what they would like.
-fn deal(band: Band, specs: Vec<Spec>, band_depth: i64, length: i64, y0: i64, y1: i64) -> Result<Vec<Cell>, String> {
+fn deal(band: Band, specs: Vec<Spec>, band_depth: i64, span: Span, y0: i64, y1: i64) -> Result<Vec<Cell>, String> {
+    let length = span.width();
     let least: Vec<i64> = specs
         .iter()
         .map(|s| {
@@ -232,7 +305,7 @@ fn deal(band: Band, specs: Vec<Spec>, band_depth: i64, length: i64, y0: i64, y1:
     if let Some(w) = widths.get_mut(widest) {
         *w += left;
     }
-    let mut x = 0;
+    let mut x = span.x0;
     Ok(specs
         .into_iter()
         .zip(widths)
@@ -244,13 +317,99 @@ fn deal(band: Band, specs: Vec<Spec>, band_depth: i64, length: i64, y0: i64, y1:
         .collect())
 }
 
-fn walls(width: i64, depth: i64, bottom: i64, top: i64, cells: &[Cell]) -> Vec<Wall> {
+fn layer(cells: &[Cell], band: Band, y0: i64, y1: i64) -> Option<[i64; 4]> {
+    if y1 <= y0 {
+        return None;
+    }
+    let mut xs = cells.iter().filter(|c| c.band == band).flat_map(|c| [c.x0, c.x1]);
+    let first = xs.next()?;
+    let (mut x0, mut x1) = (first, first);
+    for x in xs {
+        x0 = x0.min(x);
+        x1 = x1.max(x);
+    }
+    Some([x0, y0, x1, y1])
+}
+
+fn boundary(width: i64, depth: i64, bottom: i64, top: i64, cells: &[Cell]) -> Vec<[i64; 2]> {
+    let mut rects = Vec::new();
+    if let Some(south) = layer(cells, Band::South, 0, bottom) {
+        rects.push(south);
+    }
+    rects.push([0, bottom, width, top]);
+    if let Some(north) = layer(cells, Band::North, top, depth) {
+        rects.push(north);
+    }
+    let mut points = Vec::new();
+    if let Some(first) = rects.first() {
+        points.push([first[0], first[1]]);
+        points.push([first[2], first[1]]);
+    }
+    for (i, rect) in rects.iter().enumerate() {
+        points.push([rect[2], rect[3]]);
+        if let Some(next) = rects.get(i + 1) {
+            points.push([next[2], rect[3]]);
+        }
+    }
+    if let Some(last) = rects.last() {
+        points.push([last[0], last[3]]);
+    }
+    for (i, rect) in rects.iter().enumerate().rev() {
+        points.push([rect[0], rect[1]]);
+        if i > 0 {
+            points.push([rects[i - 1][0], rect[1]]);
+        }
+    }
+    let mut simple = Vec::new();
+    for point in points {
+        if simple.last().is_none_or(|last| *last != point) {
+            simple.push(point);
+        }
+    }
+    while simple.len() >= 3 {
+        let n = simple.len();
+        let (a, b, c) = (simple[n - 2], simple[n - 1], simple[0]);
+        if (a[0] == b[0] && b[0] == c[0]) || (a[1] == b[1] && b[1] == c[1]) {
+            simple.pop();
+        } else {
+            break;
+        }
+    }
+    simplify(simple)
+}
+
+fn simplify(mut points: Vec<[i64; 2]>) -> Vec<[i64; 2]> {
+    loop {
+        let mut changed = false;
+        let mut out = Vec::new();
+        for i in 0..points.len() {
+            let a = points[(i + points.len() - 1) % points.len()];
+            let b = points[i];
+            let c = points[(i + 1) % points.len()];
+            if (a[0] == b[0] && b[0] == c[0]) || (a[1] == b[1] && b[1] == c[1]) {
+                changed = true;
+            } else {
+                out.push(b);
+            }
+        }
+        points = out;
+        if !changed {
+            return points;
+        }
+    }
+}
+
+fn walls(width: i64, bottom: i64, top: i64, boundary: &[[i64; 2]], cells: &[Cell]) -> Vec<Wall> {
     let mut walls = vec![
-        Wall { kind: "exterior", points: vec![[0, 0], [0, depth], [width, depth], [width, 0]], closed: true },
+        Wall { kind: "exterior", points: boundary.to_vec(), closed: true },
         Wall { kind: "corridor", points: vec![[0, bottom], [width, bottom]], closed: false },
         Wall { kind: "corridor", points: vec![[0, top], [width, top]], closed: false },
     ];
-    for c in cells.iter().filter(|c| c.x1 < width) {
+    for (i, c) in cells.iter().enumerate() {
+        let same_band_after = cells.iter().skip(i + 1).any(|n| n.band == c.band && n.x0 == c.x1 && n.y0 == c.y0 && n.y1 == c.y1);
+        if !same_band_after {
+            continue;
+        }
         walls.push(Wall { kind: "partition", points: vec![[c.x1, c.y0], [c.x1, c.y1]], closed: false });
     }
     walls

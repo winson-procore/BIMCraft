@@ -21,12 +21,14 @@ whole millimetres, integer seeds, a splitmix `Rng` (`generate::Rng`), no maps wi
 
 ## The layout
 
-One storey, one rectangle with one of three layout strategies: `double_loaded_corridor`, `single_loaded_corridor`, or
-`offset_corridor`. The strategy is chosen from the seed and exported in the manifest, topology, building graph and report. The depth
-is the square root of the area over 3, held between 12 and 24 m, so a very large or small area lands off the request and the report
-warns (`GM-001`, over 5%). The program (`program.rs`) grows with the area and takes a few of its counts from the seed; the lobby is
-the first room with the way in on the west wall; every room has one door to the corridor. Rooms are dealt into the strategy's band(s),
-in an order the seed shuffles, each as wide as its least area asks.
+One storey, with a seeded boundary shape (`rectangle`, `l_shape`, or `stepped_bar`) and one of three layout strategies:
+`double_loaded_corridor`, `single_loaded_corridor`, or `offset_corridor`. The strategy and boundary shape are chosen from the seed
+and exported in the manifest, program graph, topology, building graph and report. The depth is the square root of the area over 3,
+held between 12 and 24 m, so a very large or small area lands off the request and the report warns (`GM-001`, over 5%). The program
+(`program.rs`) grows with the area and takes a few of its counts from the seed; the lobby is the first room with the way in on the
+west wall; every room has one door to the corridor. Rooms are dealt into the strategy's band(s), in an order the seed shuffles, each
+as wide as its least area asks. Non-rectangular boundaries shorten or step room bands against the corridor bar, and the footprint
+polygon is used for the exterior walls, floor command and slab boundary.
 
 ## Refusals
 

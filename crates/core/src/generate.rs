@@ -199,6 +199,7 @@ fn build_with_area(archetype: Archetype, seed: u64, area: AreaRequest) -> Result
         "archetype": archetype.name(),
         "seed": seed,
         "layout_strategy": plan.layout_strategy.name(),
+        "boundary_shape": plan.boundary_shape.name(),
         "requested_area": {"value": area.value, "unit": area.unit},
         "requested_area_m2": area.m2,
         "gross_area_m2": plan.gross_m2(),
