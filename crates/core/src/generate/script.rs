@@ -2,7 +2,7 @@
 //! walls, the floor, the doors and windows in them, the rooms between them, then what is drawn on the plan and the sheet).
 //! It holds no file path, so it runs from any directory.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
@@ -65,6 +65,39 @@ fn line(id: &'static str, params: Value) -> Line {
     Line { id, params, room_of: None, wall_of: None, opening_of: None }
 }
 
+fn grid_name(mut i: usize, letters: bool) -> String {
+    if !letters {
+        return (i + 1).to_string();
+    }
+    let mut name = String::new();
+    loop {
+        let c = (b'A' + (i % 26) as u8) as char;
+        name.insert(0, c);
+        if i < 26 {
+            return name;
+        }
+        i = i / 26 - 1;
+    }
+}
+
+fn grid_positions(plan: &Plan, building: &Building) -> (Vec<i64>, Vec<i64>) {
+    let mut xs: BTreeSet<i64> = [0, plan.width].into();
+    let mut ys: BTreeSet<i64> =
+        [0, plan.depth, plan.corridor_bottom, plan.corridor_top, (plan.corridor_bottom + plan.corridor_top) / 2].into();
+    for p in &building.boundary {
+        xs.insert(p[0]);
+        ys.insert(p[1]);
+    }
+    for c in &plan.cells {
+        xs.extend([c.x0, c.x1]);
+        ys.extend([c.y0, c.y1]);
+        if c.y1 - c.y0 >= 4_800 {
+            ys.insert((c.y0 + c.y1) / 2);
+        }
+    }
+    (xs.into_iter().collect(), ys.into_iter().collect())
+}
+
 /// The script of a building: its walls and openings as the lifted graph has them, the rest as the plan has it.
 pub fn compile(plan: &Plan, building: &Building) -> Script {
     let (w, d) = (plan.width, plan.depth);
@@ -74,16 +107,13 @@ pub fn compile(plan: &Plan, building: &Building) -> Script {
         line("room_area", json!({"at": "finish"})),
         line("level", json!({"elevation": 3600, "name": "Roof"})),
     ];
-    for (start, end, name) in [
-        ([0, -1500], [0, d + 1500], None),
-        ([w, -1500], [w, d + 1500], None),
-        ([-1500, 0], [w + 1500, 0], Some("A")),
-        ([-1500, d], [w + 1500, d], None),
-    ] {
-        let mut params = json!({"start": start, "end": end});
-        if let Some(name) = name {
-            params["name"] = json!(name);
-        }
+    let (grid_x, grid_y) = grid_positions(plan, building);
+    for (i, x) in grid_x.into_iter().enumerate() {
+        let params = json!({"start": [x, -1500], "end": [x, d + 1500], "name": grid_name(i, false)});
+        lines.push(line("grid", params));
+    }
+    for (i, y) in grid_y.into_iter().enumerate() {
+        let params = json!({"start": [-1500, y], "end": [w + 1500, y], "name": grid_name(i, true)});
         lines.push(line("grid", params));
     }
     for wall in &building.walls {
@@ -120,8 +150,10 @@ pub fn compile(plan: &Plan, building: &Building) -> Script {
     let overlap = (bottom_span.0.max(top_span.0), bottom_span.1.min(top_span.1));
     let depth_x = if overlap.0 < overlap.1 { (overlap.0 + overlap.1) / 2 } else { w / 2 };
     let corridor_y = (plan.corridor_bottom + plan.corridor_top) / 2;
-    lines.push(line("dimension", json!({"refs": [[0, corridor_y], [w, corridor_y]], "at": [w / 2, -1300]})));
-    lines.push(line("dimension", json!({"refs": [[depth_x, 0], [depth_x, d]], "at": [w + 900, d / 2]})));
+    let corridor_dim_y = corridor_y + 137;
+    let depth_dim_x = depth_x + 137;
+    lines.push(line("dimension", json!({"refs": [[0, corridor_dim_y], [w, corridor_dim_y]], "at": [w / 2, -1300]})));
+    lines.push(line("dimension", json!({"refs": [[depth_dim_x, 0], [depth_dim_x, d]], "at": [w + 900, d / 2]})));
     lines.push(line(
         "dimension",
         json!({"refs": [[top_span.0, d - 500], [top_span.1, d - 500]], "at": [(top_span.0 + top_span.1) / 2, d + 1000]}),
