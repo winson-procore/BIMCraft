@@ -134,15 +134,22 @@ fn every_opening_names_its_host_wall_and_where_it_came_from() {
             assert!(nodes.contains(o["source_2d"].as_str().unwrap_or_default()), "{label}: {o}");
             match o["kind"].as_str() {
                 // A room's door is the door edge of the topology it is the lift of.
-                Some("door") if o["entry"] != true => {
+                Some("door") if o["role"] == "room_access" => {
                     assert!(edges.contains(o["source_topology_edge"].as_str().unwrap_or_default()), "{label}: {o}")
                 }
+                // The way in, the exits and the windows are no door between two rooms.
                 Some("door" | "window") => assert!(o["source_topology_edge"].is_null(), "{label}: {o}"),
                 other => panic!("{label}: an opening of kind {other:?}"),
             }
         }
         let doors = openings.iter().filter(|o| o["kind"] == "door").count();
-        assert_eq!(doors, top["nodes"].as_array().unwrap().len(), "{label}: a door for every room but the corridor, and the way in");
+        let exits = openings.iter().filter(|o| matches!(o["role"].as_str(), Some("back_door" | "service_exit"))).count();
+        assert!(exits >= 1, "{label}: a way out the back");
+        assert_eq!(
+            doors,
+            top["nodes"].as_array().unwrap().len() + exits,
+            "{label}: a door for every room but the corridor, the way in, and each exit to outside"
+        );
     }
 }
 
@@ -339,4 +346,151 @@ fn each_run_time_lift_rule_fails_on_a_building_that_breaks_it_and_only_that_one(
             assert_eq!(got[id], want, "{broken} broken, rule {id}: {got:?}");
         }
     }
+}
+
+/// The building graphs of a spread of seeds and every archetype, as the files say them.
+fn symbol_spread() -> Vec<(String, Value, Value)> {
+    let mut out = Vec::new();
+    for (name, area) in [("office", 900.0), ("clinic", 650.0), ("hospital", 1800.0)] {
+        for seed in 0..12 {
+            let b = built(archetype(name), seed, area);
+            out.push((format!("{name} {seed} {area}"), doc(&b, "building-ir.json"), doc(&b, "manifest.json")));
+        }
+    }
+    out
+}
+
+fn symbols_of(ir: &Value, kind: &str) -> BTreeSet<String> {
+    ir["openings"]
+        .as_array()
+        .map(|a| a.iter().filter(|o| o["kind"] == kind).filter_map(|o| o["symbol"].as_str().map(str::to_string)).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn seeds_and_archetypes_export_many_door_and_window_symbols() {
+    let spread = symbol_spread();
+    let (mut profiles, mut doors, mut windows) = (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
+    for (label, ir, manifest) in &spread {
+        profiles.insert(manifest["opening_symbol_profile"].as_str().unwrap_or_default().to_string());
+        assert_eq!(ir["opening_symbol_profile"], manifest["opening_symbol_profile"], "{label}");
+        let (d, w) = (symbols_of(ir, "door"), symbols_of(ir, "window"));
+        // Each building has its own variety: the way in, a way out the back, and multiple room-door symbols.
+        assert!(d.contains("main_entry"), "{label}: {d:?}");
+        assert!(d.contains("back_door") || d.contains("service_exit"), "{label}: {d:?}");
+        assert!(d.len() >= 3, "{label}: {d:?}");
+        assert!(!w.is_empty(), "{label}");
+        doors.extend(d);
+        windows.extend(w);
+    }
+    assert_eq!(profiles.len(), 4, "{profiles:?}");
+    for symbol in ["main_entry", "back_door", "service_exit", "single_swing", "double_swing", "service", "secure"] {
+        assert!(doors.contains(symbol), "no door has the symbol {symbol}: {doors:?}");
+    }
+    for symbol in ["punched", "ribbon", "storefront", "clerestory", "narrow_slot"] {
+        assert!(windows.contains(symbol), "no window has the symbol {symbol}: {windows:?}");
+    }
+    // Different seeds of one archetype do not all draw alike.
+    for name in ["office", "clinic", "hospital"] {
+        let seen: BTreeSet<&str> =
+            spread.iter().filter(|(l, ..)| l.starts_with(name)).filter_map(|(.., m)| m["opening_symbol_profile"].as_str()).collect();
+        assert!(seen.len() >= 2, "{name}: {seen:?}");
+    }
+}
+
+#[test]
+fn each_opening_names_its_role_symbol_and_size_and_the_manifest_counts_them() {
+    for (label, ir, manifest) in symbol_spread() {
+        let openings = ir["openings"].as_array().unwrap();
+        let mut types: BTreeMap<(String, String), (i64, i64, i64, String)> = BTreeMap::new();
+        for o in openings {
+            let (kind, symbol, role) = (o["kind"].as_str().unwrap(), o["symbol"].as_str().unwrap(), o["role"].as_str().unwrap());
+            match kind {
+                "door" => assert!(matches!(role, "main_entry" | "back_door" | "service_exit" | "room_access"), "{label}: {o}"),
+                _ => assert_eq!(role, "window", "{label}: {o}"),
+            }
+            // The entries are labelled by what they are for; a room door by how it is drawn.
+            if matches!(role, "main_entry" | "back_door" | "service_exit") {
+                assert_eq!(symbol, role, "{label}: {o}");
+                assert!(o["source_topology_edge"].is_null(), "{label}: {o}");
+            } else if kind == "door" {
+                assert!(matches!(symbol, "single_swing" | "double_swing" | "service" | "secure"), "{label}: {o}");
+            }
+            let (w, h, s) = (o["width_mm"].as_i64().unwrap(), o["height_mm"].as_i64().unwrap(), o["sill_mm"].as_i64().unwrap());
+            assert!(w >= 600 && h >= 600 && s >= 0 && s + h <= 3000 + 100, "{label}: {o}");
+            assert!(o["flip_hand"].is_boolean() && o["operation"].as_str().is_some_and(|op| !op.is_empty()), "{label}: {o}");
+            // A type name stands for one size and one way of opening.
+            let spec = (w, h, s, o["operation"].as_str().unwrap().to_string());
+            let key = (kind.to_string(), o["type"].as_str().unwrap().to_string());
+            assert_eq!(types.entry(key).or_insert_with(|| spec.clone()), &spec, "{label}: {o}");
+        }
+        let double = openings.iter().find(|o| o["symbol"] == "double_swing").map(|o| (o["width_mm"].as_i64(), o["operation"].clone()));
+        if let Some((width, operation)) = double {
+            assert!(width.unwrap_or(0) > 1200 && operation == "double-swing", "{label}: a double door is wide and has two leaves");
+        }
+        // The manifest counts what the building graph holds, door symbols and window symbols apart.
+        let count = |kind: &str| {
+            let mut counts: BTreeMap<&str, u64> = BTreeMap::new();
+            for o in openings.iter().filter(|o| o["kind"] == kind) {
+                *counts.entry(o["symbol"].as_str().unwrap()).or_default() += 1;
+            }
+            serde_json::to_value(counts).unwrap()
+        };
+        assert_eq!(manifest["opening_symbols"]["doors"], count("door"), "{label}");
+        assert_eq!(manifest["opening_symbols"]["windows"], count("window"), "{label}");
+    }
+}
+
+#[test]
+fn the_script_makes_a_type_for_each_symbol_before_the_doors_and_windows_that_use_it() {
+    for (name, seed, area) in [("office", 1, 900.0), ("clinic", 3, 650.0), ("hospital", 10, 1800.0)] {
+        let (b, building, script, replies, s) = ran(name, seed, area);
+        let label = format!("{name} {seed} {area}");
+        let first_opening = script.lines.iter().position(|l| l.opening_of.is_some()).unwrap();
+        let types: Vec<&script::Line> = script.lines.iter().filter(|l| l.id == "type").collect();
+        assert!(types.iter().all(|l| script.lines.iter().position(|x| std::ptr::eq(x, *l)).unwrap() < first_opening), "{label}");
+        for o in &building.openings {
+            let line = script.lines.iter().find(|l| l.opening_of.as_deref() == Some(o.id.as_str())).unwrap();
+            assert_eq!(line.params["type"], o.type_name, "{label}: {}", o.id);
+            assert!(
+                types.iter().any(|t| t.params["name"] == o.type_name && t.params["category"] == o.kind && t.params["width"] == o.width_mm),
+                "{label}: no type for {}",
+                o.id
+            );
+        }
+        // BIMCraft took them: the project holds a type of each symbol and the doors and windows name it.
+        let used: BTreeSet<&str> = building.openings.iter().map(|o| o.type_name.as_str()).collect();
+        let doors = s.model.types.door.keys().chain(s.model.types.window.keys()).filter(|k| used.contains(k.as_str())).count();
+        assert_eq!(doors, used.len(), "{label}");
+        assert_eq!(b.plan.openings.len(), building.openings.len(), "{label}");
+        assert_eq!(replies.len(), script.lines.len(), "{label}");
+    }
+}
+
+#[test]
+fn a_symbol_the_script_did_not_make_fails_the_symbol_rule() {
+    let (b, good, script, replies, s) = ran("office", 1, 900.0);
+    let with = |change: &dyn Fn(&mut Building)| {
+        let mut x = good.clone();
+        change(&mut x);
+        x
+    };
+    let door = good.openings.iter().position(|o| o.kind == "door" && o.role == "room_access").unwrap();
+    let window = good.openings.iter().position(|o| o.kind == "window").unwrap();
+    let cases = vec![
+        with(&|x| x.openings[door].width_mm += 100),
+        with(&|x| x.openings[door].operation = "sliding"),
+        with(&|x| x.openings[door].flip_hand = !good.openings[door].flip_hand),
+        with(&|x| x.openings[window].sill_mm += 100),
+        with(&|x| x.openings[window].type_name = "Nowhere 1 x 1".into()),
+    ];
+    assert_eq!(run_status(&b, &good, &script, &replies, &s)["LIFT-007"], Status::Pass);
+    for broken in &cases {
+        assert_eq!(run_status(&b, broken, &script, &replies, &s)["LIFT-007"], Status::Fail);
+    }
+    // A symbol that no door has is refused before the script runs.
+    let t = Topology::of(&b.plan);
+    let bad = with(&|x| x.openings[door].symbol = "revolving");
+    assert_eq!(lift_status(&bad, &t)["LIFT-003"], Status::Fail);
+    assert_eq!(lift_status(&good, &t)["LIFT-003"], Status::Pass);
 }

@@ -2,10 +2,12 @@
 //! walls, the floor, the doors and windows in them, the rooms between them, then what is drawn on the plan and the sheet).
 //! It holds no file path, so it runs from any directory.
 
+use std::collections::BTreeMap;
+
 use serde_json::{Value, json};
 
 use super::layout::Plan;
-use super::lift::Building;
+use super::lift::{self, Building};
 
 /// A command of the script, and the space it makes a room for, when it is one.
 #[derive(Clone, Debug)]
@@ -89,14 +91,22 @@ pub fn compile(plan: &Plan, building: &Building) -> Script {
         lines.push(Line { wall_of: Some(wall.id.clone()), ..line("wall", params) });
     }
     lines.push(line("floor", json!({"boundary": building.boundary})));
+    // A type for each symbol the building uses, before the doors and windows that name it.
+    let types: BTreeMap<(&str, &str), &lift::Opening> = building.openings.iter().map(|o| ((o.kind, o.type_name.as_str()), o)).collect();
+    for ((kind, name), o) in types {
+        lines.push(line(
+            "type",
+            json!({"category": kind, "name": name, "width": o.width_mm, "height": o.height_mm, "sill": o.sill_mm, "operation": o.operation}),
+        ));
+    }
     for id in ["door", "window"] {
-        lines.extend(
-            building
-                .openings
-                .iter()
-                .filter(|o| o.kind == id)
-                .map(|o| Line { opening_of: Some(o.id.clone()), ..line(id, json!({"at": o.at})) }),
-        );
+        for o in building.openings.iter().filter(|o| o.kind == id) {
+            let mut params = json!({"at": o.at, "type": o.type_name});
+            if o.flip_hand {
+                params["flip_hand"] = json!(true);
+            }
+            lines.push(Line { opening_of: Some(o.id.clone()), ..line(id, params) });
+        }
     }
     let corridor = &plan.program.corridor;
     let mut rooms = vec![(corridor.id.clone(), corridor.label.clone(), [w / 2, (plan.corridor_bottom + plan.corridor_top) / 2])];

@@ -31,6 +31,27 @@ the west wall; every room has one door to the shared/circulation zone. Rooms are
 seed shuffles, each as wide as its least area asks. Non-rectangular boundaries shorten, center, or step room bands against the
 shared/circulation bar, and the footprint polygon is used for the exterior walls, floor command and slab boundary.
 
+## Door and window symbols
+
+Each brief takes an `opening_symbol_profile` from its seed and archetype (`generate/openings.rs`): `classic_punched`,
+`storefront_ribbon`, `service_secure` or `slot_clerestory`. It is exported in the manifest, program graph, topology graph, building
+graph and report (the manifest and the report also count `opening_symbols`, doors and windows apart). A profile fixes the symbol of
+each opening by the room's kind and role:
+
+| Doors | Symbol | Made as |
+|---|---|---|
+| the way in (lobby, west wall) | `main_entry` | double or single leaf by profile, as wide as the corridor allows |
+| an exit from a back-of-house room with no window | `back_door`, `service_exit` | one leaf, 1000 and 1200 wide; every building has at least one |
+| a room to the corridor | `single_swing`, `double_swing`, `service`, `secure` | 900, 1600 (public and wide rooms), 1100, 1000 wide |
+
+Windows are `punched`, `ribbon`, `storefront`, `clerestory` or `narrow_slot`, each with its own width, height and sill.
+Every building-graph opening carries `role` (`main_entry`, `back_door`, `service_exit`, `room_access`, `window`), `symbol`, `type`,
+`width_mm`, `height_mm`, `sill_mm`, `operation` and `flip_hand`. The script makes one `type` command for each symbol used, with the
+width, height, sill and operation, then each `door` and `window` names its `type` (`LIFT-007` checks BIMCraft holds what the graph says). Only the
+way in and the exits have no topology edge; a room's door is still the lift of its `door` edge, which carries its `opening_symbol`.
+BIMCraft's plan draws a door's width and one swing arc, and a window's width: a double leaf, and a clerestory or a slot, differ in
+the graphs, the IFC operation and the schedule, not in the picture.
+
 ## Refusals
 
 A brief that can't be met writes nothing and the error starts with a code: `invalid_params`, `unknown_archetype`, `invalid_area`
@@ -59,5 +80,5 @@ tags, three dimensions and a note. The sheet `A101` holds the plan (`--save` a `
 
 ## Not yet
 
-No stairs, shafts, structure or MEP; one storey; door swing and hand are BIMCraft's defaults; no datacenters or airports;
+No stairs, shafts, structure or MEP; one storey; no datacenters or airports;
 no batch runs, and the rules are still hard-coded: the seed rule packs of [rule packs](rule-packs.md) are written but not read. `report.json` says so in `capability_notes`.

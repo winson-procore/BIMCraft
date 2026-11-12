@@ -12,6 +12,7 @@
 //! ```
 
 use super::Rng;
+use super::openings::{self, SymbolProfile};
 use super::program::{Archetype, Program, Spec, program};
 
 pub const EXTERIOR: &str = "Exterior - 300mm";
@@ -23,8 +24,6 @@ const MAX_DEPTH: i64 = 24_000;
 const MAX_OPEN_DEPTH: i64 = 60_000;
 const MIN_WIDTH: i64 = 6_000;
 const CORRIDOR_WIDTHS: [i64; 4] = [1800, 2000, 2200, 2400];
-/// One window for each this much of outside wall.
-const WINDOW_SPACING: i64 = 4000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Band {
@@ -161,6 +160,16 @@ pub struct Opening {
     pub at: [i64; 2],
     /// Where the building is entered from outside.
     pub entry: bool,
+    /// What the opening is for: `main_entry`, `back_door`, `service_exit`, `room_access` or `window`.
+    pub role: &'static str,
+    /// The symbol it is drawn with, one of `openings::DOOR_SYMBOLS` or `openings::WINDOW_SYMBOLS`.
+    pub symbol: &'static str,
+    pub width_mm: i64,
+    pub height_mm: i64,
+    pub sill_mm: i64,
+    /// How its leaves open, as BIMCraft's `type` command spells it.
+    pub operation: &'static str,
+    pub flip_hand: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -170,6 +179,7 @@ pub struct Plan {
     pub layout_family: LayoutFamily,
     pub layout_strategy: Strategy,
     pub boundary_shape: BoundaryShape,
+    pub opening_symbol_profile: SymbolProfile,
     pub requested_m2: f64,
     pub width: i64,
     pub depth: i64,
@@ -260,13 +270,15 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     }
     let boundary = boundary(width, depth, corridor_bottom, corridor_top, &cells);
     let walls = walls(width, corridor_bottom, corridor_top, &boundary, &cells);
-    let openings = openings(&cells, corridor_bottom, corridor_top, depth);
+    let opening_symbol_profile = openings::profile(archetype, seed);
+    let openings = openings::place(opening_symbol_profile, seed, &cells, corridor_bottom, corridor_top, depth);
     Ok(Plan {
         archetype,
         seed,
         layout_family,
         layout_strategy,
         boundary_shape,
+        opening_symbol_profile,
         requested_m2: area_m2,
         width,
         depth,
@@ -481,29 +493,4 @@ fn walls(width: i64, bottom: i64, top: i64, boundary: &[[i64; 2]], cells: &[Cell
         walls.push(Wall { kind: "partition", points: vec![[c.x1, c.y0], [c.x1, c.y1]], closed: false });
     }
     walls
-}
-
-/// The way in, a door from every room to the corridor, and windows for the rooms that want them.
-fn openings(cells: &[Cell], bottom: i64, top: i64, depth: i64) -> Vec<Opening> {
-    let mut out = Vec::new();
-    if let Some(lobby) = cells.first() {
-        out.push(Opening { kind: "door", space: lobby.spec.id.clone(), at: [0, (bottom + top) / 2], entry: true });
-    }
-    for c in cells {
-        let (inside, outside) = if c.band == Band::North { (top, depth) } else { (bottom, 0) };
-        out.push(Opening { kind: "door", space: c.spec.id.clone(), at: [c.middle()[0], inside], entry: false });
-        if c.spec.window {
-            let width = c.x1 - c.x0;
-            let n = (width / WINDOW_SPACING).max(1);
-            for i in 0..n {
-                out.push(Opening {
-                    kind: "window",
-                    space: c.spec.id.clone(),
-                    at: [c.x0 + width * (2 * i + 1) / (2 * n), outside],
-                    entry: false,
-                });
-            }
-        }
-    }
-    out
 }

@@ -90,11 +90,23 @@ impl Topology {
             "layout_family": plan.layout_family.name(),
             "layout_strategy": plan.layout_strategy.name(),
             "boundary_shape": plan.boundary_shape.name(),
+            "opening_symbol_profile": plan.opening_symbol_profile.name(),
             "entry": self.entry,
             "nodes": self.nodes.iter().map(|n| json!({
                 "id": n.id, "kind": n.kind, "role": n.role.name(), "area_m2": n.area_m2, "level": "Level 1",
             })).collect::<Vec<_>>(),
-            "edges": self.edges.iter().map(|e| json!({"id": e.id(), "from": e.from, "to": e.to, "kind": e.kind})).collect::<Vec<_>>(),
+            "edges": self.edges.iter().map(|e| {
+                let mut edge = json!({"id": e.id(), "from": e.from, "to": e.to, "kind": e.kind});
+                if ACCESS.contains(&e.kind)
+                    && let Some(o) = plan.openings.iter().find(|o| o.kind == "door" && o.role == "room_access" && o.space == e.from)
+                {
+                    edge["opening_symbol"] = json!(o.symbol);
+                    edge["opening_role"] = json!(o.role);
+                    edge["opening_type"] = json!(o.type_name());
+                    edge["width_mm"] = json!(o.width_mm);
+                }
+                edge
+            }).collect::<Vec<_>>(),
         })
     }
 }
@@ -108,6 +120,7 @@ pub fn program_json(plan: &Plan) -> Value {
         "layout_family": plan.layout_family.name(),
         "layout_strategy": plan.layout_strategy.name(),
         "boundary_shape": plan.boundary_shape.name(),
+        "opening_symbol_profile": plan.opening_symbol_profile.name(),
         "requested_area_m2": plan.requested_m2,
         "spaces": plan.program.all().map(|s| json!({
             "id": s.id, "kind": s.kind, "label": s.label, "role": s.role.name(),

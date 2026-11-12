@@ -59,9 +59,19 @@ pub struct Opening {
     pub host: String,
     pub at: [i64; 2],
     pub source_2d: String,
-    /// The topology edge a room's door is the 3D of; the way in and the windows have none.
+    /// The topology edge a room's door is the 3D of; the way in, the exits and the windows have none.
     pub source_edge: Option<String>,
     pub entry: bool,
+    /// What it is for: `main_entry`, `back_door`, `service_exit`, `room_access` or `window`.
+    pub role: &'static str,
+    /// The symbol it is drawn with, and the BIMCraft type the script makes for it.
+    pub symbol: &'static str,
+    pub type_name: String,
+    pub width_mm: i64,
+    pub height_mm: i64,
+    pub sill_mm: i64,
+    pub operation: &'static str,
+    pub flip_hand: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -79,6 +89,7 @@ pub struct Building {
     pub layout_family: &'static str,
     pub layout_strategy: &'static str,
     pub boundary_shape: &'static str,
+    pub opening_symbol_profile: &'static str,
     pub width: i64,
     pub depth: i64,
     pub boundary: Vec<[i64; 2]>,
@@ -205,22 +216,37 @@ impl Building {
         let (mut openings, mut windows) = (Vec::new(), 0);
         for o in &plan.openings {
             let band = plan.cells.iter().find(|c| c.spec.id == o.space).map(|c| c.band);
-            let (host, id, source_edge) = match (o.kind, o.entry, band) {
-                ("door", true, _) => (exterior_host(&walls, o.at), "door_entry".to_string(), None),
-                ("door", false, Some(Band::North)) => {
+            let (host, id, source_edge) = match (o.kind, o.role, band) {
+                ("door", "main_entry", _) => (exterior_host(&walls, o.at), "door_entry".to_string(), None),
+                ("door", "back_door" | "service_exit", _) => {
+                    (exterior_host(&walls, o.at), format!("door_{}_{}", o.role.trim_end_matches("_door"), o.space), None)
+                }
+                ("door", _, Some(Band::North)) => {
                     ("wall_corr_north".to_string(), format!("door_{}", o.space), door_edge(topology, &o.space))
                 }
-                ("door", false, _) => ("wall_corr_south".to_string(), format!("door_{}", o.space), door_edge(topology, &o.space)),
-                (_, _, Some(Band::North)) => {
-                    windows += 1;
-                    (exterior_host(&walls, o.at), format!("window_{windows}_{}", o.space), None)
-                }
+                ("door", ..) => ("wall_corr_south".to_string(), format!("door_{}", o.space), door_edge(topology, &o.space)),
                 _ => {
                     windows += 1;
                     (exterior_host(&walls, o.at), format!("window_{windows}_{}", o.space), None)
                 }
             };
-            openings.push(Opening { id, kind: o.kind, host, at: o.at, source_2d: o.space.clone(), source_edge, entry: o.entry });
+            openings.push(Opening {
+                id,
+                kind: o.kind,
+                host,
+                at: o.at,
+                source_2d: o.space.clone(),
+                source_edge,
+                entry: o.entry,
+                role: o.role,
+                symbol: o.symbol,
+                type_name: o.type_name(),
+                width_mm: o.width_mm,
+                height_mm: o.height_mm,
+                sill_mm: o.sill_mm,
+                operation: o.operation,
+                flip_hand: o.flip_hand,
+            });
         }
 
         let (w, d) = (plan.width, plan.depth);
@@ -236,6 +262,7 @@ impl Building {
             layout_family: plan.layout_family.name(),
             layout_strategy: plan.layout_strategy.name(),
             boundary_shape: plan.boundary_shape.name(),
+            opening_symbol_profile: plan.opening_symbol_profile.name(),
             width: w,
             depth: d,
             boundary: plan.boundary.clone(),
@@ -265,6 +292,7 @@ impl Building {
             "layout_family": self.layout_family,
             "layout_strategy": self.layout_strategy,
             "boundary_shape": self.boundary_shape,
+            "opening_symbol_profile": self.opening_symbol_profile,
             "units": "mm",
             "source_2d": {"file": "topology-graph.json", "topology_hash": topology_hash, "nodes": nodes, "edges": edges},
             "footprint": {"width": self.width, "depth": self.depth, "boundary": self.boundary},
@@ -280,6 +308,9 @@ impl Building {
             })).collect::<Vec<_>>(),
             "openings": self.openings.iter().map(|o| json!({
                 "id": o.id, "kind": o.kind, "host": o.host, "at": o.at, "entry": o.entry,
+                "role": o.role, "symbol": o.symbol, "type": o.type_name,
+                "width_mm": o.width_mm, "height_mm": o.height_mm, "sill_mm": o.sill_mm,
+                "operation": o.operation, "flip_hand": o.flip_hand,
                 "source_2d": o.source_2d, "source_topology_edge": o.source_edge,
             })).collect::<Vec<_>>(),
             "slabs": self.slabs.iter().map(|s| json!({
