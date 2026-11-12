@@ -90,8 +90,14 @@ pub static ALL: &[Command] = &[
     other(
         "topology",
         "Topology Graph",
-        "{path?} the project's 2D topology graph from its geometry alone (it only reads), and with `path` the same written there as \
-         JSON. `nodes`: its enclosed rooms (id: the room number, else room-<element id>; boundary, holes, area_m2, level). `edges`: \
+        "{path?, expect?} the project's 2D topology graph from its geometry alone (it only reads), and with `path` the same written \
+         there as JSON (before any comparison, and the file never holds it). With `expect`, a traced plan's expected file \
+         ({rooms: [{id, kind, name?}], links: [{from, to, via: open|swing|double-swing|sliding|double-sliding|folding|fixed}], \
+         entry: {room, via?}, building?, review?, source?}) is compared with the graph and `comparison` says how: `agree`, \
+         `missing_rooms`, `missing_links` (in the model, not in the file), `extra_rooms`, `extra_links` (in the file, not in the \
+         model), `entry` (null, or {expected, extracted}) and `diagnostics`. Links are unordered pairs with their via, of `door` and \
+         `open` edges that aren't exterior; kinds, `building`, `review`, `source` and `entry.via` aren't compared. A mismatch is a \
+         reply with `agree` false; a file that can't be read is an error. `nodes`: its enclosed rooms (id: the room number, else room-<element id>; boundary, holes, area_m2, level). `edges`: \
          `door` (the rooms either side of a door's host wall, with its family, type, operation swing|sliding|…, width_mm; a door \
          with a room on one side only goes to `exterior`), `open` (rooms sharing at least 300 mm of room separation line), \
          `adjacent` (rooms sharing at least 300 mm of wall, with no door or open edge between them). `entry`: the room of the \

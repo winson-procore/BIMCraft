@@ -5,6 +5,8 @@
 //! exterior door and gives the entry. Nothing is guessed: a room no walls enclose, or a door with no room beside it, is a
 //! typed diagnostic. Sides are found by sampling points either side of a line and asking which room holds each.
 
+mod expect;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
@@ -191,24 +193,41 @@ pub fn extract(m: &Model) -> Value {
 #[serde(deny_unknown_fields)]
 struct Params {
     path: Option<String>,
+    expect: Option<String>,
 }
 
 const MAX_PATH: usize = 4096;
 
-/// The `topology` command: the graph, and with `path` the same written there as JSON.
+fn path_ok(what: &str, path: &str) -> Result<(), String> {
+    if path.trim().is_empty() || path.len() > MAX_PATH || path.contains('\0') {
+        return Err(format!("`{what}` is a file: not empty, at most {MAX_PATH} bytes"));
+    }
+    Ok(())
+}
+
+/// The `topology` command: the graph, with `path` the same written there as JSON, and with `expect` its comparison with a traced
+/// plan's expected file (`comparison`).
 pub fn topology(s: &mut crate::engine::Session, p: &Value) -> Result<Value, String> {
     let given: Params = serde_json::from_value(p.clone()).map_err(|e| {
         let why: String = e.to_string().chars().take(200).collect();
-        format!("{why}; `topology` takes `path?`, a file to write the graph to")
+        format!("{why}; `topology` takes `path?`, a file to write the graph to, and `expect?`, an expected file to compare it with")
     })?;
+    if let Some(path) = &given.path {
+        path_ok("path", path)?;
+    }
+    if let Some(path) = &given.expect {
+        path_ok("expect", path)?;
+    }
     let mut doc = extract(&s.model);
     if let Some(path) = given.path {
-        if path.trim().is_empty() || path.len() > MAX_PATH || path.contains('\0') {
-            return Err(format!("`path` is the file to write: not empty, at most {MAX_PATH} bytes"));
-        }
         let text = serde_json::to_string_pretty(&doc).map_err(|e| format!("{path}: {e}"))?;
         std::fs::write(&path, text + "\n").map_err(|e| format!("{path}: {e}"))?;
         doc["path"] = json!(path);
+    }
+    if let Some(path) = given.expect {
+        let mut c = expect::compare(&doc, &expect::read_expected(&path)?);
+        c["expect"] = json!(path);
+        doc["comparison"] = c;
     }
     Ok(doc)
 }

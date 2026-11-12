@@ -133,6 +133,8 @@ pub mod text;
 pub mod texture;
 pub mod topology;
 #[cfg(test)]
+mod topology_expect_tests;
+#[cfg(test)]
 mod topology_tests;
 pub mod triad;
 pub mod triangulation;
