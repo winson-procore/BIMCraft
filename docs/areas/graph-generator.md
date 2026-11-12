@@ -101,6 +101,21 @@ line and asking which room holds each (`Spaces::room_at`):
 
 It gives the same graph measured at the wall centres or faces, and the same bytes for the same model.
 
+## The trace contract
+
+`topology --expect FILE.json` (`topology/expect.rs`; `bimcraft-cli topology --model M --expect E [--out G]`) compares the extracted
+graph with a traced plan's expected file, the same for any building type. The file is `rooms` (`{id, name?, kind}`; `id` is the room
+number), `links` (`{from, to, via}`, an unordered pair; `via` is `open` or a door operation) and `entry` (`{room, via?}`), with
+optional `building`, `review` and `source`. It is read strictly (unknown keys, a duplicate or unknown room, an unknown `via`, an empty
+`kind` and an oversized file are errors that name the field). Compared: the room ids, the `door` and `open` edges that aren't exterior
+(by pair and via), `entry.room`, and that `diagnostics` is empty. Not compared: kinds, `building`, `review`, `source`, `entry.via`.
+
+The fields are named from the model's side, which reads backwards at first: `missing_links` (and `missing_rooms`) are in the model and
+not in the expected file; `extra_links` (and `extra_rooms`) are in the file and not in the model. `entry` is null, or
+`{expected, extracted}`. The command replies with these under `comparison` (with `agree`); a disagreement is still an `Ok` reply
+there, but the CLI exits non-zero with `{"error": "topology_mismatch", ...six fields}` on stderr. `path` is written before the
+comparison and never holds it, so `--out` gives the same bytes with or without `--expect`.
+
 ## Not yet
 
 No stairs, shafts, structure or MEP; one storey; no datacenters or airports;
