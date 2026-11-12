@@ -27,6 +27,11 @@ const USAGE: &str = "USAGE:
                                  read a saved project and write its 2D topology graph from geometry alone: rooms as nodes, door,
                                  open and adjacent edges, the entry, the footprint and typed diagnostics (a room no walls enclose).
                                  Written even with diagnostics; prints a one-line summary
+  bimcraft-cli topology --model FILE.bimcraft [--out FILE.json] --expect EXPECTED.json
+                                 also compare the graph with a traced plan's expected file (rooms, links, entry). Exit 0 when they
+                                 agree; on a disagreement exit non-zero with a JSON error `topology_mismatch` on stderr holding
+                                 missing_rooms, extra_rooms, missing_links (in the model, not the file), extra_links (in the file,
+                                 not the model), entry and diagnostics. --out is written either way
   bimcraft-cli rule-pack seed --out DIR
                                  write the frontier-model rule pack seed library: a manifest, a validation report and one pack of
                                  rules for each of office, clinic, hospital, datacenter and airport. The same files every time; a
@@ -92,13 +97,23 @@ fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
             let g = s.execute("topology", &params)?;
             let count = |k: &str| g[k].as_array().map_or(0, Vec::len);
             let kinds = |kind: &str| g["edges"].as_array().map_or(0, |e| e.iter().filter(|e| e["kind"] == kind).count());
-            print(
-                out,
-                &json!({
-                    "path": g["path"], "nodes": count("nodes"), "door": kinds("door"), "open": kinds("open"),
-                    "adjacent": kinds("adjacent"), "entry": g["entry"]["room"], "diagnostics": count("diagnostics"),
-                }),
-            )
+            let c = &g["comparison"];
+            if c["agree"] == false {
+                let mut m = json!({"error": "topology_mismatch", "path": g["path"], "expect": c["expect"]});
+                for k in ["missing_rooms", "extra_rooms", "missing_links", "extra_links", "entry", "diagnostics"] {
+                    m[k] = c[k].clone();
+                }
+                return Err(m.to_string());
+            }
+            let mut reply = json!({
+                "path": g["path"], "nodes": count("nodes"), "door": kinds("door"), "open": kinds("open"),
+                "adjacent": kinds("adjacent"), "entry": g["entry"]["room"], "diagnostics": count("diagnostics"),
+            });
+            if c["agree"] == true {
+                reply["expect"] = c["expect"].clone();
+                reply["agree"] = json!(true);
+            }
+            print(out, &reply)
         }
         [cmd, sub, rest @ ..] if cmd == "rule-pack" && sub == "seed" => {
             let params = rule_pack_params(rest)?;
@@ -196,21 +211,32 @@ fn rule_pack_params(args: &[String]) -> Result<Value, String> {
 
 /// What follows `topology`: the model to read, and the `topology` command's params (`--out` as `path`); each option once.
 fn topology_params(args: &[String]) -> Result<(String, Value), String> {
-    let (mut model, mut out) = (None, None);
+    let (mut model, mut out, mut expect) = (None, None, None);
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         let value = rest.next().ok_or_else(|| format!("{arg} needs a value\n\n{USAGE}"))?;
         let slot = match arg.as_str() {
             "--model" => &mut model,
             "--out" => &mut out,
+            "--expect" => &mut expect,
             other => return Err(format!("unknown option `{other}` for topology\n\n{USAGE}")),
         };
         if slot.replace(value).is_some() {
             return Err(format!("{arg} given twice\n\n{USAGE}"));
         }
     }
-    let need = |what: Option<&String>, flag: &str| what.cloned().ok_or_else(|| format!("topology needs {flag}\n\n{USAGE}"));
-    Ok((need(model, "--model")?, json!({"path": need(out, "--out")?})))
+    let model = model.cloned().ok_or_else(|| format!("topology needs --model\n\n{USAGE}"))?;
+    if out.is_none() && expect.is_none() {
+        return Err(format!("topology needs --out or --expect\n\n{USAGE}"));
+    }
+    let mut params = json!({});
+    if let Some(out) = out {
+        params["path"] = json!(out);
+    }
+    if let Some(expect) = expect {
+        params["expect"] = json!(expect);
+    }
+    Ok((model, params))
 }
 
 /// What follows `drawing-miner cad`, as the command's params: `--corpus` and `--out`, each once.
@@ -526,10 +552,52 @@ mod tests {
     }
 
     #[test]
+    fn topology_expect_agrees_or_names_the_mismatch() {
+        let dir = std::env::temp_dir().join(format!("bimcraft-cli-expect-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = |n: &str| dir.join(n).to_string_lossy().into_owned();
+        let (model, out, good, bad, both) = (p("m.bimcraft"), p("t.json"), p("good.json"), p("bad.json"), p("both.json"));
+        cli_out(&["run", "--sample", "--save", &model]).unwrap();
+        cli_out(&["topology", "--model", &model, "--out", &out]).unwrap();
+        let g: Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        let rooms: Vec<Value> =
+            g["nodes"].as_array().unwrap().iter().map(|n| json!({"id": n["id"], "name": n["name"], "kind": "room"})).collect();
+        let links: Vec<Value> = g["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| (e["kind"] == "door" || e["kind"] == "open") && e["exterior"] != true)
+            .map(|e| json!({"from": e["from"], "to": e["to"], "via": if e["kind"] == "open" { json!("open") } else { e["operation"].clone() }}))
+            .collect();
+        assert!(!links.is_empty(), "the sample has a door between rooms");
+        let entry = g["entry"]["room"].clone();
+        let file = |links: &[Value]| json!({"rooms": rooms, "links": links, "entry": {"room": entry}});
+        std::fs::write(&good, file(&links).to_string()).unwrap();
+        std::fs::write(&bad, file(&links[1..]).to_string()).unwrap();
+
+        // Agreement: no `error` key, and `--expect` alone is accepted.
+        let reply: Value = serde_json::from_str(cli_out(&["topology", "--model", &model, "--expect", &good]).unwrap().trim()).unwrap();
+        assert!(reply.get("error").is_none() && reply["agree"] == true, "{reply}");
+        // A mismatch is an error whose text is the JSON.
+        let e = cli_out(&["topology", "--model", &model, "--expect", &bad, "--out", &both]).unwrap_err();
+        let m: Value = serde_json::from_str(e.trim()).unwrap();
+        assert_eq!(m["error"], "topology_mismatch", "{e}");
+        for k in ["missing_rooms", "extra_rooms", "missing_links", "extra_links", "entry", "diagnostics"] {
+            assert!(m.get(k).is_some(), "{k}: {e}");
+        }
+        assert_eq!(m["missing_links"].as_array().unwrap().len(), 1, "{e}");
+        // --out is written on a mismatch, and as it is without --expect.
+        assert_eq!(std::fs::read(&out).unwrap(), std::fs::read(&both).unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn topology_names_what_is_wrong_with_its_arguments() {
         for (args, says) in [
+            (vec!["topology", "--model", "a", "--expect", "x", "--expect", "y"], "twice"),
+            (vec!["topology", "--model", "a", "--expect"], "needs a value"),
             (vec!["topology", "--out", "o.json"], "--model"),
-            (vec!["topology", "--model", "m.bimcraft"], "--out"),
+            (vec!["topology", "--model", "m.bimcraft"], "--out or --expect"),
             (vec!["topology", "--model", "a", "--model", "b", "--out", "o"], "twice"),
             (vec!["topology", "--colour", "red"], "unknown option"),
             (vec!["topology", "--model"], "needs a value"),

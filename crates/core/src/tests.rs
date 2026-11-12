@@ -1937,6 +1937,9 @@ fn hostile_params_never_panic_or_break_the_model() {
         // `topology`: a file that can never be written.
         json!({"path": "/nonexistent/topology.json"}),
         json!({"path": "/nonexistent/topology.json", "extra": 1}),
+        json!({"expect": "/nonexistent/expected.json"}),
+        json!({"path": "/nonexistent/t.json", "expect": 7}),
+        json!({"expect": ""}),
         json!({"path": "/nonexistent/plan.dwg", "version": 5}),
         json!({"path": "/nonexistent/plan.dwg", "version": "1999"}),
         json!({"path": "/nonexistent/scan.las", "units": "furlong", "spacing": -1}),
