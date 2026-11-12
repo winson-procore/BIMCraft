@@ -54,6 +54,7 @@ pub enum LayoutFamily {
     CorridorBar,
     CentralCommons,
     ClusteredCommons,
+    AtriumCommons,
 }
 
 impl LayoutFamily {
@@ -62,6 +63,7 @@ impl LayoutFamily {
             LayoutFamily::CorridorBar => "corridor_bar",
             LayoutFamily::CentralCommons => "central_commons",
             LayoutFamily::ClusteredCommons => "clustered_commons",
+            LayoutFamily::AtriumCommons => "atrium_commons",
         }
     }
 
@@ -70,13 +72,14 @@ impl LayoutFamily {
             LayoutFamily::CorridorBar => 3.0,
             LayoutFamily::CentralCommons => 1.45,
             LayoutFamily::ClusteredCommons => 1.8,
+            LayoutFamily::AtriumCommons => 1.25,
         }
     }
 
     fn max_depth(self) -> i64 {
         match self {
             LayoutFamily::CorridorBar => MAX_DEPTH,
-            LayoutFamily::CentralCommons | LayoutFamily::ClusteredCommons => MAX_OPEN_DEPTH,
+            LayoutFamily::CentralCommons | LayoutFamily::ClusteredCommons | LayoutFamily::AtriumCommons => MAX_OPEN_DEPTH,
         }
     }
 }
@@ -86,6 +89,8 @@ pub enum BoundaryShape {
     Rectangle,
     LShape,
     SteppedBar,
+    TShape,
+    BarWithWings,
 }
 
 impl BoundaryShape {
@@ -94,6 +99,8 @@ impl BoundaryShape {
             BoundaryShape::Rectangle => "rectangle",
             BoundaryShape::LShape => "l_shape",
             BoundaryShape::SteppedBar => "stepped_bar",
+            BoundaryShape::TShape => "t_shape",
+            BoundaryShape::BarWithWings => "bar_with_wings",
         }
     }
 }
@@ -274,10 +281,11 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
 }
 
 fn layout_family(seed: u64) -> LayoutFamily {
-    match (seed / 3) % 3 {
+    match (seed / 3) % 4 {
         0 => LayoutFamily::CorridorBar,
         1 => LayoutFamily::CentralCommons,
-        _ => LayoutFamily::ClusteredCommons,
+        2 => LayoutFamily::ClusteredCommons,
+        _ => LayoutFamily::AtriumCommons,
     }
 }
 
@@ -294,6 +302,7 @@ fn corridor_width(family: LayoutFamily, depth: i64, rng: &mut Rng) -> i64 {
         LayoutFamily::CorridorBar => CORRIDOR_WIDTHS[rng.below(CORRIDOR_WIDTHS.len() as u64) as usize],
         LayoutFamily::CentralCommons => round_to_100(depth as f64 * 0.35).clamp(4_800, 14_000),
         LayoutFamily::ClusteredCommons => round_to_100(depth as f64 * 0.28).clamp(4_200, 12_000),
+        LayoutFamily::AtriumCommons => round_to_100(depth as f64 * 0.45).clamp(6_000, 18_000),
     }
 }
 
@@ -301,6 +310,7 @@ fn corridor_bottom(family: LayoutFamily, strategy: Strategy, depth: i64, corrido
     match family {
         LayoutFamily::CentralCommons => (depth - corridor_width) / 2 / 100 * 100,
         LayoutFamily::ClusteredCommons => (depth * 42 / 100 - corridor_width / 2) / 100 * 100,
+        LayoutFamily::AtriumCommons => (depth - corridor_width) / 2 / 100 * 100,
         LayoutFamily::CorridorBar => match strategy {
             Strategy::DoubleLoaded => (depth - corridor_width) / 2 / 100 * 100,
             Strategy::SingleLoaded => 0,
@@ -310,10 +320,12 @@ fn corridor_bottom(family: LayoutFamily, strategy: Strategy, depth: i64, corrido
 }
 
 fn boundary_shape(seed: u64) -> BoundaryShape {
-    match seed % 3 {
+    match seed % 5 {
         0 => BoundaryShape::Rectangle,
         1 => BoundaryShape::LShape,
-        _ => BoundaryShape::SteppedBar,
+        2 => BoundaryShape::SteppedBar,
+        3 => BoundaryShape::TShape,
+        _ => BoundaryShape::BarWithWings,
     }
 }
 
@@ -339,6 +351,10 @@ fn spans(shape: BoundaryShape, width: i64, south_depth: i64, north_depth: i64, s
         BoundaryShape::Rectangle => (full, full),
         BoundaryShape::LShape => (full, Span { x0: 0, x1: width - north_inset }),
         BoundaryShape::SteppedBar => (Span { x0: 0, x1: width - south_inset }, Span { x0: north_inset, x1: width }),
+        BoundaryShape::TShape => {
+            (Span { x0: south_inset / 2, x1: width - south_inset / 2 }, Span { x0: north_inset / 2, x1: width - north_inset / 2 })
+        }
+        BoundaryShape::BarWithWings => (Span { x0: south_inset, x1: width }, Span { x0: 0, x1: width - north_inset }),
     }
 }
 

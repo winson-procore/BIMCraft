@@ -21,14 +21,15 @@ whole millimetres, integer seeds, a splitmix `Rng` (`generate::Rng`), no maps wi
 
 ## The layout
 
-One storey, with a seeded layout family (`corridor_bar`, `central_commons`, or `clustered_commons`), boundary shape (`rectangle`,
-`l_shape`, or `stepped_bar`) and corridor strategy (`double_loaded_corridor`, `single_loaded_corridor`, or `offset_corridor`). The
-family, strategy and boundary shape are chosen from the seed and exported in the manifest, program graph, topology, building graph
-and report. Corridor-bar plans keep the older long-bar proportion; open families use a more compact aspect ratio and a wider shared
-circulation zone. The program (`program.rs`) grows with the area and takes a few of its counts from the seed; the lobby is the first
-room with the way in on the west wall; every room has one door to the shared/circulation zone. Rooms are dealt into the strategy's
-band(s), in an order the seed shuffles, each as wide as its least area asks. Non-rectangular boundaries shorten or step room bands
-against the shared/circulation bar, and the footprint polygon is used for the exterior walls, floor command and slab boundary.
+One storey, with a seeded layout family (`corridor_bar`, `central_commons`, `clustered_commons`, or `atrium_commons`), boundary shape
+(`rectangle`, `l_shape`, `stepped_bar`, `t_shape`, or `bar_with_wings`) and corridor strategy (`double_loaded_corridor`,
+`single_loaded_corridor`, or `offset_corridor`). The family, strategy and boundary shape are chosen from the seed and exported in the
+manifest, program graph, topology, building graph and report. Corridor-bar plans keep the older long-bar proportion; open families
+use a more compact aspect ratio and a wider shared circulation zone, with `atrium_commons` reserving the largest shared zone. The
+program (`program.rs`) grows with the area and takes a few of its counts from the seed; the lobby is the first room with the way in on
+the west wall; every room has one door to the shared/circulation zone. Rooms are dealt into the strategy's band(s), in an order the
+seed shuffles, each as wide as its least area asks. Non-rectangular boundaries shorten, center, or step room bands against the
+shared/circulation bar, and the footprint polygon is used for the exterior walls, floor command and slab boundary.
 
 ## Refusals
 
