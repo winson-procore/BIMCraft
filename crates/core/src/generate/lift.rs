@@ -76,6 +76,7 @@ pub struct Slab {
 pub struct Building {
     pub archetype: &'static str,
     pub seed: u64,
+    pub layout_family: &'static str,
     pub layout_strategy: &'static str,
     pub boundary_shape: &'static str,
     pub width: i64,
@@ -232,6 +233,7 @@ impl Building {
         Building {
             archetype: plan.archetype.name(),
             seed: plan.seed,
+            layout_family: plan.layout_family.name(),
             layout_strategy: plan.layout_strategy.name(),
             boundary_shape: plan.boundary_shape.name(),
             width: w,
@@ -260,6 +262,7 @@ impl Building {
             "graph_kind": BUILDING_KIND,
             "archetype": self.archetype,
             "seed": self.seed,
+            "layout_family": self.layout_family,
             "layout_strategy": self.layout_strategy,
             "boundary_shape": self.boundary_shape,
             "units": "mm",

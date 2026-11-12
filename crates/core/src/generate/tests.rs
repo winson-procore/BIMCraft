@@ -38,7 +38,7 @@ pub(super) const BRIEFS: [(&str, u64, f64); 16] = [
     ("office", 2, 900.0),
     ("office", 7, 2500.0),
     ("office", 11, 5000.0),
-    ("office", 3, 250.0),
+    ("office", 3, 300.0),
     ("clinic", 0, 300.0),
     ("clinic", 3, 650.0),
     ("clinic", 4, 650.0),
@@ -221,6 +221,7 @@ fn a_brief_writes_the_six_files_and_the_manifest_names_them_with_their_hashes() 
         (Some("office"), Some(1), Some(900.0))
     );
     assert_eq!(manifest["requested_area"], json!({"unit": "m2", "value": 900.0}));
+    assert_eq!(manifest["layout_family"].as_str(), Some("corridor_bar"));
     assert_eq!(manifest["layout_strategy"].as_str(), Some("single_loaded_corridor"));
     assert_eq!(manifest["boundary_shape"].as_str(), Some("l_shape"));
     assert_eq!(manifest["generator_version"], GENERATOR_VERSION);
@@ -235,9 +236,11 @@ fn a_brief_writes_the_six_files_and_the_manifest_names_them_with_their_hashes() 
     let topology = std::fs::read_to_string(out.join("topology-graph.json")).unwrap();
     assert_eq!(manifest["topology_hash"].as_str().unwrap(), fnv1a64(&topology));
     let topology_doc: Value = serde_json::from_str(&topology).unwrap();
+    assert_eq!(topology_doc["layout_family"], manifest["layout_family"]);
     assert_eq!(topology_doc["layout_strategy"], manifest["layout_strategy"]);
     assert_eq!(topology_doc["boundary_shape"], manifest["boundary_shape"]);
     let building_doc = doc(&build(Archetype::Office, 1, 900.0).unwrap(), "building-ir.json");
+    assert_eq!(building_doc["layout_family"], manifest["layout_family"]);
     assert_eq!(building_doc["layout_strategy"], manifest["layout_strategy"]);
     assert_eq!(building_doc["boundary_shape"], manifest["boundary_shape"]);
     assert!(building_doc["footprint"]["boundary"].as_array().unwrap().len() > 4);
@@ -277,6 +280,15 @@ fn seeds_choose_different_boundary_shapes() {
         .map(|seed| doc(&built(Archetype::Hospital, seed, 1800.0), "manifest.json")["boundary_shape"].as_str().unwrap().to_string())
         .collect();
     assert_eq!(shapes.len(), 3, "{shapes:?}");
+}
+
+#[test]
+fn seeds_choose_different_layout_families() {
+    let families: BTreeSet<String> = [1, 4, 7]
+        .into_iter()
+        .map(|seed| doc(&built(Archetype::Hospital, seed, 1800.0), "manifest.json")["layout_family"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(families.len(), 3, "{families:?}");
 }
 
 #[test]

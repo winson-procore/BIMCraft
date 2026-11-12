@@ -18,10 +18,9 @@ pub const EXTERIOR: &str = "Exterior - 300mm";
 pub const INTERIOR: &str = "Interior - 100mm";
 /// The narrowest room, so a door and a window sit in it clear of its walls.
 pub const MIN_CELL_WIDTH: i64 = 2400;
-/// A plan's depth is the square root of its area over this, so it is about this many times as long as it is deep.
-const LENGTH_TO_DEPTH: f64 = 3.0;
 const MIN_DEPTH: i64 = 12_000;
 const MAX_DEPTH: i64 = 24_000;
+const MAX_OPEN_DEPTH: i64 = 60_000;
 const MIN_WIDTH: i64 = 6_000;
 const CORRIDOR_WIDTHS: [i64; 4] = [1800, 2000, 2200, 2400];
 /// One window for each this much of outside wall.
@@ -46,6 +45,38 @@ impl Strategy {
             Strategy::DoubleLoaded => "double_loaded_corridor",
             Strategy::SingleLoaded => "single_loaded_corridor",
             Strategy::Offset => "offset_corridor",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LayoutFamily {
+    CorridorBar,
+    CentralCommons,
+    ClusteredCommons,
+}
+
+impl LayoutFamily {
+    pub fn name(self) -> &'static str {
+        match self {
+            LayoutFamily::CorridorBar => "corridor_bar",
+            LayoutFamily::CentralCommons => "central_commons",
+            LayoutFamily::ClusteredCommons => "clustered_commons",
+        }
+    }
+
+    fn target_aspect(self) -> f64 {
+        match self {
+            LayoutFamily::CorridorBar => 3.0,
+            LayoutFamily::CentralCommons => 1.45,
+            LayoutFamily::ClusteredCommons => 1.8,
+        }
+    }
+
+    fn max_depth(self) -> i64 {
+        match self {
+            LayoutFamily::CorridorBar => MAX_DEPTH,
+            LayoutFamily::CentralCommons | LayoutFamily::ClusteredCommons => MAX_OPEN_DEPTH,
         }
     }
 }
@@ -129,6 +160,7 @@ pub struct Opening {
 pub struct Plan {
     pub archetype: Archetype,
     pub seed: u64,
+    pub layout_family: LayoutFamily,
     pub layout_strategy: Strategy,
     pub boundary_shape: BoundaryShape,
     pub requested_m2: f64,
@@ -173,8 +205,9 @@ fn round_to_100(x: f64) -> i64 {
 
 /// A plan for the brief, or why none fits.
 pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, String> {
+    let layout_family = layout_family(seed);
     let area_mm2 = area_m2 * 1.0e6;
-    let depth = round_to_100((area_mm2 / LENGTH_TO_DEPTH).sqrt()).clamp(MIN_DEPTH, MAX_DEPTH);
+    let depth = round_to_100((area_mm2 / layout_family.target_aspect()).sqrt()).clamp(MIN_DEPTH, layout_family.max_depth());
     let width = round_to_100(area_mm2 / depth as f64);
     if width < MIN_WIDTH {
         return Err(format!("a plan {depth} mm deep and {width} mm long is narrower than the {MIN_WIDTH} mm a corridor and a room need"));
@@ -183,33 +216,30 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     let mut rng = Rng::new(seed, 0x1A7_0001);
     let layout_strategy = strategy(seed);
     let boundary_shape = boundary_shape(seed);
-    let corridor_width = CORRIDOR_WIDTHS[rng.below(CORRIDOR_WIDTHS.len() as u64) as usize];
-    let corridor_bottom = match layout_strategy {
-        Strategy::DoubleLoaded => (depth - corridor_width) / 2 / 100 * 100,
-        Strategy::SingleLoaded => 0,
-        Strategy::Offset => (depth * 35 / 100 - corridor_width / 2) / 100 * 100,
-    };
+    let corridor_width = corridor_width(layout_family, depth, &mut rng);
+    let corridor_bottom = corridor_bottom(layout_family, layout_strategy, depth, corridor_width);
     let corridor_top = corridor_bottom + corridor_width;
 
     // The rooms in an order of the seed's, each to the band with less of the program in it so far; the lobby is the south band's first.
     let mut rooms = program.cells.clone();
     rng.shuffle(&mut rooms);
     let (mut south, mut north) = (vec![program.lobby.clone()], Vec::new());
-    let (mut south_target, mut north_target) = (i64::from(program.lobby.target_m2), 0_i64);
+    let south_depth = corridor_bottom.max(1);
+    let north_depth = (depth - corridor_top).max(1);
+    let (mut south_target, mut north_target) = (least_cell_width(&program.lobby, south_depth), 0_i64);
     for room in rooms {
-        let target = i64::from(room.target_m2);
         if north_target <= south_target {
-            north_target += target;
+            north_target += least_cell_width(&room, north_depth);
             north.push(room);
         } else {
-            south_target += target;
+            south_target += least_cell_width(&room, south_depth);
             south.push(room);
         }
     }
 
     let (south_span, north_span) = spans(boundary_shape, width, corridor_bottom, depth - corridor_top, &south, &north);
     let mut cells = Vec::new();
-    if layout_strategy == Strategy::SingleLoaded {
+    if layout_family == LayoutFamily::CorridorBar && layout_strategy == Strategy::SingleLoaded {
         south.extend(north);
         let (_, north_span) = spans(boundary_shape, width, 0, depth - corridor_top, &[], &south);
         cells.extend(deal(Band::North, south, depth - corridor_top, north_span, corridor_top, depth)?);
@@ -227,6 +257,7 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     Ok(Plan {
         archetype,
         seed,
+        layout_family,
         layout_strategy,
         boundary_shape,
         requested_m2: area_m2,
@@ -242,11 +273,39 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     })
 }
 
+fn layout_family(seed: u64) -> LayoutFamily {
+    match (seed / 3) % 3 {
+        0 => LayoutFamily::CorridorBar,
+        1 => LayoutFamily::CentralCommons,
+        _ => LayoutFamily::ClusteredCommons,
+    }
+}
+
 fn strategy(seed: u64) -> Strategy {
     match seed % 3 {
         0 => Strategy::DoubleLoaded,
         1 => Strategy::SingleLoaded,
         _ => Strategy::Offset,
+    }
+}
+
+fn corridor_width(family: LayoutFamily, depth: i64, rng: &mut Rng) -> i64 {
+    match family {
+        LayoutFamily::CorridorBar => CORRIDOR_WIDTHS[rng.below(CORRIDOR_WIDTHS.len() as u64) as usize],
+        LayoutFamily::CentralCommons => round_to_100(depth as f64 * 0.35).clamp(4_800, 14_000),
+        LayoutFamily::ClusteredCommons => round_to_100(depth as f64 * 0.28).clamp(4_200, 12_000),
+    }
+}
+
+fn corridor_bottom(family: LayoutFamily, strategy: Strategy, depth: i64, corridor_width: i64) -> i64 {
+    match family {
+        LayoutFamily::CentralCommons => (depth - corridor_width) / 2 / 100 * 100,
+        LayoutFamily::ClusteredCommons => (depth * 42 / 100 - corridor_width / 2) / 100 * 100,
+        LayoutFamily::CorridorBar => match strategy {
+            Strategy::DoubleLoaded => (depth - corridor_width) / 2 / 100 * 100,
+            Strategy::SingleLoaded => 0,
+            Strategy::Offset => (depth * 35 / 100 - corridor_width / 2) / 100 * 100,
+        },
     }
 }
 
@@ -258,14 +317,13 @@ fn boundary_shape(seed: u64) -> BoundaryShape {
     }
 }
 
+fn least_cell_width(spec: &Spec, band_depth: i64) -> i64 {
+    let for_area = (i64::from(spec.min_m2) * 1_000_000 + band_depth - 1) / band_depth.max(1);
+    MIN_CELL_WIDTH.max((for_area + 99) / 100 * 100)
+}
+
 fn least_width(specs: &[Spec], band_depth: i64) -> i64 {
-    specs
-        .iter()
-        .map(|s| {
-            let for_area = (i64::from(s.min_m2) * 1_000_000 + band_depth - 1) / band_depth.max(1);
-            MIN_CELL_WIDTH.max((for_area + 99) / 100 * 100)
-        })
-        .sum()
+    specs.iter().map(|s| least_cell_width(s, band_depth)).sum()
 }
 
 fn inset(width: i64, band_depth: i64, specs: &[Spec]) -> i64 {
@@ -287,13 +345,7 @@ fn spans(shape: BoundaryShape, width: i64, south_depth: i64, north_depth: i64, s
 /// A band's rooms along its length: each as wide as its least area asks, the rest shared out by what they would like.
 fn deal(band: Band, specs: Vec<Spec>, band_depth: i64, span: Span, y0: i64, y1: i64) -> Result<Vec<Cell>, String> {
     let length = span.width();
-    let least: Vec<i64> = specs
-        .iter()
-        .map(|s| {
-            let for_area = (i64::from(s.min_m2) * 1_000_000 + band_depth - 1) / band_depth.max(1);
-            MIN_CELL_WIDTH.max((for_area + 99) / 100 * 100)
-        })
-        .collect();
+    let least: Vec<i64> = specs.iter().map(|s| least_cell_width(s, band_depth)).collect();
     let needed: i64 = least.iter().sum();
     if needed > length {
         return Err(format!("the {} band needs {needed} mm of rooms for its minimum program and has {length} mm", band.name()));
