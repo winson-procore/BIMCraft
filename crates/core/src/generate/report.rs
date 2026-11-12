@@ -501,6 +501,7 @@ pub fn json(plan: &Plan, checks: &[Check], script: &Script, replies: &[Value]) -
         "schema_version": SCHEMA_VERSION,
         "archetype": plan.archetype.name(),
         "seed": plan.seed,
+        "layout_family": plan.layout_family.name(),
         "layout_strategy": plan.layout_strategy.name(),
         "boundary_shape": plan.boundary_shape.name(),
         "rule_set": RULE_SET,
@@ -509,7 +510,7 @@ pub fn json(plan: &Plan, checks: &[Check], script: &Script, replies: &[Value]) -
         "warnings": checks.iter().filter(|c| c.status == Status::Warn).map(|c| format!("{}: {}", c.id, c.detail)).collect::<Vec<_>>(),
         "capability_notes": [
             "Areas in the topology and building graphs are gross, measured to wall centre lines; `measured_rooms` holds the net areas BIMCraft computed for each room.",
-            "One storey with seeded rectangle, L-shaped, or stepped-bar footprints and double-loaded, single-loaded or offset corridor strategies. No stairs, shafts, structure or MEP.",
+            "One storey with seeded corridor-bar, central-commons, or clustered-commons layout families; rectangle, L-shaped, or stepped-bar footprints; and double-loaded, single-loaded or offset corridor strategies. No stairs, shafts, structure or MEP.",
             "Every room has one door, to the corridor; the lobby is also the building's entry. Door swing and hand are BIMCraft's defaults.",
             "The rules are hard-coded in this slice (rule set slice1-hard-rules/1); versioned rule packs are future work.",
         ],
