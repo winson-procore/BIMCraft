@@ -1934,6 +1934,9 @@ fn hostile_params_never_panic_or_break_the_model() {
         // `rule_pack`: a directory that can never be made, so the sweep writes nothing.
         json!({"path": "/nonexistent/library"}),
         json!({"path": "/nonexistent/library", "archetype": "office"}),
+        // `topology`: a file that can never be written.
+        json!({"path": "/nonexistent/topology.json"}),
+        json!({"path": "/nonexistent/topology.json", "extra": 1}),
         json!({"path": "/nonexistent/plan.dwg", "version": 5}),
         json!({"path": "/nonexistent/plan.dwg", "version": "1999"}),
         json!({"path": "/nonexistent/scan.las", "units": "furlong", "spacing": -1}),

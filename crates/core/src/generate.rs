@@ -3,7 +3,7 @@
 //! made. Everything is whole millimetres and integer seeds, so the same brief gives the same bytes on any machine, and a brief
 //! that can't be met writes nothing. Detail: `docs/areas/graph-generator.md`.
 
-mod graph;
+pub(crate) mod graph;
 mod layout;
 mod lift;
 #[cfg(test)]
