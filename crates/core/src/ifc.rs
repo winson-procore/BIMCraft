@@ -2326,7 +2326,13 @@ mod tests {
         assert_eq!(swept, 2, "both bodies sweep the type's profile");
         // The material is in the set, so a beam has no other: one for the type, one for each cardinal point's usage.
         assert_eq!(of_kind(&f, "IFCRELASSOCIATESMATERIAL").len(), 3);
-        assert_eq!(f, export(&s.model), "the same on every export");
+        let scrub_time = |mut text: String| {
+            let Some(start) = text.find("FILE_NAME('Project.ifc','").map(|i| i + "FILE_NAME('Project.ifc','".len()) else { return text };
+            let Some(end) = text[start..].find("',(").map(|i| start + i) else { return text };
+            text.replace_range(start..end, "<time>");
+            text
+        };
+        assert_eq!(scrub_time(f), scrub_time(export(&s.model)), "the same on every export except the IFC timestamp");
     }
 
     #[test]
