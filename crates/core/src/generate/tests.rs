@@ -458,6 +458,46 @@ fn the_script_runs_in_a_fresh_project_and_makes_a_plan_with_bounded_rooms() {
 }
 
 #[test]
+fn generated_gridlines_cover_footprint_corridor_and_room_modules() {
+    for (name, seed, area) in [("office", 1, 900.0), ("clinic", 9, 650.0), ("hospital", 8, 1800.0)] {
+        let b = built(archetype(name), seed, area);
+        let script = text(&b, "script.bimcraft.txt");
+        let mut xs = BTreeSet::new();
+        let mut ys = BTreeSet::new();
+        let mut labels = 0;
+        for line in script.lines().map(str::trim).filter(|l| l.starts_with("grid ")) {
+            let params: Value = serde_json::from_str(line.split_once(' ').unwrap().1).unwrap();
+            let start = params["start"].as_array().unwrap();
+            let end = params["end"].as_array().unwrap();
+            let a = [start[0].as_i64().unwrap(), start[1].as_i64().unwrap()];
+            let z = [end[0].as_i64().unwrap(), end[1].as_i64().unwrap()];
+            if a[0] == z[0] {
+                xs.insert(a[0]);
+            } else if a[1] == z[1] {
+                ys.insert(a[1]);
+            } else {
+                panic!("{name} {seed}: diagonal grid {params}");
+            }
+            labels += usize::from(params["name"].as_str().is_some_and(|n| !n.is_empty()));
+        }
+        let building = doc(&b, "building-ir.json");
+        let fp = &building["footprint"];
+        let (width, depth) = (fp["width"].as_i64().unwrap(), fp["depth"].as_i64().unwrap());
+        assert!([0, width].into_iter().all(|x| xs.contains(&x)), "{name} {seed}: {xs:?}");
+        assert!([0, depth].into_iter().all(|y| ys.contains(&y)), "{name} {seed}: {ys:?}");
+        assert!(xs.len() >= 4 && ys.len() >= 4 && labels >= (xs.len() + ys.len()) / 2, "{name} {seed}: {xs:?} {ys:?} labels {labels}");
+
+        let spaces = building["spaces"].as_array().unwrap();
+        let corridor = spaces.iter().find(|s| s["source_2d"].as_str().is_some_and(|id| id.contains("corridor"))).unwrap();
+        let cb = &corridor["bounds"];
+        assert!(ys.contains(&cb["y0"].as_i64().unwrap()) && ys.contains(&cb["y1"].as_i64().unwrap()), "{name} {seed}: {ys:?}");
+        let room_x: BTreeSet<i64> =
+            spaces.iter().flat_map(|s| [s["bounds"]["x0"].as_i64().unwrap(), s["bounds"]["x1"].as_i64().unwrap()]).collect();
+        assert!(room_x.intersection(&xs).count() >= 6.min(room_x.len()), "{name} {seed}: {xs:?} of {room_x:?}");
+    }
+}
+
+#[test]
 fn the_script_is_saved_as_a_project_a_picture_and_a_drawing() {
     for (name, seed, area) in [("office", 1, 900.0), ("clinic", 3, 650.0)] {
         let b = built(archetype(name), seed, area);

@@ -31,6 +31,10 @@ the west wall; every room has one door to the shared/circulation zone. Rooms are
 seed shuffles, each as wide as its least area asks. Non-rectangular boundaries shorten, center, or step room bands against the
 shared/circulation bar, and the footprint polygon is used for the exterior walls, floor command and slab boundary.
 
+Gridlines come from the same geometry: footprint extents, corridor/shared-zone edges, boundary vertices and room/module breaks.
+Vertical grids are numbered and horizontal grids are lettered, so larger or more subdivided plans carry denser coordination grids in
+the script and exported drawings instead of only four outside grids.
+
 ## Door and window symbols
 
 Each brief takes an `opening_symbol_profile` from its seed and archetype (`generate/openings.rs`): `classic_punched`,
