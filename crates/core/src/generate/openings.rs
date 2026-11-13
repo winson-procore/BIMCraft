@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use super::Rng;
-use super::layout::{Band, Cell, Opening};
+use super::layout::{Cell, Opening};
 use super::program::{Archetype, Role};
 
 /// One window for each this much of outside wall, for the symbols that repeat along it.
@@ -183,13 +183,13 @@ fn exits(profile: SymbolProfile) -> &'static [(&'static str, Shape)] {
 
 /// The way in, a door from every room to the corridor, an exit or two from back of house, and windows for the rooms that
 /// want them.
-pub fn place(profile: SymbolProfile, seed: u64, cells: &[Cell], bottom: i64, top: i64, depth: i64) -> Vec<Opening> {
+pub fn place(profile: SymbolProfile, seed: u64, cells: &[Cell], entry: [i64; 2], entry_clear: i64) -> Vec<Opening> {
     let mut out = Vec::new();
     if let Some(lobby) = cells.first() {
-        out.push(main_entry(profile, &lobby.spec.id, [0, (bottom + top) / 2], top - bottom));
+        out.push(main_entry(profile, &lobby.spec.id, entry, entry_clear));
     }
     for (i, c) in cells.iter().enumerate() {
-        let (inside, outside) = if c.band == Band::North { (top, depth) } else { (bottom, 0) };
+        let (inside, outside) = (c.inside_y, c.outside_y);
         let door = room_door(profile, c.spec.kind, c.spec.role, c.x1 - c.x0);
         out.push(shaped("door", "room_access", &c.spec.id, [c.middle()[0], inside], door, i % 2 == 1));
         if c.spec.window {
@@ -208,8 +208,7 @@ pub fn place(profile: SymbolProfile, seed: u64, cells: &[Cell], bottom: i64, top
         cells.iter().skip(1).filter(|c| !c.spec.window && matches!(c.spec.role, Role::Service | Role::Support)).collect();
     rng.shuffle(&mut back);
     for ((role, s), c) in exits(profile).iter().zip(back) {
-        let outside = if c.band == Band::North { depth } else { 0 };
-        out.push(shaped("door", role, &c.spec.id, [c.middle()[0], outside], *s, true));
+        out.push(shaped("door", role, &c.spec.id, [c.middle()[0], c.outside_y], *s, true));
     }
     out
 }
