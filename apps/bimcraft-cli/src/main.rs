@@ -616,7 +616,7 @@ mod tests {
         let checks = reply["checks"].as_array().unwrap();
         let swing = checks.iter().filter(|c| c["id"].as_str().is_some_and(|i| i.starts_with("SW-"))).count();
         assert!(swing >= 1);
-        assert_eq!(checks.len(), 9 + swing);
+        assert_eq!(checks.len(), 13 + swing);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
