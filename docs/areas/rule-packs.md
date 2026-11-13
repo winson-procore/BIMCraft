@@ -96,7 +96,8 @@ each rule's predicate, the pack owns its parameters (`check`).
   `reference_plans` and `reference_plan_count: 1` still say what HR-001 to HR-009 were authored from (the slice-11 check wants the
   pack to say it has one reference plan; the two are kept apart on purpose). Unit 1 added the kinds `garage` (service, 0 to 1, 15 to
   45 m2) and `deck` (public, 0 to 1, 6 to 30 m2), widened `hall` to 16 m2, added the means `folding` (allowed between a bedroom or
-  hall and a closet or laundry only) and the connections garage-hall (swing), deck-living/dining/kitchen (sliding), hall-hall (open)
+  hall and a closet or laundry only; listed under `folding_connections`, not `connections`, because the slice-11 check reads
+  `connections` for the three means of the first trace) and the connections garage-hall (swing), deck-living/dining/kitchen (sliding), hall-hall (open)
   and bedroom-closet open, and four exploratory rules, which a house without the room they judge passes: **HR-010** a garage is reached
   from the entry without crossing a bedroom or a bath and is next to a hall or the entry · **HR-011** a deck opens only into living,
   kitchen or dining, by at least one sliding door · **HR-012** a folding door joins a closet or a laundry to a bedroom or a hall (an

@@ -100,6 +100,10 @@ pub struct Pack {
     pub kinds: BTreeMap<String, Kind>,
     #[serde(default)]
     pub connections: Vec<Connection>,
+    /// Pairs that may be joined by a folding door, kept apart from `connections` (the first trace's `swing`, `sliding` and
+    /// `open`): folding came with the Unit 1 trace.
+    #[serde(default)]
+    pub folding_connections: Vec<Connection>,
     pub rules: Vec<Rule>,
 }
 
@@ -490,7 +494,7 @@ impl<'a> World<'a> {
 
     fn connections(&self) -> (Vec<String>, String) {
         let mut allowed: BTreeMap<(&str, &str), BTreeSet<&str>> = BTreeMap::new();
-        for c in &self.pack.connections {
+        for c in self.pack.connections.iter().chain(&self.pack.folding_connections) {
             let (a, b) = (c.pair[0].as_str(), c.pair[1].as_str());
             allowed.entry((a.min(b), a.max(b))).or_default().extend(c.means.iter().map(String::as_str));
         }

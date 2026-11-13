@@ -36,10 +36,10 @@
     {"pair": ["hall", "kitchen"], "means": ["swing", "open"]},
     {"pair": ["hall", "dining"], "means": ["swing", "open"]},
     {"pair": ["hall", "stair"], "means": ["open"]},
-    {"pair": ["bedroom", "closet"], "means": ["sliding", "swing", "folding", "open"]},
-    {"pair": ["closet", "hall"], "means": ["sliding", "swing", "folding"]},
+    {"pair": ["bedroom", "closet"], "means": ["sliding", "swing", "open"]},
+    {"pair": ["closet", "hall"], "means": ["sliding", "swing"]},
     {"pair": ["closet", "kitchen"], "means": ["sliding"]},
-    {"pair": ["laundry", "hall"], "means": ["sliding", "swing", "folding"]},
+    {"pair": ["laundry", "hall"], "means": ["sliding", "swing"]},
     {"pair": ["utility", "hall"], "means": ["sliding", "swing"]},
     {"pair": ["laundry", "kitchen"], "means": ["sliding", "swing"]},
     {"pair": ["porch", "living"], "means": ["sliding", "swing"]},
@@ -57,6 +57,11 @@
     {"pair": ["deck", "dining"], "means": ["sliding"]},
     {"pair": ["deck", "kitchen"], "means": ["sliding"]},
     {"pair": ["hall", "hall"], "means": ["open"]}
+  ],
+  "folding_connections": [
+    {"pair": ["bedroom", "closet"], "means": ["folding"]},
+    {"pair": ["closet", "hall"], "means": ["folding"]},
+    {"pair": ["hall", "laundry"], "means": ["folding"]}
   ],
   "rules": [
     {
