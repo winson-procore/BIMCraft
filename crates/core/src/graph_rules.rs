@@ -21,6 +21,9 @@ use crate::generate::house::swing;
 use crate::generate::program::{Archetype, Role};
 use crate::generate::report;
 
+mod medical;
+#[cfg(test)]
+mod medical_tests;
 mod pattern;
 #[cfg(test)]
 mod pattern_tests;
@@ -38,13 +41,14 @@ const MAX_PATH: usize = 4096;
 /// How many problems a rule's detail names before it says how many more there are.
 const NAMED: usize = 5;
 
-const SOURCES: [(&str, &str); 6] = [
+const SOURCES: [(&str, &str); 7] = [
     ("house", include_str!("../data/graph-rules/house.json")),
     ("office", include_str!("../data/graph-rules/office.json")),
     ("clinic", include_str!("../data/graph-rules/clinic.json")),
     ("hospital", include_str!("../data/graph-rules/hospital.json")),
     ("studio-office", include_str!("../data/graph-rules/studio-office.json")),
     ("office-pattern", include_str!("../data/graph-rules/office-pattern.json")),
+    ("medical-day", include_str!("../data/graph-rules/medical-day.json")),
 ];
 
 // ---- the pack
@@ -165,6 +169,8 @@ pub struct Graph {
     pub entry: Option<String>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    /// How many entries a top-level `exterior_doors` list holds (doors with a room on one side only).
+    pub exterior_doors: usize,
 }
 
 fn text(v: &Value, key: &str, what: &str) -> Result<Option<String>, String> {
@@ -219,7 +225,8 @@ impl Graph {
             Some(o @ Value::Object(_)) => text(o, "room", "`entry`")?,
             Some(_) => return Err("`entry` is a space's name, an object with its `room`, or null".into()),
         };
-        Ok(Graph { entry, nodes, edges })
+        let exterior_doors = v.get("exterior_doors").and_then(Value::as_array).map_or(0, |a| a.len().min(MAX_ITEMS));
+        Ok(Graph { entry, nodes, edges, exterior_doors })
     }
 }
 
@@ -276,6 +283,9 @@ pub fn check(pack: &Pack, graph: &Graph) -> Result<Vec<Check>, String> {
     }
     if pack.archetype == "studio-office" {
         return studio::check(pack, graph);
+    }
+    if pack.archetype == "medical-day" {
+        return medical::check(pack, graph);
     }
     if pack.archetype == "office-pattern" {
         return pattern::check(pack, graph);
