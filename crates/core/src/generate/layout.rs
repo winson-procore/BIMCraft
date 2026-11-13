@@ -283,6 +283,9 @@ fn round_to_100(x: f64) -> i64 {
 
 /// A plan for the brief, or why none fits.
 pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, String> {
+    if archetype == Archetype::House {
+        return Err("a house is laid out graph first, by `house`, not by a corridor plan".into());
+    }
     let layout_family = layout_family(seed);
     let area_mm2 = area_m2 * 1.0e6;
     let depth = round_to_100((area_mm2 / layout_family.target_aspect()).sqrt()).clamp(MIN_DEPTH, layout_family.max_depth());
@@ -332,7 +335,8 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     let boundary = boundary(width, depth, corridor_bottom, corridor_top, &cells);
     let walls = walls(width, corridor_bottom, corridor_top, &boundary, &cells);
     let opening_symbol_profile = openings::profile(archetype, seed);
-    let openings = openings::place(opening_symbol_profile, seed, &cells, [0, (corridor_bottom + corridor_top) / 2], corridor_top - corridor_bottom);
+    let openings =
+        openings::place(opening_symbol_profile, seed, &cells, [0, (corridor_bottom + corridor_top) / 2], corridor_top - corridor_bottom);
     Ok(Plan {
         archetype,
         seed,

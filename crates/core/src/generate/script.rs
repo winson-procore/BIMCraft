@@ -30,7 +30,7 @@ pub struct Script {
 pub const REQUIRED: [&str; 12] = ["new", "level", "grid", "wall", "door", "floor", "room", "text", "dimension", "tag", "sheet", "place"];
 
 /// The sheet's size in millimetres, landscape.
-fn sheet_size(name: &str) -> (i64, i64) {
+pub(super) fn sheet_size(name: &str) -> (i64, i64) {
     match name {
         "A0" => (1189, 841),
         "A1" => (841, 594),
@@ -65,7 +65,7 @@ fn line(id: &'static str, params: Value) -> Line {
     Line { id, params, room_of: None, wall_of: None, opening_of: None }
 }
 
-fn grid_name(mut i: usize, letters: bool) -> String {
+pub(super) fn grid_name(mut i: usize, letters: bool) -> String {
     if !letters {
         return (i + 1).to_string();
     }
@@ -177,7 +177,7 @@ pub fn compile(plan: &Plan, building: &Building) -> Script {
     Script { lines, text }
 }
 
-fn capital(word: &str) -> String {
+pub(super) fn capital(word: &str) -> String {
     let mut chars = word.chars();
     chars.next().map_or_else(String::new, |c| c.to_uppercase().chain(chars).collect())
 }
