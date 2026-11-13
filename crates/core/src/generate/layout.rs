@@ -297,6 +297,9 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     if archetype == Archetype::OfficePattern {
         return Err("an office pattern is laid out graph first, by `pattern`, not by a corridor plan".into());
     }
+    if archetype == Archetype::MedicalDay {
+        return Err("a medical day department is laid out graph first, by `medical`, not by a corridor plan".into());
+    }
     // The seed's own family and strategy first; a brief they can't fit is tried with the others, in a fixed order, so a brief
     // that is met today keeps its plan and one that is not may still find a layout that fits it.
     let own = (layout_family(seed), strategy(seed));
