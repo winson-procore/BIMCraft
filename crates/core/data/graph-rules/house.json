@@ -1,0 +1,133 @@
+{
+  "schema_version": "graph-rule-pack/1",
+  "pack_id": "house.graph-rules/1",
+  "archetype": "house",
+  "origin": "authored_from_trace",
+  "reference_plans": [
+    "done/fixtures/houses/traced-house (generated/copied-residential-plan-20261111T225257)"
+  ],
+  "reference_plan_count": 1,
+  "note": "Authored from one reference plan, the traced house. Every range and every allowed connection is what that one plan holds, widened to what a house plausibly holds, so each rule is exploratory until more plans are traced.",
+  "kinds": {
+    "bedroom": {"role": "private", "count": [1, 6], "area_m2": [7.0, 25.0]},
+    "closet": {"role": "support", "count": [0, 8], "area_m2": [0.5, 6.0]},
+    "bath": {"role": "private", "count": [1, 4], "area_m2": [2.5, 10.0]},
+    "hall": {"role": "circulation", "count": [0, 2], "area_m2": [1.5, 12.0]},
+    "living": {"role": "shared", "count": [1, 2], "area_m2": [10.0, 45.0]},
+    "kitchen": {"role": "shared", "count": [1, 2], "area_m2": [8.0, 35.0]},
+    "dining": {"role": "shared", "count": [0, 1], "area_m2": [6.0, 25.0]},
+    "library": {"role": "shared", "count": [0, 1], "area_m2": [2.0, 20.0]},
+    "laundry": {"role": "service", "count": [0, 1], "area_m2": [0.5, 8.0]},
+    "utility": {"role": "service", "count": [0, 1], "area_m2": [0.5, 8.0]},
+    "stair": {"role": "circulation", "count": [0, 2], "area_m2": [2.0, 12.0]},
+    "porch": {"role": "public", "count": [0, 2], "area_m2": [3.0, 25.0]}
+  },
+  "connections": [
+    {"pair": ["bedroom", "hall"], "means": ["swing"]},
+    {"pair": ["bath", "hall"], "means": ["swing"]},
+    {"pair": ["bedroom", "bath"], "means": ["swing"]},
+    {"pair": ["hall", "living"], "means": ["swing", "open"]},
+    {"pair": ["hall", "kitchen"], "means": ["swing", "open"]},
+    {"pair": ["hall", "dining"], "means": ["swing", "open"]},
+    {"pair": ["hall", "stair"], "means": ["open"]},
+    {"pair": ["bedroom", "closet"], "means": ["sliding", "swing"]},
+    {"pair": ["closet", "hall"], "means": ["sliding", "swing"]},
+    {"pair": ["closet", "kitchen"], "means": ["sliding"]},
+    {"pair": ["laundry", "hall"], "means": ["sliding", "swing"]},
+    {"pair": ["utility", "hall"], "means": ["sliding", "swing"]},
+    {"pair": ["laundry", "kitchen"], "means": ["sliding", "swing"]},
+    {"pair": ["porch", "living"], "means": ["sliding", "swing"]},
+    {"pair": ["porch", "kitchen"], "means": ["sliding", "swing"]},
+    {"pair": ["porch", "dining"], "means": ["sliding", "swing"]},
+    {"pair": ["kitchen", "living"], "means": ["open", "swing"]},
+    {"pair": ["dining", "living"], "means": ["open"]},
+    {"pair": ["dining", "kitchen"], "means": ["open"]},
+    {"pair": ["library", "living"], "means": ["open"]},
+    {"pair": ["library", "kitchen"], "means": ["open"]},
+    {"pair": ["library", "hall"], "means": ["swing", "open"]},
+    {"pair": ["living", "stair"], "means": ["open"]}
+  ],
+  "rules": [
+    {
+      "id": "HR-001", "name": "kinds-known", "classification": "exploratory",
+      "category": "vocabulary", "subject": "every space", "predicate": "has a kind", "object": "defined in the pack's kinds",
+      "checkability": "deterministic", "confidence": 0.9,
+      "rationale": "Counts, areas and connections are judged by kind, so a space of no known kind is judged by nothing.",
+      "exceptions": [],
+      "provenance": "traced-house: its twelve kinds",
+      "check": {}
+    },
+    {
+      "id": "HR-002", "name": "edges-name-spaces", "classification": "exploratory",
+      "category": "graph", "subject": "every edge that is not to the exterior", "predicate": "joins", "object": "two spaces of the graph",
+      "checkability": "deterministic", "confidence": 0.95,
+      "rationale": "An edge to nothing is a graph that was not read right.",
+      "exceptions": ["an edge marked exterior goes outside and is skipped"],
+      "provenance": "traced-house",
+      "check": {}
+    },
+    {
+      "id": "HR-003", "name": "kind-counts", "classification": "exploratory",
+      "category": "program", "subject": "each kind", "predicate": "occurs a number of times", "object": "inside its count range",
+      "checkability": "deterministic", "confidence": 0.6,
+      "rationale": "A house has a kitchen and a bedroom and not twenty porches; the ranges come from one plan.",
+      "exceptions": ["a kitchen that is also the dining space has no dining space of its own"],
+      "provenance": "traced-house: 2 bedrooms, 3 closets, 1 each of bath, hall, living, kitchen, laundry, utility, porch, library",
+      "check": {}
+    },
+    {
+      "id": "HR-004", "name": "kind-areas", "classification": "exploratory",
+      "category": "dimensions", "subject": "each space", "predicate": "has an area in square metres", "object": "inside its kind's area range",
+      "checkability": "deterministic", "confidence": 0.5,
+      "rationale": "Areas widen what the one traced plan holds to what rooms of that kind plausibly measure.",
+      "exceptions": [],
+      "provenance": "traced-house: bedrooms 9.30 and 13.40 m2, closets 0.80 to 2.91, bath 4.34, hall 2.92, living 14.46, kitchen 17.25, laundry 0.77, utility 0.82, porch 6.09, library 2.69",
+      "check": {}
+    },
+    {
+      "id": "HR-005", "name": "connections-allowed", "classification": "exploratory",
+      "category": "adjacency", "subject": "each door or open edge", "predicate": "joins a pair of kinds by a means", "object": "listed in the pack's connections",
+      "checkability": "deterministic", "confidence": 0.5,
+      "rationale": "Which kinds open into each other, and by swing door, sliding door or open edge, as the traced plan does.",
+      "exceptions": ["the closet off the kitchen, by a sliding door, is in the traced plan"],
+      "provenance": "traced-house: 13 links; double-swing is swing, double-sliding is sliding, folding and fixed are not listed",
+      "check": {}
+    },
+    {
+      "id": "HR-006", "name": "closet-one-door", "classification": "exploratory",
+      "category": "access", "subject": "a closet", "predicate": "has", "object": "one door and one neighbour",
+      "checkability": "deterministic", "confidence": 0.8,
+      "rationale": "A closet is entered from one room by one door. Which rooms it may open off is the connection table's.",
+      "exceptions": ["the traced entry closet opens off the kitchen, not off a bedroom or a hall: the rule counts and the connection table allows it"],
+      "provenance": "traced-house",
+      "check": {"kind": "closet", "doors": 1}
+    },
+    {
+      "id": "HR-007", "name": "porch-off-living", "classification": "exploratory",
+      "category": "access", "subject": "a porch", "predicate": "opens only into", "object": "a living, kitchen or dining space",
+      "checkability": "deterministic", "confidence": 0.7,
+      "rationale": "A porch is a threshold to the shared rooms, not to a private or service one.",
+      "exceptions": [],
+      "provenance": "traced-house: the porch opens into the living room",
+      "check": {"kind": "porch", "joins_only": ["living", "kitchen", "dining"]}
+    },
+    {
+      "id": "HR-008", "name": "bedroom-reach", "classification": "exploratory",
+      "category": "access", "subject": "every bedroom", "predicate": "is reached from the entry", "object": "without passing through a bedroom or a bath",
+      "checkability": "deterministic", "confidence": 0.7,
+      "rationale": "One does not cross a bedroom or a bath to reach another bedroom.",
+      "exceptions": ["a graph with no entry reaches nothing and fails"],
+      "provenance": "traced-house",
+      "check": {"target": "bedroom", "through_blocked": ["bedroom", "bath"]}
+    },
+    {
+      "id": "HR-009", "name": "entry-space", "classification": "exploratory",
+      "category": "access", "subject": "the entry", "predicate": "is a space of kind", "object": "living, kitchen, dining or hall",
+      "checkability": "deterministic", "confidence": 0.7,
+      "rationale": "A house is entered into a shared or circulation space.",
+      "exceptions": ["the traced house is entered through its kitchen"],
+      "provenance": "traced-house: the entry is the kitchen",
+      "check": {"kinds": ["living", "kitchen", "dining", "hall"]}
+    }
+  ]
+}

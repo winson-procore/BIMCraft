@@ -9,8 +9,8 @@ mod lift;
 #[cfg(test)]
 mod lift_tests;
 mod openings;
-mod program;
-mod report;
+pub(crate) mod program;
+pub(crate) mod report;
 mod script;
 #[cfg(test)]
 mod tests;

@@ -52,6 +52,7 @@ pub mod geom;
 #[cfg(test)]
 mod georef_tests;
 pub mod gltf;
+pub mod graph_rules;
 pub mod graphics;
 pub mod groups;
 pub mod hydrant;

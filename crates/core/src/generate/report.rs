@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Value, json};
 
 use crate::geom::P2;
+use crate::graph_rules::Pack;
 use crate::ids::Id;
 use crate::model::{Element, Model};
 
@@ -60,12 +61,68 @@ fn check(id: &'static str, name: &'static str, problems: Vec<String>, ok: String
     }
 }
 
-fn is_private(role: Role) -> bool {
-    matches!(role, Role::Private | Role::Clinical)
+/// A group of kinds a program must hold at least `at_least` of, named as the report says it.
+struct Group {
+    what: String,
+    kinds: Vec<String>,
+    at_least: usize,
 }
 
-fn is_open(role: Role) -> bool {
-    matches!(role, Role::Circulation | Role::Shared | Role::Public)
+/// What the rules on the access graph read from the archetype's pack: the roles GR-002 reaches from and to, the pairs of
+/// roles GR-003 to GR-005 keep from opening into each other, and PR-001's groups. The code owns each predicate.
+struct Rules {
+    private: Vec<Role>,
+    open: Vec<Role>,
+    pairs: [(Role, Role); 3],
+    groups: Vec<Group>,
+}
+
+fn roles(v: &Value, id: &str, key: &str) -> Result<Vec<Role>, String> {
+    let list = v.get(key).and_then(Value::as_array).ok_or_else(|| format!("rule {id} has no `{key}` list"))?;
+    list.iter()
+        .map(|r| {
+            r.as_str().and_then(Role::parse).ok_or_else(|| format!("rule {id}: `{key}` holds a role that is not one of {}", Role::names()))
+        })
+        .collect()
+}
+
+fn rules_of(archetype: Archetype) -> Result<Rules, String> {
+    let pack = Pack::embedded(archetype.name())?;
+    let params = |id: &str| -> Result<&Value, String> {
+        pack.rules
+            .iter()
+            .find(|r| r.id == id)
+            .map(|r| &r.check)
+            .ok_or_else(|| format!("the {} rule pack has no rule {id}", archetype.name()))
+    };
+    let pair = |id: &str| -> Result<(Role, Role), String> {
+        match roles(params(id)?, id, "between")?[..] {
+            [a, b] => Ok((a, b)),
+            _ => Err(format!("rule {id}: `between` names two roles")),
+        }
+    };
+    let groups = params("PR-001")?
+        .get("groups")
+        .and_then(Value::as_array)
+        .ok_or("rule PR-001 has no `groups` list")?
+        .iter()
+        .map(|g| {
+            let what = g.get("what").and_then(Value::as_str).ok_or("a group of PR-001 has no `what`")?;
+            let kinds = g.get("kinds").and_then(Value::as_array).ok_or("a group of PR-001 has no `kinds`")?;
+            let at_least = g.get("at_least").and_then(Value::as_u64).ok_or("a group of PR-001 has no `at_least`")?;
+            Ok(Group {
+                what: what.to_string(),
+                kinds: kinds.iter().filter_map(|k| k.as_str().map(str::to_string)).collect(),
+                at_least: at_least as usize,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(Rules {
+        private: roles(params("GR-002")?, "GR-002", "private_roles")?,
+        open: roles(params("GR-002")?, "GR-002", "open_roles")?,
+        pairs: [pair("GR-003")?, pair("GR-004")?, pair("GR-005")?],
+        groups,
+    })
 }
 
 /// The spaces reached from `from` over door and open edges only.
@@ -89,6 +146,18 @@ fn reached(t: &Topology, from: impl IntoIterator<Item = String>) -> BTreeSet<Str
 
 /// The rules on the access graph, which a plan must meet however it is laid out.
 pub fn graph_checks(t: &Topology, archetype: Archetype) -> Vec<Check> {
+    match rules_of(archetype) {
+        Ok(rules) => checks_by(t, archetype, &rules),
+        Err(e) => vec![Check {
+            id: "PACK-001",
+            name: "rule-pack-loads",
+            status: Status::Fail,
+            detail: format!("the {} rule pack can't be read: {e}", archetype.name()),
+        }],
+    }
+}
+
+fn checks_by(t: &Topology, archetype: Archetype, rules: &Rules) -> Vec<Check> {
     let role = |id: &str| t.node(id).map(|n| n.role);
     let missing: Vec<String> = t
         .edges
@@ -97,26 +166,24 @@ pub fn graph_checks(t: &Topology, archetype: Archetype) -> Vec<Check> {
         .filter(|id| t.node(id).is_none())
         .map(|id| format!("an edge names `{id}`, which is not a space"))
         .collect();
-    let open: Vec<String> = t.nodes.iter().filter(|n| is_open(n.role)).map(|n| n.id.clone()).collect();
+    let open: Vec<String> = t.nodes.iter().filter(|n| rules.open.contains(&n.role)).map(|n| n.id.clone()).collect();
     let from_open = reached(t, open);
     let lost: Vec<String> = t
         .nodes
         .iter()
-        .filter(|n| is_private(n.role) && !from_open.contains(&n.id))
+        .filter(|n| rules.private.contains(&n.role) && !from_open.contains(&n.id))
         .map(|n| format!("`{}` cannot be reached from a circulation, shared or public space", n.id))
         .collect();
-    let joined = |a: fn(Role) -> bool, b: fn(Role) -> bool| -> Vec<String> {
+    let joined = |a: Role, b: Role| -> Vec<String> {
         t.access()
-            .filter(|e| role(&e.from).is_some_and(a) && role(&e.to).is_some_and(b))
+            .filter(|e| role(&e.from) == Some(a) && role(&e.to) == Some(b))
             .map(|e| format!("`{}` opens straight into `{}`", e.from, e.to))
             .collect()
     };
-    let private_private = joined(|r| r == Role::Private, |r| r == Role::Private);
-    let clinical_clinical = joined(|r| r == Role::Clinical, |r| r == Role::Clinical);
-    let mixed: Vec<String> = joined(|r| r == Role::Private, |r| r == Role::Clinical)
-        .into_iter()
-        .chain(joined(|r| r == Role::Clinical, |r| r == Role::Private))
-        .collect();
+    let [(a3, b3), (a4, b4), (a5, b5)] = rules.pairs;
+    let private_private = joined(a3, b3);
+    let clinical_clinical = joined(a4, b4);
+    let mixed: Vec<String> = joined(a5, b5).into_iter().chain(joined(b5, a5)).collect();
     let from_entry = reached(t, [t.entry.clone()]);
     let cut_off: Vec<String> = t
         .nodes
@@ -142,7 +209,7 @@ pub fn graph_checks(t: &Topology, archetype: Archetype) -> Vec<Check> {
             cut_off,
             format!("all {} spaces are reached from `{}` over {access} door and open edges", t.nodes.len(), t.entry),
         ),
-        program_check(t, archetype),
+        program_check(t, archetype, &rules.groups),
     ]
 }
 
@@ -287,48 +354,11 @@ fn on_segment(p: [i64; 2], a: [i64; 2], b: [i64; 2]) -> bool {
     length > 0.0 && (cross as f64 / length).abs() <= 1.0 && within(a[0], b[0], p[0]) && within(a[1], b[1], p[1])
 }
 
-/// The kinds a program must hold at least once, each group with how many of them it needs.
-fn minimum(archetype: Archetype) -> Vec<(&'static str, &'static [&'static str], usize)> {
-    match archetype {
-        Archetype::Office => vec![
-            ("an entry or lobby", &["entry_lobby"], 1),
-            ("a corridor", &["corridor"], 1),
-            ("an open office", &["open_office"], 1),
-            ("a conference room", &["conference"], 1),
-            ("a private office or focus room", &["private_office", "focus_room"], 1),
-            ("a restroom", &["restroom"], 1),
-            ("a support space (IT, storage or pantry)", &["it_storage", "pantry"], 1),
-        ],
-        Archetype::Clinic => vec![
-            ("an entry or lobby", &["entry_lobby"], 1),
-            ("a waiting room", &["waiting"], 1),
-            ("a corridor", &["corridor"], 1),
-            ("two exam rooms", &["exam"], 2),
-            ("a restroom", &["restroom"], 1),
-            ("a staff or nurse space", &["staff_room", "nurse_station"], 1),
-            ("a clean, support or storage space", &["clean_storage"], 1),
-        ],
-        Archetype::Hospital => vec![
-            ("an entry or lobby", &["entry_lobby"], 1),
-            ("a waiting or reception space", &["waiting_reception"], 1),
-            ("a corridor", &["corridor"], 1),
-            ("four exam or consult rooms", &["exam", "consult"], 4),
-            ("two patient rooms or treatment bays", &["patient_room", "treatment_bay"], 2),
-            ("a nurse or staff support space", &["nurse_station", "staff_support"], 1),
-            ("a clean utility or storage space", &["clean_utility"], 1),
-            ("a dirty or soiled utility space", &["dirty_utility"], 1),
-            ("a medication, supply or equipment storage space", &["med_supply", "equipment_storage"], 1),
-            ("a restroom", &["restroom"], 1),
-            ("an imaging, procedure, lab or diagnostic support space", &["imaging_diagnostic", "procedure_lab"], 1),
-        ],
-    }
-}
-
-fn program_check(t: &Topology, archetype: Archetype) -> Check {
-    let problems: Vec<String> = minimum(archetype)
-        .into_iter()
-        .filter(|(_, kinds, n)| t.nodes.iter().filter(|node| kinds.contains(&node.kind.as_str())).count() < *n)
-        .map(|(what, _, _)| format!("the {} program has no {what}", archetype.name()))
+fn program_check(t: &Topology, archetype: Archetype, groups: &[Group]) -> Check {
+    let problems: Vec<String> = groups
+        .iter()
+        .filter(|g| t.nodes.iter().filter(|node| g.kinds.contains(&node.kind)).count() < g.at_least)
+        .map(|g| format!("the {} program has no {}", archetype.name(), g.what))
         .collect();
     check("PR-001", "minimum-program", problems, format!("the {} minimum program is present", archetype.name()))
 }
@@ -558,7 +588,7 @@ pub fn json(plan: &Plan, checks: &[Check], script: &Script, replies: &[Value]) -
         .filter_map(|(l, r)| Some(json!({"space": l.room_of.as_ref()?, "net_area_m2": r.get("area_m2")?})))
         .collect();
     let net: f64 = measured.iter().filter_map(|m| m["net_area_m2"].as_f64()).sum();
-    let required = minimum(plan.archetype).len();
+    let required = rules_of(plan.archetype).map_or(0, |r| r.groups.len());
     let passing = checks.iter().filter(|c| c.status != Status::Fail).count();
     json!({
         "schema_version": SCHEMA_VERSION,
