@@ -618,8 +618,89 @@ struct Ink {
 enum Shape {
     /// A `LWPOLYLINE` of this weight (hundredths of a mm).
     Line { pts: Vec<P2>, closed: bool, weight: i32 },
+    /// A DXF `ARC`, counter-clockwise from `start` to `end` degrees, of this weight (hundredths of a mm).
+    Arc { centre: P2, radius: f64, start: f64, end: f64, weight: i32 },
     /// A solid `HATCH`, its first ring the outermost.
     Fill { rings: Vec<Vec<P2>> },
+}
+
+/// The shortest open stroke that may be a door swing rather than a few chords of something else.
+const ARC_POINTS: usize = 8;
+
+/// How far a chord may sit off the circle, mm, and still be that circle. Pixels come back from the plan a little off.
+const ARC_SLACK: f64 = 0.05;
+
+/// A door swing is drawn as straight chords. One that sits on a single circle, and sweeps less than a full turn, goes out as
+/// the arc it was: centre, radius, and the counter-clockwise angles. A closed ring, or a stroke that leaves the circle, stays
+/// a polyline.
+fn circular(pts: &[P2], weight: i32) -> Option<Shape> {
+    if pts.len() < ARC_POINTS {
+        return None;
+    }
+    let centre = circumcenter(pts[0], pts[pts.len() / 2], *pts.last()?)?;
+    let radius = centre.dist(pts[0]);
+    if !(radius.is_finite() && radius >= 1.0) {
+        return None;
+    }
+    let slack = radius * 1e-4 + ARC_SLACK;
+    if pts.iter().any(|p| (centre.dist(*p) - radius).abs() > slack) {
+        return None;
+    }
+    let ang = |p: P2| (p.1 - centre.1).atan2(p.0 - centre.0).to_degrees();
+    let mut sweep = 0.0;
+    let mut way = 0.0;
+    for w in pts.windows(2) {
+        let step = signed_turn(ang(w[0]), ang(w[1]));
+        if step.abs() < 1e-4 || step.abs() > 30.0 {
+            return None;
+        }
+        if way == 0.0 {
+            way = step.signum();
+        } else if step.signum() != way {
+            return None;
+        }
+        sweep += step;
+    }
+    if !(20.0..350.0).contains(&sweep.abs()) {
+        return None;
+    }
+    let start = ang(pts[0]);
+    let (start, end) = if sweep > 0.0 { (start, start + sweep) } else { (start + sweep, start) };
+    Some(Shape::Arc { centre, radius, start, end, weight })
+}
+
+/// The centre of the circle through `a`, `b` and `c`, none when they are colinear.
+fn circumcenter(a: P2, b: P2, c: P2) -> Option<P2> {
+    let d = 2.0 * (a.0 * (b.1 - c.1) + b.0 * (c.1 - a.1) + c.0 * (a.1 - b.1));
+    let scale = a.dist(b).max(b.dist(c)).max(c.dist(a));
+    if d.abs() < scale * scale * 1e-8 {
+        return None;
+    }
+    let (a2, b2, c2) = (a.0 * a.0 + a.1 * a.1, b.0 * b.0 + b.1 * b.1, c.0 * c.0 + c.1 * c.1);
+    Some(P2((a2 * (b.1 - c.1) + b2 * (c.1 - a.1) + c2 * (a.1 - b.1)) / d, (a2 * (c.0 - b.0) + b2 * (a.0 - c.0) + c2 * (b.0 - a.0)) / d))
+}
+
+/// `b - a` in degrees, in (-180, 180].
+fn signed_turn(a: f64, b: f64) -> f64 {
+    let d = (b - a).rem_euclid(360.0);
+    if d > 180.0 { d - 360.0 } else { d }
+}
+
+/// The ends of the arc and the axis extremes it passes, which is the box it occupies.
+fn arc_extents(c: P2, r: f64, start: f64, end: f64) -> Vec<P2> {
+    let at = |deg: f64| {
+        let a = deg.to_radians();
+        c + P2(a.cos(), a.sin()) * r
+    };
+    let sweep = end - start;
+    let mut pts = vec![at(start), at(end)];
+    for k in 0..4 {
+        let a = k as f64 * 90.0;
+        if (a - start).rem_euclid(360.0) <= sweep + 1e-6 {
+            pts.push(at(a));
+        }
+    }
+    pts
 }
 
 /// `prim`, of `part` of what is on layer `base`, as an entity; none for a picture or one that has nothing to draw.
@@ -630,7 +711,8 @@ fn ink(d: &Drawing, prim: &Prim, part: Part, base: &str) -> Option<Ink> {
             let pts: Option<Vec<P2>> = pts.iter().map(mm).collect();
             let pts = pts.filter(|p| p.len() >= 2)?;
             let ltype = dash.as_deref().and_then(|dash| linetype(dash, d.view.scale));
-            let shape = Shape::Line { pts, closed: *closed, weight: weight(d, *width) };
+            let weight = weight(d, *width);
+            let shape = if *closed { None } else { circular(&pts, weight) }.unwrap_or(Shape::Line { pts, closed: *closed, weight });
             Some(Ink { layer: on(base, part, false), ltype, color: *color, shape })
         }
         Prim::Fill { rings, color } => {
@@ -647,6 +729,7 @@ impl Ink {
     fn grow(&self, ext: Option<[P2; 2]>) -> Option<[P2; 2]> {
         match &self.shape {
             Shape::Line { pts, .. } => grow(ext, pts),
+            Shape::Arc { centre, radius, start, end, .. } => grow(ext, &arc_extents(*centre, *radius, *start, *end)),
             Shape::Fill { rings } => rings.iter().fold(ext, |ext, ring| grow(ext, ring)),
         }
     }
@@ -664,6 +747,16 @@ fn put(s: &mut String, h: u64, parent: u64, ink: &Ink) {
             for p in pts {
                 point2(s, 10, *p);
             }
+        }
+        Shape::Arc { centre, radius, start, end, weight } => {
+            pair(s, 0, "ARC");
+            entity(s, h, parent, &ink.layer, ink.ltype.as_ref().map(|l| l.0.as_str()), Some(*weight), ink.color);
+            pair(s, 100, "AcDbCircle");
+            point3(s, 10, *centre);
+            pair(s, 40, num(*radius));
+            pair(s, 100, "AcDbArc");
+            pair(s, 50, num(*start));
+            pair(s, 51, num(*end));
         }
         Shape::Fill { rings } => {
             pair(s, 0, "HATCH");

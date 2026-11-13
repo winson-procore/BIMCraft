@@ -121,7 +121,14 @@ fn a_doors_block_holds_its_jambs_leaf_and_swing() {
         let body = &defined[group(p, 2).unwrap_or_default()];
         let shapes: Vec<_> = body.iter().filter(|(k, _)| STROKES.contains(&k.as_str())).collect();
         assert!(shapes.len() >= 2, "{} has {} entities", group(p, 2).unwrap_or_default(), shapes.len());
-        let swing = shapes.iter().any(|(_, pairs)| number(pairs, 90).is_some_and(|n| n >= 25.0));
+        let swing = shapes.iter().any(|(k, pairs)| {
+            k == "ARC"
+                && number(pairs, 40).is_some_and(|r| r > 100.0)
+                && number(pairs, 50).zip(number(pairs, 51)).is_some_and(|(s, e)| {
+                    let sweep = (e - s).rem_euclid(360.0);
+                    (80.0..190.0).contains(&sweep)
+                })
+        });
         assert!(swing, "no swing arc in {}", group(p, 2).unwrap_or_default());
     }
 }

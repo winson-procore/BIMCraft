@@ -145,6 +145,9 @@ fn a_plan_written_as_dwg_2018_reads_back_with_its_layers_and_entities() {
     // A dashed grid keeps its linetype.
     let dashed = |d: &dxf::Dxf| d.entities.iter().filter(|e| e.layer == "A-GRID" && e.linetype.is_some()).count();
     assert_eq!(dashed(&after), dashed(&before));
+    // A door swing stays an arc through the DWG, not a polyline of chords.
+    let swing = |d: &dxf::Dxf| d.entities.iter().any(|e| e.layer == "A-DOOR" && matches!(e.shape, Shape::Arc { .. }));
+    assert!(swing(&before) && swing(&after));
     // Through the test helper too.
     assert!(dwg_from_dxf(&text).unwrap().starts_with(b"AC1032"));
 }

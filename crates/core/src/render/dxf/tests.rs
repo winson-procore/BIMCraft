@@ -280,7 +280,13 @@ fn the_glass_and_the_leaf_still_go_out() {
     assert_eq!(n.get("A-DOOR").copied(), Some(drawn(&m, &d, "door", false)), "{n:?}");
     assert_eq!(n.get("A-GLAZ").copied(), Some(drawn(&m, &d, "window", false)), "{n:?}");
     // A door's swing, a quarter circle, is there whole.
-    assert!(r.entities.iter().any(|e| e.layer == "A-DOOR" && matches!(&e.shape, Shape::Polyline { pts, .. } if pts.len() >= 25)));
+    assert!(r.entities.iter().any(|e| {
+        e.layer == "A-DOOR"
+            && matches!(&e.shape, Shape::Arc { r, start, end, .. } if *r > 100.0 && {
+                let sweep = (end - start).rem_euclid(360.0);
+                (80.0..190.0).contains(&sweep)
+            })
+    }));
 }
 
 #[test]
