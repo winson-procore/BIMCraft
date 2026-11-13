@@ -45,6 +45,7 @@ fn rule_graph(g: &HouseGraph) -> Value {
                 Means::Open => json!({"from": a, "to": b, "kind": "open"}),
                 Means::Swing => json!({"from": a, "to": b, "kind": "door", "operation": "swing"}),
                 Means::Sliding => json!({"from": a, "to": b, "kind": "door", "operation": "sliding"}),
+                Means::Folding => json!({"from": a, "to": b, "kind": "door", "operation": "folding"}),
             }
         })
         .collect();
@@ -277,4 +278,173 @@ fn swing_doors_carry_the_fields_the_extractor_reads_and_sliding_doors_none() {
         enforced += generated["edges"].as_array().unwrap().iter().filter(|e| e["opens_into"].is_string()).count();
     }
     assert!(enforced > 40 && flipped > 10, "{enforced} swing doors, {flipped} flipped");
+}
+
+/// The areas the Unit 1 done check generates at, and the seed's among them.
+const SWEEP_AREAS: [f64; 6] = [90.0, 124.0, 158.0, 192.0, 226.0, 260.0];
+
+#[test]
+fn large_sampled_graphs_pass_the_house_pack() {
+    let pack = Pack::embedded("house").unwrap();
+    for seed in 0..300 {
+        for area in [161.0, 192.0, 226.0, 260.0] {
+            let g = sample(seed, area);
+            let graph = RuleGraph::from_value(&rule_graph(&g)).unwrap();
+            let failed: Vec<String> = graph_rules::check(pack, &graph)
+                .unwrap()
+                .into_iter()
+                .filter(|c| c.status == graph_rules::Status::Fail)
+                .map(|c| format!("{} {}", c.id, c.detail))
+                .collect();
+            assert!(failed.is_empty(), "seed {seed} area {area}: {failed:?}");
+            // The way in is an entry hall, that the hall of the bedroom wing opens into.
+            assert_eq!(g.rooms[g.entry].kind, Kind::Hall, "seed {seed}");
+            assert_ne!(g.entry, g.hall, "seed {seed}");
+            assert!(g.links.iter().any(|l| l.means == Means::Open && [l.a, l.b] == [g.hall, g.entry]), "seed {seed}");
+            // A deck is off living and dining, or living alone, by sliding doors; a garage is a swing door off the entry.
+            if let Some(d) = g.deck {
+                let off: Vec<usize> = g.links.iter().filter(|l| l.b == d).map(|l| l.a).collect();
+                assert_eq!(off, g.deck_off, "seed {seed}");
+                assert!(g.links.iter().filter(|l| l.b == d).all(|l| l.means == Means::Sliding), "seed {seed}");
+            }
+            if let Some(gr) = g.rooms.iter().position(|r| r.kind == Kind::Garage) {
+                let l = g.links.iter().find(|l| l.a == gr || l.b == gr).unwrap();
+                assert!(l.means == Means::Swing && (l.a == g.entry || l.b == g.entry), "seed {seed}");
+            }
+        }
+    }
+}
+
+#[test]
+fn houses_of_the_smaller_family_have_no_garage_deck_or_folding_door() {
+    for seed in 0..200 {
+        for area in AREAS {
+            let g = sample(seed, area);
+            assert!(g.rooms.iter().all(|r| r.kind != Kind::Garage) && g.deck.is_none() && g.deck_off.is_empty(), "seed {seed} area {area}");
+            assert!(g.links.iter().all(|l| l.means != Means::Folding), "seed {seed} area {area}");
+        }
+    }
+}
+
+/// What the done check reads off a built house's extracted graph: the Unit 1 layout is a public open band that the entry hall
+/// opens into, an entry hall and a hall of the bedroom wing joined, and that hall with two or more bedrooms off it.
+fn unit1_like(graph: &Value) -> bool {
+    let kind: BTreeMap<&str, &str> =
+        graph["nodes"].as_array().unwrap().iter().map(|n| (n["id"].as_str().unwrap(), n["kind"].as_str().unwrap())).collect();
+    let entry = graph["entry"]["room"].as_str().unwrap();
+    let links: Vec<(&str, &str, &str)> = graph["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["exterior"] != true && (e["kind"] == "door" || e["kind"] == "open"))
+        .map(|e| (e["from"].as_str().unwrap(), e["to"].as_str().unwrap(), e["kind"].as_str().unwrap()))
+        .collect();
+    let shared = |k: &str| matches!(k, "living" | "kitchen" | "dining");
+    let next = |id: &str| -> Vec<&str> {
+        links
+            .iter()
+            .filter_map(|(a, b, _)| {
+                if *a == id {
+                    Some(*b)
+                } else if *b == id {
+                    Some(*a)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+    let other_halls: Vec<&str> = kind.iter().filter(|(id, k)| **k == "hall" && **id != entry).map(|(id, _)| *id).collect();
+    let split = kind[entry] == "hall" && other_halls.iter().any(|h| next(entry).contains(h));
+    let open_shared = links.iter().filter(|(a, b, t)| *t == "open" && shared(kind[a]) && shared(kind[b])).count();
+    let band = links.iter().any(|(a, b, t)| *t == "open" && (*a == entry || *b == entry) && (shared(kind[a]) || shared(kind[b])));
+    let wing = other_halls.iter().any(|h| next(h).iter().filter(|x| kind[*x] == "bedroom").count() >= 2);
+    split && open_shared >= 2 && band && wing
+}
+
+#[test]
+fn large_houses_build_and_read_back_and_the_sweep_has_each_unit1_concept() {
+    let (mut garages, mut decks, mut folding, mut layouts) = (0, 0, 0, 0);
+    for seed in 1..=60_u64 {
+        let area = SWEEP_AREAS[(seed as usize - 1) % 6];
+        if area <= 160.0 {
+            continue;
+        }
+        let b = house(seed, area).unwrap_or_else(|e| panic!("seed {seed} area {area}: {e}"));
+        let generated = doc(&b, "topology-graph.json");
+        let (_, extracted) = read_back(&b);
+        let ids = |v: &Value| -> BTreeSet<String> {
+            v["nodes"].as_array().unwrap().iter().map(|n| n["id"].as_str().unwrap().to_string()).collect()
+        };
+        assert_eq!(ids(&generated), ids(&extracted), "seed {seed}");
+        assert!(extracted["diagnostics"].as_array().unwrap().is_empty(), "seed {seed}: {}", extracted["diagnostics"]);
+        // The doors and open edges extracted are the generated ones, by their kind of link.
+        let links = |g: &Value| -> Vec<String> {
+            let mut v: Vec<String> = g["edges"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|e| e["kind"] == "door" || e["kind"] == "open")
+                .map(|e| {
+                    let (a, b) = (e["from"].as_str().unwrap(), e["to"].as_str().unwrap());
+                    format!("{}-{}-{}-{}", a.min(b), a.max(b), e["kind"], e["operation"])
+                })
+                .collect();
+            v.sort_unstable();
+            v
+        };
+        assert_eq!(links(&generated), links(&extracted), "seed {seed}");
+        let kinds: BTreeSet<&str> = generated["nodes"].as_array().unwrap().iter().map(|n| n["kind"].as_str().unwrap()).collect();
+        garages += usize::from(kinds.contains("garage"));
+        decks += usize::from(kinds.contains("deck"));
+        let fold = generated["edges"].as_array().unwrap().iter().filter(|e| e["operation"] == "folding").collect::<Vec<_>>();
+        for e in &fold {
+            assert!(e["family"].as_str().unwrap().contains("Fold") && e.get("opens_into").is_none() && e.get("hinge").is_none(), "{e}");
+        }
+        folding += usize::from(!fold.is_empty());
+        let mut built = extracted.clone();
+        let kind_of: BTreeMap<String, String> = generated["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| (n["id"].as_str().unwrap().to_string(), n["kind"].as_str().unwrap().to_string()))
+            .collect();
+        for n in built["nodes"].as_array_mut().unwrap() {
+            let k = kind_of[n["id"].as_str().unwrap()].clone();
+            n["kind"] = json!(k);
+        }
+        layouts += usize::from(unit1_like(&built));
+    }
+    assert!(
+        garages > 0 && decks > 0 && folding > 0 && layouts > 0,
+        "garages {garages}, decks {decks}, folding {folding}, layouts {layouts}"
+    );
+}
+
+/// A house of the smaller family with one closet's door made folding, as far as it builds.
+#[test]
+fn a_folding_closet_door_builds_and_the_extractor_tells_it_from_swing_and_sliding() {
+    for seed in 1..=40_u64 {
+        let mut g = sample(seed, 115.0);
+        let Some(link) = g.links.iter().position(|l| g.rooms[l.b].kind == Kind::Closet && g.rooms[l.a].kind == Kind::Bedroom) else {
+            continue;
+        };
+        g.links[link].means = Means::Folding;
+        let area = AreaRequest::m2(115.0);
+        for attempt in super::place::attempts(&g, seed, 115.0) {
+            let Ok(mut layout) = attempt else { continue };
+            if super::swing::orient(&g, &mut layout).is_err() {
+                continue;
+            }
+            // A try that the rules or the room bounds refuse is the next's; the first that builds says what it says.
+            let Ok(done) = super::emit::verify(&g, &layout, seed, area) else { continue };
+            let graph = &done.graph;
+            let door = graph["edges"].as_array().unwrap().iter().find(|e| e["operation"] == "folding").unwrap();
+            assert!(door["family"].as_str().unwrap().contains("Fold"), "{door}");
+            assert!(door.get("opens_into").is_none() && door.get("hinge").is_none(), "{door}");
+            assert!(done.script.text.contains("\"operation\":\"folding\""), "the folding family is defined in the script");
+            return;
+        }
+    }
+    panic!("no house with a bedroom's closet built with it folding");
 }

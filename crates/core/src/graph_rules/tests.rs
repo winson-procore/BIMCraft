@@ -92,7 +92,9 @@ fn the_house_pack_is_exploratory_from_one_trace_and_keeps_to_its_own_ids() {
     assert_eq!(pack.kinds.len(), 14);
     // HR-001..009 were authored from one plan; Unit 1's trace is a second source that added HR-010..013.
     assert_eq!(pack.reference_plans.len(), 1);
-    assert!(pack.sources.iter().any(|s| s.ends_with("houses/traced-house")) && pack.sources.iter().any(|s| s.ends_with("houses/unit1-house")));
+    assert!(
+        pack.sources.iter().any(|s| s.ends_with("houses/traced-house")) && pack.sources.iter().any(|s| s.ends_with("houses/unit1-house"))
+    );
     assert!(pack.rules.iter().all(|r| r.classification == "exploratory" && r.id.starts_with("HR-")));
     for (name, role) in [("bedroom", "private"), ("closet", "support"), ("hall", "circulation"), ("porch", "public")] {
         assert_eq!(pack.kinds[name].role, role);

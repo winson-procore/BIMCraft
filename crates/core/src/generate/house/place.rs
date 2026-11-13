@@ -18,7 +18,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::Rng;
-use super::{HouseGraph, Kind, Means};
+use super::{HouseGraph, Kind, LARGE_AREA, Means};
 
 pub const SHELLS: [&str; 7] = ["bar", "l_shape", "corner_notch", "narrow", "t_shape", "side_nub", "stepped"];
 
@@ -29,6 +29,13 @@ const CLOSET_STRIP: i64 = 1400;
 const ENSUITE_WIDTH: i64 = 2200;
 /// What a door needs on each side of its leaf in the wall it is in: the jambs, and the walls that cross it.
 const DOOR_CLEAR: i64 = 400;
+/// Above LARGE_AREA, how far the entry hall's cell reaches past the hall strip over it, west and east.
+const ENTRY_PAD_WEST: i64 = 500;
+const ENTRY_PAD_EAST: i64 = 600;
+/// About what a deck of two runs nets, mm2, which the shared band leaves out of its share of the area.
+const DECK_ESTIMATE: f64 = 11.0e6;
+/// How deep a deck lies outside its rooms, mm.
+const DECK_DEPTH: i64 = 2400;
 /// How far the gross area may be from the request.
 const AREA_TOLERANCE: f64 = 0.06;
 
@@ -151,6 +158,7 @@ fn least_width(kind: Kind) -> i64 {
     match kind {
         Kind::Living => 3000,
         Kind::Kitchen => 2600,
+        Kind::Garage => 3000,
         _ => 2400,
     }
 }
@@ -159,6 +167,7 @@ fn weight(kind: Kind) -> i64 {
     match kind {
         Kind::Living => 10,
         Kind::Kitchen => 6,
+        Kind::Garage => 3,
         _ => 4,
     }
 }
@@ -172,9 +181,9 @@ fn rect(x0: i64, y0: i64, x1: i64, y1: i64) -> Result<Rect, String> {
 }
 
 /// How a bedroom of column width `cw` is cut: its main depth for about `net_m2`, and the strip's depth when it has one.
-fn bed_depth(cw: i64, net_m2: f64, strip: i64) -> (i64, i64) {
+fn bed_depth(cw: i64, net_m2: f64, strip: i64, most: i64) -> (i64, i64) {
     let net_w = (cw - 200).max(1000) as f64;
-    let main = ceil100((net_m2 * 1.0e6 / net_w + 150.0) as i64).clamp(2600, 4400);
+    let main = ceil100((net_m2 * 1.0e6 / net_w + 150.0) as i64).clamp(2600, most);
     (main, strip)
 }
 
@@ -193,6 +202,7 @@ fn try_variant(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant) -> Result<La
 
 fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) -> Result<Layout, String> {
     let shell = SHELLS[v.shell];
+    let large = area_m2 > LARGE_AREA;
     let mut rng = Rng::new(seed, SALT + 1);
     let least_bed = if area_m2 < 100.0 {
         2800
@@ -205,7 +215,9 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
         .beds
         .iter()
         .map(|b| {
-            let w = least_bed + 100 * rng.below(9) as i64;
+            // The bedrooms of a large house are not wider than 4 m: the shorter column's bedrooms grow deeper to meet the
+            // taller one, and a wide one would pass a bedroom's most.
+            let w = least_bed + 100 * rng.below(if large { 5 } else { 9 }) as i64;
             // A closet beside an en-suite bath in the strip at the bedroom's end needs the room for both.
             if b.closet.is_some() && b.bath.is_some() { w.max(4100) } else { w }
         })
@@ -220,7 +232,9 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
         0 => return Err("a house with no bedroom".into()),
         1 => (vec![Cell::Bath, Cell::Bed(0)], vec![]),
         2 => (vec![Cell::Bath, Cell::Bed(0)], vec![Cell::Bed(1)]),
-        _ => (vec![Cell::Bed(0), Cell::Bed(1)], vec![Cell::Bath, Cell::Bed(2)]),
+        3 if large => (vec![Cell::Bath, Cell::Bed(0)], vec![Cell::Bed(1), Cell::Bed(2)]),
+        3 => (vec![Cell::Bed(0), Cell::Bed(1)], vec![Cell::Bath, Cell::Bed(2)]),
+        _ => (vec![Cell::Bath, Cell::Bed(0), Cell::Bed(1)], vec![Cell::Bed(2), Cell::Bed(3)]),
     };
     if v.swap {
         std::mem::swap(&mut west, &mut east);
@@ -228,7 +242,9 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
     let column_width =
         |col: &[Cell]| col.iter().filter_map(|c| if let Cell::Bed(k) = c { widths.get(*k).copied() } else { None }).max().unwrap_or(0);
     let (cw_w, cw_e) = (column_width(&west), column_width(&east));
-    let net = 7.5 + area_m2 * 0.018;
+    // Above LARGE_AREA the bedrooms grow with the house, as far as the private band's hall may be long.
+    let net = 7.5 + area_m2 * 0.018 + if large { 0.05 * (area_m2 - LARGE_AREA) } else { 0.0 };
+    let most_main = if large && nb >= 4 { 4000 } else { 4400 };
 
     // The depth of each cell of a column: a bedroom's main part and its strip, a bath's.
     let depths = |col: &[Cell], cw: i64| -> Vec<(i64, i64)> {
@@ -241,7 +257,7 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
                         (true, false) => CLOSET_STRIP,
                         _ => STRIP_DEPTH,
                     };
-                    bed_depth(cw, net + if *k == 0 { 1.0 } else { 0.0 }, strip)
+                    bed_depth(cw, net + if *k == 0 { 1.0 } else { 0.0 }, strip, most_main)
                 }
                 Cell::Bath => (ceil100((5.0e6 / (cw - 200).max(1000) as f64 + 150.0) as i64).clamp(1900, 3200), 0),
             })
@@ -286,13 +302,14 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
     if h < 2400 {
         return Err("the private band is too short for its hall".into());
     }
-    if (HALL_WIDTH - 100) * (h - if g.cap.is_some() { 100 } else { 200 }) > 11_500_000 {
+    let hall_most = if large { 15_900_000 } else { 11_500_000 };
+    if (HALL_WIDTH - 100) * (h - if g.cap.is_some() { 100 } else { 200 }) > hall_most {
         return Err("the hall would be longer than a hall may be".into());
     }
     let wr = cw_w + HALL_WIDTH + cw_e;
 
     // The shared band, from the area left over.
-    let porch_estimate = if g.porch.is_some() { 6.5e6 } else { 0.0 };
+    let porch_estimate = if g.porch.is_some() { 6.5e6 } else { 0.0 } + if g.deck.is_some() { DECK_ESTIMATE } else { 0.0 };
     let order: Vec<usize> = if v.reverse { g.public.iter().rev().copied().collect() } else { g.public.clone() };
     let least: i64 = order.iter().map(|&r| least_width(g.rooms[r].kind)).sum();
     let cap_area = if g.cap.is_some() { (HALL_WIDTH * cap_depth) as f64 } else { 0.0 };
@@ -324,6 +341,9 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
     let (before, after) = (&order[..at], &order[at + 1..]);
     let pre_min: i64 = before.iter().map(|&r| least_width(g.rooms[r].kind)).sum();
     let suf_min: i64 = after.iter().map(|&r| least_width(g.rooms[r].kind)).sum();
+    // Above LARGE_AREA the hall's room is the entry hall, a cell a little wider than the hall strip over it, and the rooms
+    // either side of it take what is left.
+    let (pad_w, pad_e) = if large { (ENTRY_PAD_WEST, ENTRY_PAD_EAST) } else { (0, 0) };
     let all_weight: i64 = order.iter().map(|&r| weight(g.rooms[r].kind)).sum();
     let pre_weight: i64 = before.iter().map(|&r| weight(g.rooms[r].kind)).sum();
 
@@ -346,8 +366,8 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
     }
     .ok_or_else(|| format!("{shell} needs the private band narrower or wider than {wr} mm against {wp} mm"))?;
     let (r_lo, r_hi, pref) = if v.right && shell != "bar" { (d - r_hi, d - r_lo, d - pref) } else { (r_lo, r_hi, pref) };
-    let lo = ceil100(r_lo.max(pre_min - cw_w).max(-cw_w));
-    let hi = floor100(r_hi.min(wp - suf_min - HALL_WIDTH - cw_w));
+    let lo = ceil100(r_lo.max(pre_min + pad_w - cw_w).max(-cw_w));
+    let hi = floor100(r_hi.min(wp - suf_min - pad_e - HALL_WIDTH - cw_w));
     if lo > hi {
         return Err(format!(
             "{shell} puts the hall where the shared rooms (they need {pre_min} and {suf_min} mm either side of it) have no place"
@@ -366,8 +386,16 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
             "the hall at {hx0} to {hx1} leaves the shared rooms no place: they need {pre_min} and {suf_min} mm either side"
         ));
     }
-    let a = if before.is_empty() { 0 } else { floor100((wp * pre_weight / all_weight).max(pre_min).min(a_hi)) };
-    let b = if after.is_empty() {
+    let a = if large {
+        hx0 - pad_w
+    } else if before.is_empty() {
+        0
+    } else {
+        floor100((wp * pre_weight / all_weight).max(pre_min).min(a_hi))
+    };
+    let b = if large {
+        hx1 + pad_e
+    } else if after.is_empty() {
         wp
     } else {
         let want = wp - wp * (all_weight - pre_weight - weight(g.rooms[g.hall_to].kind)) / all_weight;
@@ -394,6 +422,8 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
             let (lo, hi) = match g.rooms[r].kind {
                 Kind::Living => (10.5, 43.0),
                 Kind::Kitchen => (8.5, 33.5),
+                Kind::Garage => (16.5, 44.0),
+                Kind::Hall => (3.0, 15.5),
                 _ => (6.5, 24.0),
             };
             if !(lo..=hi).contains(&est) && too_big.is_none() {
@@ -450,7 +480,7 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
         }
     }
     // The porch, outside the shared room it is off.
-    let mut porch_rect = None;
+    let mut outside: Vec<Rect> = Vec::new();
     if let (Some(p), Some(off)) = (g.porch, Some(g.porch_off)) {
         let r = rects[off].ok_or("the porch's room has no place")?;
         let room_w = r.x1 - r.x0;
@@ -462,10 +492,41 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
         let pd = if v.deep { 2400 } else { 2000 };
         let pr = Rect { x0, y0: -pd, x1: x0 + pw, y1: 0 };
         rects[p] = Some(pr);
-        porch_rect = Some(pr);
+        outside.push(pr);
+    }
+    // The deck, outside the one or two shared rooms it is off: across the wall between two, so each has a run of it.
+    if let Some(d) = g.deck {
+        let dr = match g.deck_off[..] {
+            [one] => {
+                let r = rects[one].ok_or("the deck's room has no place")?;
+                let room_w = r.x1 - r.x0;
+                // A deck of at least 6 m2 net, which is as small as the pack has one.
+                let dw = ((room_w - 400).min(4800)) / 100 * 100;
+                if dw < 3000 {
+                    return Err("the room the deck is off is too narrow for it".into());
+                }
+                let x0 = floor100((r.x0 + r.x1) / 2 - dw / 2);
+                Rect { x0, y0: -DECK_DEPTH, x1: x0 + dw, y1: 0 }
+            }
+            [x, y] => {
+                let (ra, rb) = (rects[x].ok_or("the deck's room has no place")?, rects[y].ok_or("the deck's room has no place")?);
+                let (left, right) = if ra.x1 == rb.x0 { (ra, rb) } else { (rb, ra) };
+                if left.x1 != right.x0 {
+                    return Err("the rooms the deck is off are not side by side".into());
+                }
+                let run = ((left.x1 - left.x0).min(right.x1 - right.x0) - 400).min(3000) / 100 * 100;
+                if run < 900 + 2 * DOOR_CLEAR + 100 {
+                    return Err("the rooms the deck is off are too narrow for it".into());
+                }
+                Rect { x0: left.x1 - run, y0: -DECK_DEPTH, x1: left.x1 + run, y1: 0 }
+            }
+            _ => return Err("the deck is off one or two rooms".into()),
+        };
+        rects[d] = Some(dr);
+        outside.push(dr);
     }
     let rects: Vec<Rect> = rects.into_iter().collect::<Option<Vec<_>>>().ok_or("a room has no place")?;
-    assemble(g, seed, shell, rects, porch_rect)
+    assemble(g, seed, shell, rects, outside)
 }
 
 /// The shared run of two rectangles' edges: `(vertical, line, lo, hi)`, a wall along `x = line` when vertical.
@@ -505,12 +566,16 @@ fn door_for(means: Means, run: i64, pick: u64, porch: bool) -> Option<(&'static 
             let widths: &[i64] = if porch { &[2000, 1500, 1200] } else { &[1500, 1200] };
             widths.iter().copied().find(|w| fits(*w)).map(|w| ("Sliding Door", format!("{w} x 2100"), w, "sliding"))
         }
+        Means::Folding => {
+            [900, 800, 600].into_iter().find(|w| fits(*w)).map(|w| (super::emit::FOLDING_FAMILY, format!("{w} x 2100"), w, "folding"))
+        }
         Means::Open => None,
     }
 }
 
-fn assemble(g: &HouseGraph, seed: u64, shell: &'static str, rects: Vec<Rect>, porch: Option<Rect>) -> Result<Layout, String> {
-    let walled: Vec<(usize, Rect)> = rects.iter().enumerate().filter(|(i, _)| Some(*i) != g.porch).map(|(i, r)| (i, *r)).collect();
+fn assemble(g: &HouseGraph, seed: u64, shell: &'static str, rects: Vec<Rect>, outside: Vec<Rect>) -> Result<Layout, String> {
+    let out_rooms: Vec<usize> = g.outside().collect();
+    let walled: Vec<(usize, Rect)> = rects.iter().enumerate().filter(|(i, _)| !out_rooms.contains(i)).map(|(i, r)| (i, *r)).collect();
     let gross: i64 = rects.iter().map(Rect::area).sum();
     let open: BTreeSet<(usize, usize)> = g.links.iter().filter(|l| l.means == Means::Open).map(|l| (l.a.min(l.b), l.a.max(l.b))).collect();
 
@@ -567,7 +632,7 @@ fn assemble(g: &HouseGraph, seed: u64, shell: &'static str, rects: Vec<Rect>, po
             continue;
         }
         let pick = Rng::new(seed, SALT + 100 + k as u64).below(2);
-        let porch_door = Some(l.a) == g.porch || Some(l.b) == g.porch;
+        let porch_door = out_rooms.contains(&l.a) || out_rooms.contains(&l.b);
         let Some((family, ty, width, op)) = door_for(l.means, hi - lo, pick, porch_door) else {
             return Err(format!(
                 "the wall of {} mm between `{}` and `{}` is too short for its door",
@@ -616,7 +681,7 @@ fn assemble(g: &HouseGraph, seed: u64, shell: &'static str, rects: Vec<Rect>, po
         let (a, b) = corner(&piece);
         separators.push(vec![a, b]);
     }
-    if let Some(p) = porch {
+    for p in &outside {
         separators.push(vec![[p.x0, 0], [p.x0, p.y0], [p.x1, p.y0], [p.x1, 0]]);
     }
     let walls_out: Vec<WallAt> = merge(exterior)

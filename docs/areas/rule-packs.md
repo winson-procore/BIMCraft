@@ -81,17 +81,29 @@ packs a checker reads: `house.json`, `office.json`, `clinic.json`, `hospital.jso
 rule's PASS or FAIL and exits 0 when none fails; otherwise it exits 1 with `rule_violation` and the failed ids on stderr. The code owns
 each rule's predicate, the pack owns its parameters (`check`).
 
-- **The house pack** (`archetype: house`, `origin: authored_from_trace`, `HR-001` to `HR-009`, every rule exploratory). It was written from
+- **The house pack** (`archetype: house`, `origin: authored_from_trace`, `HR-001` to `HR-013`, every rule exploratory). It was written from
   one reference plan, `done/fixtures/houses/traced-house`, and says so (`reference_plans`, `reference_plan_count: 1`): its kinds (the
   eleven of the spec and `library`, which the trace has) hold a role, a count range and an area range, widened from that plan's numbers;
   `connections` lists which kind pairs may be joined by `swing`, `sliding` or `open` (`double-swing` is swing, `double-sliding` is
-  sliding, `folding` and `fixed` are allowed nowhere). The rules: HR-001 every node's kind is known · 002 edges name spaces ·
+  sliding, `fixed` is allowed nowhere, and `folding` only where the Unit 1 paragraph below says). The rules: HR-001 every node's kind is known · 002 edges name spaces ·
   003 counts · 004 areas · 005 connections · 006 a closet has one door and one neighbour · 007 a porch opens only into living, kitchen or
   dining · 008 every bedroom is reached from the entry without crossing a bedroom or a bath (no entry fails) · 009 the entry is a
   living, kitchen, dining or hall. The extractor gives a node no `kind`; whoever checks a traced graph adds it.
   After these the checker appends `SW-001` to `SW-004`, from `generate/data/house-swing.json` (not part of the pack, so HR ids stay
   the pack's): which room kind a swing door opens into and which jamb it hangs from, by the kind pair, with the exterior door judged
   by its own rule. Edges without `opens_into` and `hinge` are not judged. See [the graph generator](graph-generator.md).
+- **The house pack has two sources** since the Unit 1 trace (`done/fixtures/houses/unit1-house`): `sources` names both traces, while
+  `reference_plans` and `reference_plan_count: 1` still say what HR-001 to HR-009 were authored from (the slice-11 check wants the
+  pack to say it has one reference plan; the two are kept apart on purpose). Unit 1 added the kinds `garage` (service, 0 to 1, 15 to
+  45 m2) and `deck` (public, 0 to 1, 6 to 30 m2), widened `hall` to 16 m2, added the means `folding` (allowed between a bedroom or
+  hall and a closet or laundry only) and the connections garage-hall (swing), deck-living/dining/kitchen (sliding), hall-hall (open)
+  and bedroom-closet open, and four exploratory rules, which a house without the room they judge passes: **HR-010** a garage is reached
+  from the entry without crossing a bedroom or a bath and is next to a hall or the entry · **HR-011** a deck opens only into living,
+  kitchen or dining, by at least one sliding door · **HR-012** a folding door joins a closet or a laundry to a bedroom or a hall (an
+  exterior folding door, a garage's, joins no two spaces and is not judged) · **HR-013** every hall is reached from the entry without
+  crossing a bedroom or a bath. **HR-006** now counts ways in, a door or an open edge, since Unit 1's walk-in robe is open to its
+  bedroom (`check: {"kind": "closet", "links": 1}`). The SW- checks judge by both traces: where Unit 1 and the traced house disagree on
+  a half of a swing rule (the hinge of SW-001 and SW-002) that half is not enforced.
 - **The closet rule departs from the spec's wording.** The spec sends a closet's door "to a bedroom or a hall", but the traced entry closet
   opens off the kitchen. HR-006 counts only; which kinds a closet joins is the connection table's, which allows closet and kitchen by a
   sliding door because the trace does (and the rule's `exceptions` say so).

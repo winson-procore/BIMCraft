@@ -162,6 +162,29 @@ has any).
   with `ids` and `offset` before the closing `tag {}`; the door ids come from a first run of the script in the scratch project.
 - **The area** is the centre-line gross, porch included, within 6% of the request (the shared band is sized once, then again for
   what the first try came to); `unsatisfiable_area` below 45 m2.
+- **Above 160 m2 (`LARGE_AREA`) the house is of the Unit 1 family** (`done/fixtures/houses/unit1-house`, the second approved trace).
+  `sample::large` draws every choice from salts of its own (`SALT + 4` to `+ 6`), and `place.rs` gates each change on `large`, so
+  houses at 160 m2 and below are byte for byte what they were (scripts, topology graphs, building IR; the program file's hall range
+  and the report's notes changed with the pack). The family: living, kitchen and dining always; an **entry hall** (`entry`, kind
+  `hall`) that is the way in, the public rooms open to it along the shared band (its link to a neighbour is open, sometimes a swing
+  door), and the **hall of the bedroom wing** opening into it (`hall`-`hall` is open, the only means the pack allows); a **garage**
+  beside the entry hall by a swing door (always from 240 m2), a **deck** off living and dining (two sliding doors, or living alone)
+  in about two houses in three, and **folding** doors (the `Folding Door` family, defined in the script by `emit::folding_family`:
+  `operation: folding`, no `opens_into` or `hinge`) on bedroom closets and on the closet or laundry at the hall's end. Every bedroom
+  has a closet, at most two have an en-suite bath, and from 215 m2 there are four bedrooms (the pack allows six). The entry hall's
+  cell is pinned to the hall strip over it (500 mm of it to the west, 600 to the east) and the rooms either side take what is left;
+  the garage is whatever width that leaves the shared band's end (16.5 to 44 m2 net). The deck is the porch mechanism with one or
+  two rooms: a rectangle south of the band across the living|dining wall, closed off by room separation lines, each room with a run
+  of at least 1800 mm for its door. A house of this family has no porch. The bedrooms grow with the area (net m2 plus 0.05 for each
+  m2 over 160) and are at most 4 m wide; the private band's hall may be up to about 16 m2 net (the pack's hall maximum).
+  What is *not* made: a garage vehicle door (the one exterior door stays the entry's), and shells other than the seven above.
+- **Swing rules across two traces.** `swing::rules()` (the traced house's, `data/house-swing.json`) is what `swing::orient` sets doors
+  by, so generated houses are unchanged. The checker judges by `swing::judged_rules()` instead: the same four rules with each half
+  (`opens_into`, `hinge`) left to `either` where Unit 1 (`data/house-swing-unit1.json`, read off its script by the same definition)
+  says something else. In practice SW-001 and SW-002 do not enforce the hinge (Unit 1 hangs its bedroom doors from both jambs, the
+  bath's from the other jamb), and still enforce which side the door opens into; SW-003 (an exterior door opens in, hinged at the
+  end) and SW-004 are as traced. The pairs only Unit 1 has (ensuite, garage) are recorded in its file as SW-005 and SW-006 and not
+  judged yet. Generated houses hang their doors by the traced rules and so pass the judged ones.
 
 ## Not yet
 

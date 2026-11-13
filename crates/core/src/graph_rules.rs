@@ -614,7 +614,8 @@ impl<'a> World<'a> {
         if rule.check.get("next_to").is_some() {
             let next_to = Self::words(rule, "next_to")?;
             for id in self.of_kind(target) {
-                let near = access.get(id).into_iter().flatten().any(|x| *x == entry || self.kind_of(x).is_some_and(|k| next_to.contains(&k)));
+                let near =
+                    access.get(id).into_iter().flatten().any(|x| *x == entry || self.kind_of(x).is_some_and(|k| next_to.contains(&k)));
                 if !near {
                     problems.push(format!("`{id}` is not next to a {} or the entry", next_to.join(" or ")));
                 }

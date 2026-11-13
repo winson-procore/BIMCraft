@@ -79,11 +79,9 @@ pub fn judged_rules() -> Result<&'static [SwingRule], String> {
         Ok(rules()?
             .iter()
             .map(|r| match unit1.iter().find(|u| u.pair == r.pair) {
-                Some(u) => SwingRule {
-                    opens_into: relax(r, &r.opens_into, &u.opens_into),
-                    hinge: relax(r, &r.hinge, &u.hinge),
-                    ..r.clone()
-                },
+                Some(u) => {
+                    SwingRule { opens_into: relax(r, &r.opens_into, &u.opens_into), hinge: relax(r, &r.hinge, &u.hinge), ..r.clone() }
+                }
                 None => r.clone(),
             })
             .collect())

@@ -28,6 +28,8 @@ pub enum Kind {
     Dining,
     Laundry,
     Porch,
+    Garage,
+    Deck,
 }
 
 impl Kind {
@@ -42,6 +44,8 @@ impl Kind {
             Kind::Dining => "dining",
             Kind::Laundry => "laundry",
             Kind::Porch => "porch",
+            Kind::Garage => "garage",
+            Kind::Deck => "deck",
         }
     }
 
@@ -52,8 +56,8 @@ impl Kind {
             Kind::Closet => "support",
             Kind::Hall => "circulation",
             Kind::Living | Kind::Kitchen | Kind::Dining => "shared",
-            Kind::Laundry => "service",
-            Kind::Porch => "public",
+            Kind::Laundry | Kind::Garage => "service",
+            Kind::Porch | Kind::Deck => "public",
         }
     }
 
@@ -68,6 +72,8 @@ impl Kind {
             Kind::Dining => "Dining",
             Kind::Laundry => "Laundry",
             Kind::Porch => "Porch",
+            Kind::Garage => "Garage",
+            Kind::Deck => "Deck",
         }
     }
 }
@@ -78,6 +84,7 @@ pub enum Means {
     Swing,
     Sliding,
     Open,
+    Folding,
 }
 
 #[derive(Clone, Debug)]
@@ -121,7 +128,21 @@ pub struct HouseGraph {
     pub porch: Option<usize>,
     /// The public room the porch is off.
     pub porch_off: usize,
+    /// A deck off one or two shared rooms (`deck_off`). Houses above 160 m2 only, as a garage, a room of kind `Garage`, is.
+    pub deck: Option<usize>,
+    pub deck_off: Vec<usize>,
 }
+
+impl HouseGraph {
+    /// The rooms outside the walls, which the shell leaves unwalled and closes off with separation lines.
+    pub fn outside(&self) -> impl Iterator<Item = usize> {
+        self.porch.into_iter().chain(self.deck)
+    }
+}
+
+/// Above this area, m2 gross, a house is made on the model of the Unit 1 trace: an entry hall, a garage, a deck and a fourth
+/// bedroom in the biggest. At and below it the first trace's family is untouched.
+pub const LARGE_AREA: f64 = 160.0;
 
 /// The least area, m2 gross, a house is met at.
 const LEAST_AREA: f64 = 45.0;
