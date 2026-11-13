@@ -50,7 +50,7 @@ pub struct Kind {
     pub area_m2: (f64, Option<f64>),
 }
 
-/// Two kinds that may be joined, and by which means: `swing`, `sliding` or `open`.
+/// Two kinds that may be joined, and by which means: `swing`, `sliding`, `folding` or `open`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Connection {
@@ -91,12 +91,19 @@ pub struct Pack {
     pub note: String,
     #[serde(default)]
     pub reference_plans: Vec<String>,
+    /// Every approved trace the pack draws on, which `reference_plans` (what its first rules were authored from) may not name.
+    #[serde(default)]
+    pub sources: Vec<String>,
     #[serde(default)]
     pub reference_plan_count: usize,
     #[serde(default)]
     pub kinds: BTreeMap<String, Kind>,
     #[serde(default)]
     pub connections: Vec<Connection>,
+    /// Pairs that may be joined by a folding door, kept apart from `connections` (the first trace's `swing`, `sliding` and
+    /// `open`): folding came with the Unit 1 trace.
+    #[serde(default)]
+    pub folding_connections: Vec<Connection>,
     pub rules: Vec<Rule>,
 }
 
@@ -357,6 +364,9 @@ impl<'a> World<'a> {
             "HR-007" => self.joins_only(rule)?,
             "HR-008" => self.reach(rule)?,
             "HR-009" => self.entry_space(rule)?,
+            "HR-010" | "HR-013" => self.reach(rule)?,
+            "HR-011" => self.joins_only(rule)?,
+            "HR-012" => self.folding(rule)?,
             other => return Err(format!("the pack's rule {other} has no evaluator")),
         };
         Ok(verdict(rule, problems, ok))
@@ -365,8 +375,8 @@ impl<'a> World<'a> {
     /// One check for each swing rule: the swing doors it covers must open into the kind and hang from the jamb it names. A
     /// door with neither field is not judged (graphs from before the fields, and hand-broken copies, stay as they were).
     fn swing(&self) -> Result<Vec<Check>, String> {
-        let rules = swing::rules()?;
-        let exterior = swing::exterior_rule();
+        let rules = swing::judged_rules()?;
+        let exterior = swing::judged_exterior();
         let mut problems: Vec<Vec<String>> = vec![Vec::new(); rules.len()];
         let mut judged = vec![0_usize; rules.len()];
         let index = |id: &str| rules.iter().position(|r| r.id == id);
@@ -389,7 +399,7 @@ impl<'a> World<'a> {
                 if !self.kind.contains_key(e.from.as_str()) || !self.kind.contains_key(e.to.as_str()) {
                     continue;
                 }
-                let Some(rule) = swing::rule_for(a, b) else { continue };
+                let Some(rule) = swing::judged_rule_for(a, b) else { continue };
                 let bad = a != b
                     && rule.opens_into != "either"
                     && match self.kind_of(oi) {
@@ -484,7 +494,7 @@ impl<'a> World<'a> {
 
     fn connections(&self) -> (Vec<String>, String) {
         let mut allowed: BTreeMap<(&str, &str), BTreeSet<&str>> = BTreeMap::new();
-        for c in &self.pack.connections {
+        for c in self.pack.connections.iter().chain(&self.pack.folding_connections) {
             let (a, b) = (c.pair[0].as_str(), c.pair[1].as_str());
             allowed.entry((a.min(b), a.max(b))).or_default().extend(c.means.iter().map(String::as_str));
         }
@@ -495,6 +505,7 @@ impl<'a> World<'a> {
                 ("open", _) => "open",
                 (_, Some("swing" | "double-swing")) => "swing",
                 (_, Some("sliding" | "double-sliding")) => "sliding",
+                (_, Some("folding")) => "folding",
                 (_, Some(other)) => {
                     problems.push(format!("`{}` to `{}`: a `{other}` door is no means the pack allows", e.from, e.to));
                     continue;
@@ -531,28 +542,28 @@ impl<'a> World<'a> {
 
     fn one_door(&self, rule: &Rule) -> Result<(Vec<String>, String), String> {
         let kind = Self::word(rule, "kind")?;
-        let n = Self::param(rule, "doors")?.as_u64().ok_or_else(|| format!("the pack's rule {}: `doors` is a number", rule.id))? as usize;
+        let n = Self::param(rule, "links")?.as_u64().ok_or_else(|| format!("the pack's rule {}: `links` is a number", rule.id))? as usize;
         let access = self.access();
-        let mut doors: BTreeMap<&str, usize> = BTreeMap::new();
-        for e in self.inside.iter().filter(|e| e.kind == "door") {
-            *doors.entry(e.from.as_str()).or_default() += 1;
-            *doors.entry(e.to.as_str()).or_default() += 1;
+        let mut links: BTreeMap<&str, usize> = BTreeMap::new();
+        for e in &self.inside {
+            *links.entry(e.from.as_str()).or_default() += 1;
+            *links.entry(e.to.as_str()).or_default() += 1;
         }
         let problems = self
             .of_kind(kind)
             .filter_map(|id| {
-                let (d, a) = (doors.get(id).copied().unwrap_or(0), access.get(id).map_or(0, BTreeSet::len));
-                (d != n || a != n).then(|| format!("`{id}` has {d} doors and {a} neighbours, not {n}"))
+                let (d, a) = (links.get(id).copied().unwrap_or(0), access.get(id).map_or(0, BTreeSet::len));
+                (d != n || a != n).then(|| format!("`{id}` has {d} doors or open edges and {a} neighbours, not {n}"))
             })
             .collect();
-        Ok((problems, format!("every `{kind}` has {n} door and {n} neighbour")))
+        Ok((problems, format!("every `{kind}` has {n} way in and {n} neighbour")))
     }
 
     fn joins_only(&self, rule: &Rule) -> Result<(Vec<String>, String), String> {
         let kind = Self::word(rule, "kind")?;
         let only = Self::words(rule, "joins_only")?;
         let access = self.access();
-        let problems = self
+        let mut problems: Vec<String> = self
             .of_kind(kind)
             .flat_map(|id| match access.get(id) {
                 None => vec![format!("`{id}` opens into nothing")],
@@ -563,7 +574,25 @@ impl<'a> World<'a> {
                     .collect(),
             })
             .collect();
-        Ok((problems, format!("every `{kind}` opens only into {}", only.join(", "))))
+        let mut said = format!("every `{kind}` opens only into {}", only.join(", "));
+        // Optionally, one of its ways in is a door of this operation.
+        if let Some(op) = rule.check.get("at_least_one").and_then(Value::as_str) {
+            for id in self.of_kind(kind) {
+                let has = self.inside.iter().any(|e| {
+                    (e.from == id || e.to == id)
+                        && e.kind == "door"
+                        && match op {
+                            "sliding" => matches!(e.operation.as_deref(), Some("sliding" | "double-sliding")),
+                            other => e.operation.as_deref() == Some(other),
+                        }
+                });
+                if !has {
+                    problems.push(format!("`{id}` has no {op} door"));
+                }
+            }
+            said.push_str(&format!(", by at least one {op} door"));
+        }
+        Ok((problems, said))
     }
 
     fn reach(&self, rule: &Rule) -> Result<(Vec<String>, String), String> {
@@ -583,9 +612,47 @@ impl<'a> World<'a> {
                 }
             }
         }
-        let problems =
+        let mut problems: Vec<String> =
             self.of_kind(target).filter(|id| !seen.contains(id)).map(|id| format!("`{id}` is not reached from `{entry}`")).collect();
+        // Optionally, it is also next to a space of one of these kinds, or to the entry.
+        if rule.check.get("next_to").is_some() {
+            let next_to = Self::words(rule, "next_to")?;
+            for id in self.of_kind(target) {
+                let near =
+                    access.get(id).into_iter().flatten().any(|x| *x == entry || self.kind_of(x).is_some_and(|k| next_to.contains(&k)));
+                if !near {
+                    problems.push(format!("`{id}` is not next to a {} or the entry", next_to.join(" or ")));
+                }
+            }
+            return Ok((problems, format!("{ok}, and is next to a {} or the entry", next_to.join(" or "))));
+        }
         Ok((problems, ok))
+    }
+
+    fn folding(&self, rule: &Rule) -> Result<(Vec<String>, String), String> {
+        let (joins, to) = (Self::words(rule, "joins")?, Self::words(rule, "to")?);
+        let in_set = |id: &str, set: &[&str]| self.kind_of(id).is_some_and(|k| set.contains(&k));
+        let problems = self
+            .inside
+            .iter()
+            .filter(|e| e.kind == "door" && e.operation.as_deref() == Some("folding"))
+            .filter(|e| {
+                let ok = |a: &str, b: &str| in_set(a, &joins) && in_set(b, &to);
+                !(ok(&e.from, &e.to) || ok(&e.to, &e.from))
+            })
+            .map(|e| {
+                format!(
+                    "the folding door of `{}` ({}) to `{}` ({}) is not from a {} to a {}",
+                    e.from,
+                    self.kind_of(&e.from).unwrap_or("no kind"),
+                    e.to,
+                    self.kind_of(&e.to).unwrap_or("no kind"),
+                    joins.join(" or "),
+                    to.join(" or ")
+                )
+            })
+            .collect();
+        Ok((problems, format!("every folding door joins a {} to a {}", joins.join(" or "), to.join(" or "))))
     }
 
     fn entry_space(&self, rule: &Rule) -> Result<(Vec<String>, String), String> {

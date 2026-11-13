@@ -7,12 +7,16 @@
     "done/fixtures/houses/traced-house (generated/copied-residential-plan-20261111T225257)"
   ],
   "reference_plan_count": 1,
-  "note": "Authored from one reference plan, the traced house. Every range and every allowed connection is what that one plan holds, widened to what a house plausibly holds, so each rule is exploratory until more plans are traced.",
+  "sources": [
+    "done/fixtures/houses/traced-house",
+    "done/fixtures/houses/unit1-house"
+  ],
+  "note": "Two approved traces are sources: done/fixtures/houses/traced-house and done/fixtures/houses/unit1-house. HR-001 to HR-009 were authored from one reference plan, the traced house; Unit 1 widened their ranges and connections (garage, deck, folding doors, open links between halls) and introduced HR-010 to HR-013. Every range and every allowed connection is what the traces hold, widened to what a house plausibly holds, so each rule is exploratory until more plans are traced.",
   "kinds": {
     "bedroom": {"role": "private", "count": [1, 6], "area_m2": [7.0, 25.0]},
     "closet": {"role": "support", "count": [0, 8], "area_m2": [0.5, 6.0]},
     "bath": {"role": "private", "count": [1, 4], "area_m2": [2.5, 10.0]},
-    "hall": {"role": "circulation", "count": [0, 2], "area_m2": [1.5, 12.0]},
+    "hall": {"role": "circulation", "count": [0, 2], "area_m2": [1.5, 16.0]},
     "living": {"role": "shared", "count": [1, 2], "area_m2": [10.0, 45.0]},
     "kitchen": {"role": "shared", "count": [1, 2], "area_m2": [8.0, 35.0]},
     "dining": {"role": "shared", "count": [0, 1], "area_m2": [6.0, 25.0]},
@@ -20,7 +24,9 @@
     "laundry": {"role": "service", "count": [0, 1], "area_m2": [0.5, 8.0]},
     "utility": {"role": "service", "count": [0, 1], "area_m2": [0.5, 8.0]},
     "stair": {"role": "circulation", "count": [0, 2], "area_m2": [2.0, 12.0]},
-    "porch": {"role": "public", "count": [0, 2], "area_m2": [3.0, 25.0]}
+    "porch": {"role": "public", "count": [0, 2], "area_m2": [3.0, 25.0]},
+    "garage": {"role": "service", "count": [0, 1], "area_m2": [15.0, 45.0]},
+    "deck": {"role": "public", "count": [0, 1], "area_m2": [6.0, 30.0]}
   },
   "connections": [
     {"pair": ["bedroom", "hall"], "means": ["swing"]},
@@ -30,7 +36,7 @@
     {"pair": ["hall", "kitchen"], "means": ["swing", "open"]},
     {"pair": ["hall", "dining"], "means": ["swing", "open"]},
     {"pair": ["hall", "stair"], "means": ["open"]},
-    {"pair": ["bedroom", "closet"], "means": ["sliding", "swing"]},
+    {"pair": ["bedroom", "closet"], "means": ["sliding", "swing", "open"]},
     {"pair": ["closet", "hall"], "means": ["sliding", "swing"]},
     {"pair": ["closet", "kitchen"], "means": ["sliding"]},
     {"pair": ["laundry", "hall"], "means": ["sliding", "swing"]},
@@ -45,7 +51,17 @@
     {"pair": ["library", "living"], "means": ["open"]},
     {"pair": ["library", "kitchen"], "means": ["open"]},
     {"pair": ["library", "hall"], "means": ["swing", "open"]},
-    {"pair": ["living", "stair"], "means": ["open"]}
+    {"pair": ["living", "stair"], "means": ["open"]},
+    {"pair": ["garage", "hall"], "means": ["swing"]},
+    {"pair": ["deck", "living"], "means": ["sliding"]},
+    {"pair": ["deck", "dining"], "means": ["sliding"]},
+    {"pair": ["deck", "kitchen"], "means": ["sliding"]},
+    {"pair": ["hall", "hall"], "means": ["open"]}
+  ],
+  "folding_connections": [
+    {"pair": ["bedroom", "closet"], "means": ["folding"]},
+    {"pair": ["closet", "hall"], "means": ["folding"]},
+    {"pair": ["hall", "laundry"], "means": ["folding"]}
   ],
   "rules": [
     {
@@ -90,17 +106,17 @@
       "checkability": "deterministic", "confidence": 0.5,
       "rationale": "Which kinds open into each other, and by swing door, sliding door or open edge, as the traced plan does.",
       "exceptions": ["the closet off the kitchen, by a sliding door, is in the traced plan"],
-      "provenance": "traced-house: 13 links; double-swing is swing, double-sliding is sliding, folding and fixed are not listed",
+      "provenance": "traced-house: 13 links; unit1-house: folding doors of robes, linen and laundry, open links between halls and to a walk-in robe, a garage off the entry hall and a deck by sliding doors. Double-swing is swing, double-sliding is sliding; fixed is not listed",
       "check": {}
     },
     {
       "id": "HR-006", "name": "closet-one-door", "classification": "exploratory",
-      "category": "access", "subject": "a closet", "predicate": "has", "object": "one door and one neighbour",
+      "category": "access", "subject": "a closet", "predicate": "has", "object": "one way in (a door or an open edge) and one neighbour",
       "checkability": "deterministic", "confidence": 0.8,
-      "rationale": "A closet is entered from one room by one door. Which rooms it may open off is the connection table's.",
+      "rationale": "A closet is entered from one room by one door, or is open to it as a walk-in robe is. Which rooms it may open off is the connection table's.",
       "exceptions": ["the traced entry closet opens off the kitchen, not off a bedroom or a hall: the rule counts and the connection table allows it"],
-      "provenance": "traced-house",
-      "check": {"kind": "closet", "doors": 1}
+      "provenance": "traced-house; unit1-house: the walk-in robe is joined to its bedroom by an open edge",
+      "check": {"kind": "closet", "links": 1}
     },
     {
       "id": "HR-007", "name": "porch-off-living", "classification": "exploratory",
@@ -128,6 +144,42 @@
       "exceptions": ["the traced house is entered through its kitchen"],
       "provenance": "traced-house: the entry is the kitchen",
       "check": {"kinds": ["living", "kitchen", "dining", "hall"]}
+    },
+    {
+      "id": "HR-010", "name": "garage-off-circulation", "classification": "exploratory",
+      "category": "access", "subject": "every garage", "predicate": "is reached from the entry without passing through a bedroom or a bath", "object": "and is next to a hall or the entry space",
+      "checkability": "deterministic", "confidence": 0.5,
+      "rationale": "A garage is a way in from the car; it opens off the entry or a hall, never through a private room.",
+      "exceptions": ["a house with no garage has nothing to judge"],
+      "provenance": "unit1-house: the garage opens off the entry hall",
+      "check": {"target": "garage", "through_blocked": ["bedroom", "bath"], "next_to": ["hall"]}
+    },
+    {
+      "id": "HR-011", "name": "deck-off-shared", "classification": "exploratory",
+      "category": "access", "subject": "a deck", "predicate": "opens only into", "object": "a living, kitchen or dining space, by at least one sliding door",
+      "checkability": "deterministic", "confidence": 0.5,
+      "rationale": "A deck is the shared rooms' outdoor extension, entered through sliding doors, not a private or service room's.",
+      "exceptions": ["a house with no deck has nothing to judge"],
+      "provenance": "unit1-house: the deck is reached by sliding doors from the living and the dining",
+      "check": {"kind": "deck", "joins_only": ["living", "kitchen", "dining"], "at_least_one": "sliding"}
+    },
+    {
+      "id": "HR-012", "name": "folding-door", "classification": "exploratory",
+      "category": "adjacency", "subject": "a folding door between two spaces", "predicate": "joins a closet or a laundry", "object": "to a bedroom or a hall",
+      "checkability": "deterministic", "confidence": 0.5,
+      "rationale": "Folding doors close robes, linen and laundry cupboards; they are not rooms' doors.",
+      "exceptions": ["a folding door to the outside (a garage door) joins no two spaces and is not judged"],
+      "provenance": "unit1-house: robes, linen and laundry",
+      "check": {"means": "folding", "joins": ["closet", "laundry"], "to": ["bedroom", "hall"]}
+    },
+    {
+      "id": "HR-013", "name": "hall-reach", "classification": "exploratory",
+      "category": "access", "subject": "every hall", "predicate": "is reached from the entry", "object": "without passing through a bedroom or a bath",
+      "checkability": "deterministic", "confidence": 0.5,
+      "rationale": "A house with an entry hall and a bedroom hall opens one into the other, so the bedrooms are reached through circulation.",
+      "exceptions": ["a graph with no entry reaches nothing and fails"],
+      "provenance": "unit1-house: the entry hall opens into the hall of the bedroom wing",
+      "check": {"target": "hall", "through_blocked": ["bedroom", "bath"]}
     }
   ]
 }

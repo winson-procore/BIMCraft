@@ -1,0 +1,47 @@
+{
+  "schema_version": "1",
+  "source": "done/fixtures/houses/unit1-house",
+  "note": "The same reading as house-swing.json, off the Unit 1 house's script: which way a swing door opens and which jamb it hangs from, by the kinds it joins. `either` where Unit 1's own doors disagree. For the exterior object any `opens_into` but `exterior` and `either` means the door opens in. The checker judges by the two files together (`swing::judged_rules`): a half the traces disagree on is not enforced. A pair only Unit 1 has (SW-005, SW-006) is recorded here and not judged yet.",
+  "swing": [
+    {
+      "id": "SW-001",
+      "pair": ["bath", "hall"],
+      "opens_into": "bath",
+      "hinge": "end",
+      "status": "exploratory",
+      "provenance": "unit1-house: the bath door opens into the bath, hinged at the end of its wall"
+    },
+    {
+      "id": "SW-002",
+      "pair": ["bedroom", "hall"],
+      "opens_into": "bedroom",
+      "hinge": "either",
+      "status": "exploratory",
+      "provenance": "unit1-house: the bedroom doors open into the bedroom; Bed 1 and Bed 3 hang from the end, Bed 2 from the start"
+    },
+    {
+      "id": "SW-003",
+      "pair": ["exterior", "kitchen"],
+      "opens_into": "inward",
+      "hinge": "end",
+      "status": "exploratory",
+      "provenance": "unit1-house: the entry door and the garage's back door open in, hinged at the end of their walls"
+    },
+    {
+      "id": "SW-005",
+      "pair": ["bath", "bedroom"],
+      "opens_into": "bath",
+      "hinge": "end",
+      "status": "exploratory",
+      "provenance": "unit1-house only: the ensuite door opens into the ensuite, hinged at the end of its wall"
+    },
+    {
+      "id": "SW-006",
+      "pair": ["garage", "hall"],
+      "opens_into": "garage",
+      "hinge": "end",
+      "status": "exploratory",
+      "provenance": "unit1-house only: the garage door opens into the garage, hinged at the end of its wall"
+    }
+  ]
+}

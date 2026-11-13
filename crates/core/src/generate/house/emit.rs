@@ -70,6 +70,45 @@ fn longest(boundary: &[[i64; 2]], vertical: bool) -> Option<([i64; 2], [i64; 2],
         })
 }
 
+/// The family of a folding door: a built-in has none, so it is defined here, with its jambs and its two leaves folded in plan.
+pub const FOLDING_FAMILY: &str = "Folding Door";
+
+fn folding_family(types: serde_json::Map<String, Value>) -> Value {
+    let jamb = |lo: &str, hi: &str| {
+        json!({
+            "plane": "xy",
+            "profile": [[lo, "-Wall Thickness / 2"], [hi, "-Wall Thickness / 2"], [hi, "Wall Thickness / 2"], [lo, "Wall Thickness / 2"]],
+            "from": "0", "to": "Height", "material": "Frame Material",
+        })
+    };
+    let leaf = "(Width - 2 * Frame Width) / 4";
+    json!({
+        "name": FOLDING_FAMILY,
+        "category": "door",
+        "operation": "folding",
+        "parameters": [
+            {"name": "Width", "kind": "length", "value": 900},
+            {"name": "Height", "kind": "length", "value": 2100},
+            {"name": "Frame Width", "kind": "length", "value": 20},
+            {"name": "Frame Material", "kind": "material", "value": "Timber"},
+        ],
+        "types": types,
+        "forms": [jamb("-Width / 2", "-Width / 2 + Frame Width"), jamb("Width / 2 - Frame Width", "Width / 2")],
+        "symbols": [
+            {"line": [
+                ["-Width / 2 + Frame Width", "Wall Thickness / 2"],
+                [format!("-Width / 2 + Frame Width + {leaf} * 0.84"), format!("Wall Thickness / 2 + {leaf} * 0.54")],
+                [format!("-Width / 2 + Frame Width + {leaf} * 1.68"), "Wall Thickness / 2"],
+            ]},
+            {"line": [
+                ["Width / 2 - Frame Width", "Wall Thickness / 2"],
+                [format!("Width / 2 - Frame Width - {leaf} * 0.84"), format!("Wall Thickness / 2 + {leaf} * 0.54")],
+                [format!("Width / 2 - Frame Width - {leaf} * 1.68"), "Wall Thickness / 2"],
+            ]},
+        ],
+    })
+}
+
 /// `tags`: door tags that are moved off the default, as the door's element id and the offset (see `swing::tag_moves`).
 pub fn compile(g: &HouseGraph, l: &Layout, seed: u64, area: AreaRequest, tags: &[(i64, [f64; 2])]) -> Script {
     let title = format!("House {} m2, seed {seed}", area.m2.round());
@@ -106,7 +145,11 @@ pub fn compile(g: &HouseGraph, l: &Layout, seed: u64, area: AreaRequest, tags: &
     }
     for (family, set) in &types {
         let set: serde_json::Map<String, Value> = set.iter().map(|(ty, w)| (ty.clone(), json!({"Width": w, "Height": 2100}))).collect();
-        lines.push(line("family", json!({"name": family, "types": set})));
+        if *family == FOLDING_FAMILY {
+            lines.push(line("family", folding_family(set)));
+        } else {
+            lines.push(line("family", json!({"name": family, "types": set})));
+        }
     }
     for (i, d) in l.doors.iter().enumerate() {
         let mut params = json!({"at": d.at, "family": d.family, "type": d.ty, "mark": format!("D{}", i + 1)});
@@ -405,7 +448,7 @@ fn program_json(g: &HouseGraph, seed: u64, area: AreaRequest) -> Value {
         "edges": g.links.iter().map(|l| json!({
             "from": id_of(g, l.a), "to": id_of(g, l.b),
             "kind": match l.means { Means::Open => "open", _ => "door" },
-            "means": match l.means { Means::Open => "open", Means::Swing => "swing", Means::Sliding => "sliding" },
+            "means": match l.means { Means::Open => "open", Means::Swing => "swing", Means::Sliding => "sliding", Means::Folding => "folding" },
         })).collect::<Vec<_>>(),
         "entry": id_of(g, g.entry),
     })
@@ -467,7 +510,7 @@ pub fn finish(g: &HouseGraph, l: &Layout, done: Done, seed: u64, area: AreaReque
         "capability_notes": [
             "The graph is sampled from the house rule pack (`data/graph-rules/house.json`) by the seed, then placed in a shell; the topology extractor, run on the built project, gives the same graph, which the house rules judge.",
             "Areas in the building file are gross, to wall centre lines; the topology graph's `area_m2` and `measured_rooms` are the net areas BIMCraft computed for each room.",
-            "One storey; shells bar, l_shape, corner_notch, narrow, t_shape, side_nub and stepped, turned and mirrored by the seed. Doors are of the Single Door and Sliding Door families; a swing door's side and jamb follow the traced house's swing rules (`data/house-swing.json`, exploratory) and are recorded as `opens_into` and `hinge`. No windows, stairs, roof or furniture.",
+            "One storey; shells bar, l_shape, corner_notch, narrow, t_shape, side_nub and stepped, turned and mirrored by the seed. Doors are of the Single Door, Sliding Door and (in houses above 160 m2, for robes, linen and laundry) Folding Door families; a swing door's side and jamb follow the traced house's swing rules (`data/house-swing.json`, exploratory) and are recorded as `opens_into` and `hinge`. No windows, stairs, roof or furniture.",
         ],
         "scores": {"room_count": g.rooms.len(), "net_to_gross": if gross > 0.0 { (net / gross * 1000.0).round() / 1000.0 } else { 0.0 }},
         "measured_rooms": measured,
