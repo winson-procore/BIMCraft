@@ -420,7 +420,9 @@ fn fnv(text: &str) -> u64 {
 }
 
 /// The rules and the report were hard-coded and now read their parameters from the packs: what they say, for every brief,
-/// must not move by a byte. The values were taken before the move.
+/// must not move by a byte. The graphs' value was taken before the move. The reports' and the checks' were taken again when
+/// each script gained its `drawing_property` line: with that one command taken off the two counts a report gives, they hash
+/// to the values from before the move (16790089926828375207 and 7520680808967075935).
 #[test]
 fn the_reports_and_rule_checks_are_the_same_bytes_as_when_the_rules_were_hard_coded() {
     let (mut reports, mut graphs, mut checks) = (String::new(), String::new(), String::new());
@@ -434,7 +436,7 @@ fn the_reports_and_rule_checks_are_the_same_bytes_as_when_the_rules_were_hard_co
     }
     assert_eq!(
         (fnv(&reports), fnv(&graphs), fnv(&checks)),
-        (16790089926828375207, 6893511448378566540, 7520680808967075935),
+        (6709644309612454185, 6893511448378566540, 16299332948967771333),
         "the golden values"
     );
 }
@@ -665,4 +667,35 @@ fn a_brief_the_seeds_layout_cannot_fit_is_tried_with_the_other_layouts() {
     let built = build(a, 1, 180.0).unwrap_or_else(|e| panic!("{e}"));
     assert!(built.gross_m2 > 150.0);
     assert!(build(a, 1, 40.0).is_err(), "a brief no layout fits is still refused");
+}
+
+#[test]
+fn every_archetypes_script_says_its_building_type_as_a_drawing_property() {
+    for (archetype, seed, area, kind) in [
+        (Archetype::Office, 1, 900.0, "office"),
+        (Archetype::Clinic, 3, 650.0, "clinic"),
+        (Archetype::Hospital, 10, 1800.0, "hospital"),
+        (Archetype::House, 3, 115.0, "residential"),
+        (Archetype::StudioOffice, 3, 260.0, "office"),
+    ] {
+        let b = built(archetype, seed, area);
+        let script = text(&b, "script.bimcraft.txt");
+        let line = format!("drawing_property {}", json!({"name": "building_type", "value": kind}));
+        assert_eq!(
+            script.lines().filter(|l| l.starts_with("drawing_property ")).collect::<Vec<_>>(),
+            [line.as_str()],
+            "{}",
+            archetype.name()
+        );
+        let mut s = Session::new();
+        s.script(&script).unwrap_or_else(|e| panic!("{}: {e}", archetype.name()));
+        assert_eq!(s.model.drawing_properties.get("building_type").map(String::as_str), Some(kind));
+        let level = s.model.levels()[0].0;
+        let dxf = crate::render::dxf(&crate::render::plan(&s.model, level, 1600, 1000), &s.model);
+        assert!(
+            dxf.contains(&format!("$CUSTOMPROPERTYTAG\n  1\nbuilding_type\n  9\n$CUSTOMPROPERTY\n  1\n{kind}\n")),
+            "{}",
+            archetype.name()
+        );
+    }
 }

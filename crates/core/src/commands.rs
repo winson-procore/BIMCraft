@@ -1593,6 +1593,17 @@ pub static ALL: &[Command] = &[
     )
     .menu("Manage > Room Area Computation"),
     edit(
+        "drawing_property",
+        "Drawing Properties",
+        &[],
+        "{name?, value?, delete?} a custom drawing property of the project, such as `building_type`: a name and a value, each \
+         text on one line. `name` with `value` sets it, `name` with `delete: true` takes it away; with neither, nothing \
+         changes. A plan saved as .dxf carries them in its header ($CUSTOMPROPERTYTAG and $CUSTOMPROPERTY) and one saved as \
+         .dwg in its drawing properties (AutoCAD's DWGPROPS > Custom; not in a 2000 DWG, which has none). At most 64. \
+         Returns `properties`, every one by name",
+        drawing_property,
+    ),
+    edit(
         "georeference",
         "Project Location",
         &[],
@@ -3258,7 +3269,7 @@ fn write_drawing(
         "svg" => render::svg(d).into_bytes(),
         "png" => render::png(d)?,
         "dxf" | "dwg" => {
-            notes.extend(version_notes(&format, version));
+            notes.extend(version_notes(&format, version, m));
             let pictures = render::dxf::pictures(d);
             if pictures > 0 {
                 notes.push(format!("{pictures} picture(s) in the plan aren't written to {}", format.to_ascii_uppercase()));
@@ -3283,14 +3294,21 @@ fn write_drawing(
 }
 
 /// What a DWG of `version` can't keep of the DXF it's made from, for the reply's `notes`: none for a DXF or a 2018 DWG.
-fn version_notes(format: &str, version: DwgVersion) -> Vec<String> {
-    match (format, version) {
-        ("dwg", DwgVersion::Dwg2000) => vec![
-            "AutoCAD 2000 (AC1015) has no true colour: each colour is written as its nearest colour index, so close shades share one"
-                .to_string(),
-        ],
-        _ => Vec::new(),
+fn version_notes(format: &str, version: DwgVersion, m: &Model) -> Vec<String> {
+    if (format, version) != ("dwg", DwgVersion::Dwg2000) {
+        return Vec::new();
     }
+    let mut notes = vec![
+        "AutoCAD 2000 (AC1015) has no true colour: each colour is written as its nearest colour index, so close shades share one"
+            .to_string(),
+    ];
+    if !m.drawing_properties.is_empty() {
+        notes.push(format!(
+            "AutoCAD 2000 (AC1015) has no drawing properties: the project's {} aren't written; save as 2018 to keep them",
+            m.drawing_properties.len()
+        ));
+    }
+    notes
 }
 
 /// The section or elevation `view` names, by name or id: its id, name and category.
@@ -3344,7 +3362,7 @@ fn write_sheet(
     let size = ((e.paper.0 * sheet::DENSITY).round() as u32, (e.paper.1 * sheet::DENSITY).round() as u32);
     let format = ext(path);
     let mut notes = e.page.notes.clone();
-    notes.extend(version_notes(&format, version));
+    notes.extend(version_notes(&format, version, m));
     if e.pictures > 0 {
         notes.push(format!(
             "{} picture(s) on the sheet (a section's view of what lies beyond its cut, a 3D view) aren't written to {}",
@@ -12613,6 +12631,45 @@ fn room_area(s: &mut Session, p: &Value) -> R {
         }
     }
     Ok(json!({"at": s.model.room_area.name()}))
+}
+
+fn drawing_property(s: &mut Session, p: &Value) -> R {
+    let c = "drawing_property";
+    only(c, p, &["name", "value", "delete"])?;
+    let delete = match p.get("delete") {
+        v if absent(v) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(v) => return Err(bad(c, format!("`delete` is true or false, got {v}"))),
+        None => false,
+    };
+    let text = |key: &str| match p.get(key) {
+        v if absent(v) => Ok(None),
+        Some(Value::String(t)) => Ok(Some(t.clone())),
+        Some(v) => Err(bad(c, format!("`{key}` must be text, got {v}"))),
+        None => Ok(None),
+    };
+    let (name, value) = (text("name")?, text("value")?);
+    match (name, value, delete) {
+        (None, None, false) => {}
+        (None, _, _) => return Err(bad(c, "`name` is missing: which property?")),
+        (Some(_), Some(_), true) => {
+            return Err(bad(c, "`delete` takes a property away; leave `value` out, or leave `delete` out to set it"));
+        }
+        (Some(name), None, true) => {
+            if !s.model.drawing_properties.contains_key(&name) {
+                let shown: String = name.chars().take(40).collect();
+                return Err(bad(c, format!("the project has no drawing property `{shown}`")));
+            }
+            s.model_mut().drawing_properties.remove(&name);
+        }
+        (Some(_), None, false) => return Err(bad(c, "`value` is missing: give the property's value, or `delete: true`")),
+        (Some(name), Some(value), false) => {
+            if s.model.drawing_properties.get(&name) != Some(&value) {
+                s.model_mut().drawing_properties.insert(name, value);
+            }
+        }
+    }
+    Ok(json!({"properties": s.model.drawing_properties}))
 }
 
 fn georeference(s: &mut Session, p: &Value) -> R {

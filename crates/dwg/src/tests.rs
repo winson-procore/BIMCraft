@@ -513,3 +513,27 @@ fn real_drawings_where_a_folder_of_them_is_named() {
         eprintln!("{} ({} kB) in {:?}: {said}", path.display(), std::fs::metadata(&path).map_or(0, |m| m.len() >> 10), start.elapsed());
     }
 }
+
+#[test]
+fn a_plans_drawing_properties_are_the_dwgs_custom_properties() {
+    let mut s = bimcraft_core::engine::Session::new();
+    s.script(bimcraft_core::sample::SAMPLE).unwrap();
+    s.script("drawing_property {\"name\": \"building_type\", \"value\": \"residential\"}\ndrawing_property {\"name\": \"client\", \"value\": \"Ada & Co.\"}").unwrap();
+    let m = &s.model;
+    let dxf = bimcraft_core::render::dxf(&bimcraft_core::render::plan(m, m.levels()[0].0, 1600, 1000), m);
+    let dwg = to_dwg(&dxf, Limits::DEFAULT, DwgVersion::Dwg2018).unwrap();
+    // Read back by the library itself: the drawing properties (DWGPROPS > Custom) hold both, in their order.
+    let doc = acadrust::DwgReader::from_stream_with_options(Cursor::new(dwg), acadrust::DwgReadOptions::failsafe()).read().unwrap();
+    let want = vec![("building_type".to_string(), "residential".to_string()), ("client".to_string(), "Ada & Co.".to_string())];
+    assert_eq!(doc.summary_info.custom_properties, want);
+    // A 2000 DWG has no place for them: it is written without, which the session's reply says.
+    let old = to_dwg(&dxf, Limits::DEFAULT, DwgVersion::Dwg2000).unwrap();
+    let doc = acadrust::DwgReader::from_stream_with_options(Cursor::new(old), acadrust::DwgReadOptions::failsafe()).read().unwrap();
+    assert_eq!(doc.summary_info.custom_properties, Vec::new());
+    s.dwg_writer = Some(writer());
+    let path = std::env::temp_dir().join(format!("bimcraft-dwg-props-{}.dwg", std::process::id()));
+    let reply = s.script(&format!("save {{\"path\": {:?}, \"version\": \"2000\"}}", path.to_string_lossy())).unwrap().remove(0);
+    assert!(reply["notes"].to_string().contains("drawing properties"), "{reply}");
+    let reply = s.script(&format!("save {{\"path\": {:?}}}", path.to_string_lossy())).unwrap().remove(0);
+    assert!(reply.get("notes").is_none(), "{reply}");
+}

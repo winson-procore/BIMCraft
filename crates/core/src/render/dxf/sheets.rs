@@ -164,5 +164,5 @@ pub(super) fn write(mut e: Export, m: &Model) -> String {
     }
     doc.ents.push_str(&viewports);
     doc.paper_ext = crate::dxf::union(doc.paper_ext.into_iter().chain(ext));
-    doc.finish()
+    doc.finish(m)
 }

@@ -114,6 +114,7 @@ pub fn compile(g: &HouseGraph, l: &Layout, seed: u64, area: AreaRequest, tags: &
     let title = format!("House {} m2, seed {seed}", area.m2.round());
     let mut lines = vec![
         line("new", json!({"name": title})),
+        line("drawing_property", json!({"name": "building_type", "value": Archetype::House.building_type()})),
         line("room_area", json!({"at": "finish"})),
         line("level", json!({"elevation": 3600, "name": "Roof"})),
     ];

@@ -123,3 +123,73 @@ fn without_a_dwg_writer_save_says_to_save_as_dxf() {
     let e = s.execute("render", &json!({"path": path})).unwrap_err();
     assert!(e.contains("save as .dxf"), "{e}");
 }
+
+#[test]
+fn a_drawing_property_is_kept_by_the_project_and_written_in_the_dxfs_header() {
+    let mut s = sample();
+    assert_eq!(run(&mut s, "drawing_property", json!({})), json!({"properties": {}}));
+    let r = run(&mut s, "drawing_property", json!({"name": "building_type", "value": "residential"}));
+    assert_eq!(r, json!({"properties": {"building_type": "residential"}}));
+    run(&mut s, "drawing_property", json!({"name": "client", "value": "Ada & Co."}));
+    let path = dir("props").join("plan.dxf");
+    run(&mut s, "save", json!({"path": path}));
+    let text = std::fs::read_to_string(&path).unwrap();
+    let header = &text[..text.find("ENDSEC").unwrap()];
+    assert!(header.contains("  9\n$CUSTOMPROPERTYTAG\n  1\nbuilding_type\n  9\n$CUSTOMPROPERTY\n  1\nresidential\n"), "{header}");
+    assert!(header.contains("  9\n$CUSTOMPROPERTYTAG\n  1\nclient\n  9\n$CUSTOMPROPERTY\n  1\nAda & Co.\n"), "{header}");
+    // The core still reads its own DXF.
+    assert!(walls(&dxf::read(text.as_bytes()).unwrap()) > 0);
+
+    // The project's file keeps them, and a value is changed or taken away by name.
+    let file = dir("props").join("house.bimcraft");
+    run(&mut s, "save", json!({"path": file}));
+    let mut again = Session::new();
+    run(&mut again, "open", json!({"path": file}));
+    assert_eq!(
+        run(&mut again, "drawing_property", json!({})),
+        json!({"properties": {"building_type": "residential", "client": "Ada & Co."}})
+    );
+    run(&mut again, "drawing_property", json!({"name": "building_type", "value": "mixed-use"}));
+    let r = run(&mut again, "drawing_property", json!({"name": "client", "delete": true}));
+    assert_eq!(r, json!({"properties": {"building_type": "mixed-use"}}));
+    run(&mut again, "undo", json!({}));
+    assert_eq!(again.model.drawing_properties.len(), 2);
+
+    // A project with none writes none.
+    let plain = dir("props").join("plain.dxf");
+    run(&mut sample(), "save", json!({"path": plain}));
+    assert!(!std::fs::read_to_string(&plain).unwrap().contains("$CUSTOMPROPERTY"));
+}
+
+#[test]
+fn a_drawing_property_a_drawing_cannot_hold_is_refused_and_changes_nothing() {
+    let mut s = sample();
+    run(&mut s, "drawing_property", json!({"name": "building_type", "value": "office"}));
+    let long = "x".repeat(crate::model::MAX_TEXT + 1);
+    for (p, says) in [
+        (json!({"name": "", "value": "x"}), "`name`"),
+        (json!({"name": "  ", "value": "x"}), "`name`"),
+        (json!({"name": " padded", "value": "x"}), "`name`"),
+        (json!({"name": "two\nlines", "value": "x"}), "`name`"),
+        (json!({"name": long, "value": "x"}), "`name`"),
+        (json!({"name": "a", "value": "two\nlines"}), "`value`"),
+        (json!({"name": "a", "value": ""}), "`value`"),
+        (json!({"name": "a", "value": 3}), "`value`"),
+        (json!({"name": "a", "value": long}), "`value`"),
+        (json!({"name": "a"}), "`value`"),
+        (json!({"value": "x"}), "`name`"),
+        (json!({"name": "absent", "delete": true}), "absent"),
+        (json!({"name": "building_type", "value": "x", "delete": true}), "`delete`"),
+        (json!({"name": "Building_Type", "value": "x"}), "building_type"),
+        (json!({"name": "a", "valu": "x"}), "valu"),
+    ] {
+        let e = s.execute("drawing_property", &p).unwrap_err();
+        assert!(e.contains(says), "{p}: {e}");
+    }
+    assert_eq!(run(&mut s, "drawing_property", json!({})), json!({"properties": {"building_type": "office"}}));
+    for i in 1..crate::model::MAX_DRAWING_PROPERTIES {
+        run(&mut s, "drawing_property", json!({"name": format!("p{i}"), "value": "v"}));
+    }
+    let e = s.execute("drawing_property", &json!({"name": "one too many", "value": "v"})).unwrap_err();
+    assert!(e.contains(&crate::model::MAX_DRAWING_PROPERTIES.to_string()), "{e}");
+}

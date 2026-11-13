@@ -144,6 +144,14 @@ DWG the session's `DwgWriter` turns that text into the file.
   two known 2018 ones, and every entity kind (TEXT, MTEXT, DIMENSION, INSERT, ATTRIB, HATCH, LWPOLYLINE, paper-space
   VIEWPORTs, the title block's block) comes back at the 2018 count. If a later acadrust loses a kind, `version_notes` in
   `commands.rs` is where its name goes. `render` stays at 2018: `version` belongs to `save`.
+- **Drawing properties.** `drawing_property` keeps names and values on the project (`Model::drawing_properties`, checked in
+  `Model::check`: one line each, 1 to 256 characters, at most 64, no two names alike but for case). `render::dxf` writes each
+  in the header as `$CUSTOMPROPERTYTAG` (the name) then `$CUSTOMPROPERTY` (the value), in order of name, for a plan, a section
+  and a sheet alike. acadrust's DXF reader takes those pairs as the document's summary information and its DWG writer writes
+  them in `AcDb:SummaryInfo`, which AutoCAD shows under DWGPROPS > Custom; BIMCraft does nothing of its own in the bridge. That
+  section is from AutoCAD 2004 on, so a 2000 DWG is written without them and the reply's `notes` say so. Every script the
+  generator writes sets `building_type` this way, as `Archetype::building_type` says: `office` (office and studio-office),
+  `clinic`, `hospital`, `residential` (house). `import_cad` does not read them back.
 
 Tests: `render::dxf::tests` reads the sample house's plan back with `dxf::read_text` (layers, entities per layer, mm, extents,
 dashes, weights); `render::dxf::dims_tests` reads the DIMENSION, DIMSTYLE and block records as a plain group-code walk; `render::dxf::blocks_tests` does the same for the blocks, inserts and attributes; `plan_export_tests.rs` drives `save` with a fake writer; `render::dxf::sheets_tests` saves the sample's sheets and reads their paper space, viewports, model space and title block back; `crates/dwg`'s tests round-trip the plan, and a saved sheet, through
