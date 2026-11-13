@@ -294,9 +294,8 @@ fn program_json(c: &Case, seed: u64, area: AreaRequest) -> Value {
 
 fn building_json(c: &Case, l: &Layout, seed: u64, topology_hash: &str, edges: usize) -> Value {
     let bounds = |r: &Rect| json!({"x0": r.x0, "y0": r.y0, "x1": r.x1, "y1": r.y1});
-    let door_edge = |d: &DoorAt| {
-        d.link.map_or(Value::Null, |k| json!(format!("door:{}:{}", id_of(c, c.links[k].a), id_of(c, c.links[k].b))))
-    };
+    let door_edge =
+        |d: &DoorAt| d.link.map_or(Value::Null, |k| json!(format!("door:{}:{}", id_of(c, c.links[k].a), id_of(c, c.links[k].b))));
     json!({
         "schema_version": SCHEMA_VERSION,
         "graph_kind": BUILDING_KIND,

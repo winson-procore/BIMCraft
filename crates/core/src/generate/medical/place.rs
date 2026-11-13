@@ -487,11 +487,8 @@ pub fn assemble(c: &Case, seed: u64) -> Result<Layout, String> {
         }
     }
     // Walls where the pair is not open to each other, merged along a line only across stretches that touch.
-    let mut stretches: Vec<Piece> = interior
-        .iter()
-        .filter(|(_, a, b)| !linked(*a, *b).is_some_and(|l| l.means == Means::Open))
-        .map(|(p, _, _)| *p)
-        .collect();
+    let mut stretches: Vec<Piece> =
+        interior.iter().filter(|(_, a, b)| !linked(*a, *b).is_some_and(|l| l.means == Means::Open)).map(|(p, _, _)| *p).collect();
     stretches.sort();
     let mut merged: Vec<Piece> = Vec::new();
     for p in stretches {

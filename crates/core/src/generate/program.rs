@@ -156,7 +156,9 @@ pub fn program(archetype: Archetype, area_m2: f64, seed: u64) -> Program {
         Archetype::Office => spec("entry_lobby", "Lobby", Role::Public, 16, 40, true),
         Archetype::Clinic => spec("entry_lobby", "Entry Lobby", Role::Public, 16, 30, true),
         Archetype::Hospital => spec("entry_lobby", "Hospital Entry Lobby", Role::Public, 24, 70, true),
-        Archetype::House | Archetype::StudioOffice | Archetype::OfficePattern | Archetype::MedicalDay => spec("entry_lobby", "Entry", Role::Public, 4, 6, true),
+        Archetype::House | Archetype::StudioOffice | Archetype::OfficePattern | Archetype::MedicalDay => {
+            spec("entry_lobby", "Entry", Role::Public, 4, 6, true)
+        }
     };
     let corridor = spec("corridor", "Corridor", Role::Circulation, 0, 0, false);
     match archetype {

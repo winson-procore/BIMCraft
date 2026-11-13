@@ -104,10 +104,8 @@ fn an_office_open_to_a_corridor_fails_md_007() {
     let mut g = a112();
     let office = kind_of(&g, "office")[0].clone();
     let corridors = kind_of(&g, "corridor");
-    let e = edges(&mut g)
-        .iter_mut()
-        .find(|e| touches(e, &office) && e["kind"] == "door" && corridors.iter().any(|c| touches(e, c)))
-        .unwrap();
+    let e =
+        edges(&mut g).iter_mut().find(|e| touches(e, &office) && e["kind"] == "door" && corridors.iter().any(|c| touches(e, c))).unwrap();
     e["kind"] = json!("open");
     assert!(failing(&g).contains(&"MD-007".to_string()));
 }

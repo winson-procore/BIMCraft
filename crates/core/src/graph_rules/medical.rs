@@ -90,10 +90,8 @@ impl<'a> Plan<'a> {
             "MD-003" => {
                 ok = "every isolation room has its anteroom and washroom";
                 for i in self.of(&["isolation"]) {
-                    let ante = self
-                        .near(i)
-                        .iter()
-                        .any(|(x, door)| *door && self.kind.get(x) == Some(&"anteroom") && self.door_to_corridor(x));
+                    let ante =
+                        self.near(i).iter().any(|(x, door)| *door && self.kind.get(x) == Some(&"anteroom") && self.door_to_corridor(x));
                     let wash =
                         self.near(i).iter().any(|(x, door)| *door && self.kind.get(x) == Some(&"washroom") && self.near(x).len() == 1);
                     if !(self.door_to_corridor(i) && ante && wash) {

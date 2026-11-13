@@ -11,8 +11,8 @@ mod legacy_tests;
 mod lift;
 #[cfg(test)]
 mod lift_tests;
-mod openings;
 pub(crate) mod medical;
+mod openings;
 pub(crate) mod pattern;
 pub(crate) mod program;
 pub(crate) mod report;

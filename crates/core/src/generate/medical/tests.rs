@@ -123,7 +123,9 @@ fn the_saved_model_extracts_back_to_the_generated_graph() {
         assert!(ext["entry"].is_null(), "seed {seed}");
         assert_eq!(ext["exterior_doors"].as_array().unwrap().len(), 0);
         assert_eq!(ext["diagnostics"].as_array().unwrap().len(), 0, "seed {seed}: {}", ext["diagnostics"]);
-        let ids = |v: &Value| -> BTreeSet<String> { v["nodes"].as_array().unwrap().iter().map(|n| n["id"].as_str().unwrap().to_string()).collect() };
+        let ids = |v: &Value| -> BTreeSet<String> {
+            v["nodes"].as_array().unwrap().iter().map(|n| n["id"].as_str().unwrap().to_string()).collect()
+        };
         assert_eq!(ids(&g), ids(&ext), "seed {seed}");
         let links = |v: &Value| -> Vec<(String, String, String)> {
             let mut out: Vec<_> = v["edges"]
@@ -230,5 +232,5 @@ fn the_same_seed_gives_the_same_bytes() {
 fn a_tiny_area_is_refused_with_a_typed_error() {
     let e = medical(1, 40.0).err().unwrap();
     assert_eq!(e.code, "unsatisfiable_area");
-    assert!(LEAST_AREA > 40.0);
+    assert!(medical(1, LEAST_AREA - 1.0).is_err());
 }

@@ -224,6 +224,30 @@ is refused as `unsatisfiable_area`, and a brief no draw fits as `unplaceable_gra
 a port of the done check's geometry rules (the open office at the far end and deep, nothing past it, the lobby at the other end)
 and run it on the plan read back from each of the 20 seeds of the done check.
 
+## Medical day: graph first
+
+`generate --archetype medical-day` follows `specs/medical-day-pattern-generator.md`: a department, not a building, so no exterior door
+and `entry` is null. Bands across the plan: a window band of treatment bays (cubicles, stations, one or two washrooms, sometimes a
+shell space) open to the patient corridor; the core (9 to 12 m deep) of blocks, each with a cross corridor on its west side (open to
+the patient corridor, one door to the staff corridor); an office band over the blocks on some seeds; the staff corridor. An end
+corridor closes the far end (a pair of doors from the patient corridor, open to the staff corridor); the start has nothing, a head
+row (a waiting room open to the patient corridor) or a second end corridor. A treatment block (medication, clean and soiled utility
+against the cross corridor, treatment rooms with a door to the patient corridor, staff work open to it, sometimes a second open to
+the first) and an isolation block (a pair of doors to the patient corridor, an anteroom to the cross corridor, a washroom of its
+own, storage, an alcove and a staff washroom) are always there; a service block (staff work, shells and plant rooms with doors to
+the end corridor) is last when a seed has one. `generate/medical/place.rs` draws the dimensions (`draw`: bands, blocks, widths
+solved from the area so the gross area is within 5%), makes every room a rectangle tiling the plan and derives walls and room
+separation lines from the shared edges (`assemble`: an open link is a separator over its run and never a wall; a door sits at the
+middle of its run with 400 mm clear each side, and a try whose run is too short is dropped); up to 24 draws are tried. The seed
+turns and mirrors the plan, never shears it. Ids are `1-09NN` (corridors `C1-09NN`), as A112's. The script is layout only: `new`,
+one `drawing_property` (`building_type` = `hospital`), `room_area`, `level`, walls, floor, door families, doors, separators, rooms.
+`medical/emit.rs` builds each try in a scratch project and compares the extractor's graph with the generated one (the same doors,
+the same open links, no exterior door, null entry, no diagnostics); both pass the medical-day pack
+([rule packs](rule-packs.md#the-medical-day-pack)). The manifest adds `service`, `office_band`, `blocks` (an order string such as
+`TIS`), `head_row`, `second_end_corridor`, `quarter_turns`, `mirror` and `shear` (0). The least area is 400 m2; below it the brief is
+refused as `unsatisfiable_area`, and a brief no draw fits as `unplaceable_graph`. Windows, grids, dimensions, symbols and a title
+block are later slices.
+
 ## Not yet
 
 No stairs, shafts, structure or MEP; one storey; no datacenters or airports;
