@@ -80,14 +80,20 @@ struct Rules {
 fn roles(v: &Value, id: &str, key: &str) -> Result<Vec<Role>, String> {
     let list = v.get(key).and_then(Value::as_array).ok_or_else(|| format!("rule {id} has no `{key}` list"))?;
     list.iter()
-        .map(|r| r.as_str().and_then(Role::parse).ok_or_else(|| format!("rule {id}: `{key}` holds a role that is not one of {}", Role::names())))
+        .map(|r| {
+            r.as_str().and_then(Role::parse).ok_or_else(|| format!("rule {id}: `{key}` holds a role that is not one of {}", Role::names()))
+        })
         .collect()
 }
 
 fn rules_of(archetype: Archetype) -> Result<Rules, String> {
     let pack = Pack::embedded(archetype.name())?;
     let params = |id: &str| -> Result<&Value, String> {
-        pack.rules.iter().find(|r| r.id == id).map(|r| &r.check).ok_or_else(|| format!("the {} rule pack has no rule {id}", archetype.name()))
+        pack.rules
+            .iter()
+            .find(|r| r.id == id)
+            .map(|r| &r.check)
+            .ok_or_else(|| format!("the {} rule pack has no rule {id}", archetype.name()))
     };
     let pair = |id: &str| -> Result<(Role, Role), String> {
         match roles(params(id)?, id, "between")?[..] {

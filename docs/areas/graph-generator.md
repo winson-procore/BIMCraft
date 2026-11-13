@@ -68,8 +68,10 @@ The files are made only after every check has passed, and a file that can't be w
 Before anything is written the script is run on a scratch session: every command must run, every room must be bounded (a `room`
 reply with a `warning` fails `RT-002`) and `Model::check` must pass. `GR-001..006` and `PR-001` are the rules on the graph (reach, no
 private to private, no clinical to clinical, no private to clinical, connected from the entry, the minimum program); `SC-` the
-script; `RT-` what BIMCraft did with it; `GM-` the geometry. The rules are hard-coded (`slice1-hard-rules/1`) over roles and edge
-kinds, which is the shape a versioned rule pack will load.
+script; `RT-` what BIMCraft did with it; `GM-` the geometry. The code owns each predicate (`slice1-hard-rules/1`) over roles and edge
+kinds; since Slice 11 the parameters (the role pairs, the minimum program's groups) are read from the packs in
+`crates/core/data/graph-rules/` ([graph rule packs](rule-packs.md#graph-rule-packs-and-the-checker)), and `report.json` is byte for
+byte what it was (its `capability_notes` still say "hard-coded"; they are part of the pinned bytes).
 
 ## Looking at the result
 

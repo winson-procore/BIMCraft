@@ -274,7 +274,8 @@ fn topology(g: &Graph) -> Result<Topology, String> {
     for n in &g.nodes {
         let kind = n.kind.clone().ok_or_else(|| format!("node `{}` has no `kind`", n.id))?;
         let role = n.role.as_deref().ok_or_else(|| format!("node `{}` has no `role`", n.id))?;
-        let role = Role::parse(role).ok_or_else(|| format!("node `{}` has the role `{role}`, which is not one of {}", n.id, Role::names()))?;
+        let role =
+            Role::parse(role).ok_or_else(|| format!("node `{}` has the role `{role}`, which is not one of {}", n.id, Role::names()))?;
         nodes.push(TopologyNode { id: n.id.clone(), kind, role, area_m2: n.area_m2.unwrap_or(0.0) });
     }
     let edges = g
@@ -306,8 +307,16 @@ struct World<'a> {
 impl<'a> World<'a> {
     fn of(pack: &'a Pack, graph: &'a Graph) -> World<'a> {
         let kind: BTreeMap<&str, Option<&str>> = graph.nodes.iter().map(|n| (n.id.as_str(), n.kind.as_deref())).collect();
-        let inside =
-            graph.edges.iter().filter(|e| matches!(e.kind.as_str(), "door" | "open") && !e.exterior && kind.contains_key(e.from.as_str()) && kind.contains_key(e.to.as_str())).collect();
+        let inside = graph
+            .edges
+            .iter()
+            .filter(|e| {
+                matches!(e.kind.as_str(), "door" | "open")
+                    && !e.exterior
+                    && kind.contains_key(e.from.as_str())
+                    && kind.contains_key(e.to.as_str())
+            })
+            .collect();
         World { pack, graph, kind, inside }
     }
 
@@ -502,7 +511,8 @@ impl<'a> World<'a> {
                 }
             }
         }
-        let problems = self.of_kind(target).filter(|id| !seen.contains(id)).map(|id| format!("`{id}` is not reached from `{entry}`")).collect();
+        let problems =
+            self.of_kind(target).filter(|id| !seen.contains(id)).map(|id| format!("`{id}` is not reached from `{entry}`")).collect();
         Ok((problems, ok))
     }
 

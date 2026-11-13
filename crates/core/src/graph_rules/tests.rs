@@ -235,9 +235,8 @@ fn run(archetype: &str, g: &Value) -> Vec<Check> {
 
 fn unlinked(g: &Value, role: &str) -> (String, String) {
     let ids: Vec<&str> = g["nodes"].as_array().unwrap().iter().filter(|n| n["role"] == role).map(|n| n["id"].as_str().unwrap()).collect();
-    let linked = |a: &str, b: &str| {
-        g["edges"].as_array().unwrap().iter().any(|e| [&e["from"], &e["to"]].iter().all(|x| *x == a || *x == b))
-    };
+    let linked =
+        |a: &str, b: &str| g["edges"].as_array().unwrap().iter().any(|e| [&e["from"], &e["to"]].iter().all(|x| *x == a || *x == b));
     for a in &ids {
         for b in &ids {
             if a < b && !linked(a, b) {
@@ -255,7 +254,10 @@ fn generated_graphs_pass_their_packs_and_each_break_fails_only_its_rule() {
         let checks = run(name, &g);
         assert!(failing(&checks).is_empty(), "{name}: {checks:?}");
         let four = |c: &[Check]| -> Vec<String> {
-            c.iter().filter(|c| ["PR-001", "GR-003", "GR-004", "GR-005"].contains(&c.id.as_str()) && c.status == Status::Fail).map(|c| c.id.clone()).collect()
+            c.iter()
+                .filter(|c| ["PR-001", "GR-003", "GR-004", "GR-005"].contains(&c.id.as_str()) && c.status == Status::Fail)
+                .map(|c| c.id.clone())
+                .collect()
         };
         let join = |g: &mut Value, p: (String, String)| {
             edges(g).push(json!({"kind": "door", "from": p.0, "to": p.1}));
@@ -282,7 +284,8 @@ fn generated_graphs_pass_their_packs_and_each_break_fails_only_its_rule() {
             b["nodes"].as_array().unwrap().iter().filter(|n| n["kind"] == kind).map(|n| n["id"].as_str().unwrap().to_string()).collect();
         assert!(!gone.is_empty());
         b["nodes"].as_array_mut().unwrap().retain(|n| !gone.contains(&n["id"].as_str().unwrap().to_string()));
-        edges(&mut b).retain(|e| !gone.contains(&e["from"].as_str().unwrap().to_string()) && !gone.contains(&e["to"].as_str().unwrap().to_string()));
+        edges(&mut b)
+            .retain(|e| !gone.contains(&e["from"].as_str().unwrap().to_string()) && !gone.contains(&e["to"].as_str().unwrap().to_string()));
         assert_eq!(four(&run(name, &b)), ["PR-001"], "{name}");
     }
 }

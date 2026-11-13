@@ -52,6 +52,7 @@ pub mod geom;
 #[cfg(test)]
 mod georef_tests;
 pub mod gltf;
+pub mod graph_rules;
 pub mod graphics;
 pub mod groups;
 pub mod hydrant;
@@ -109,7 +110,6 @@ mod room_freeze_tests;
 #[cfg(test)]
 mod room_height_tests;
 pub mod rooms;
-pub mod graph_rules;
 pub mod rulepack;
 pub mod runs;
 pub mod sample;

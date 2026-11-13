@@ -72,3 +72,33 @@ jq '.rules[] | {id, classification, confidence}' /tmp/rule-packs/packs/airport.j
 
 Run it twice into two directories and `diff -r` them: there is no difference. To change a rule, edit the curated seed and its
 `source_proposals`; to change what models said, a new run of them is a new proposals file, which this slice does not make.
+
+## Graph rule packs and the checker
+
+Apart from the seed library above (a frontier model's proposals, which nothing reads), `crates/core/data/graph-rules/` holds the
+packs a checker reads: `house.json`, `office.json`, `clinic.json`, `hospital.json` (`graph_rules.rs`, embedded, parsed once, strictly).
+`bimcraft-cli rule-pack check --archetype A --graph G.json` (the `rule_check` command; `graph` may also be the graph itself) prints each
+rule's PASS or FAIL and exits 0 when none fails; otherwise it exits 1 with `rule_violation` and the failed ids on stderr. The code owns
+each rule's predicate, the pack owns its parameters (`check`).
+
+- **The house pack** (`archetype: house`, `origin: authored_from_trace`, `HR-001` to `HR-009`, every rule exploratory). It was written from
+  one reference plan, `done/fixtures/houses/traced-house`, and says so (`reference_plans`, `reference_plan_count: 1`): its kinds (the
+  eleven of the spec and `library`, which the trace has) hold a role, a count range and an area range, widened from that plan's numbers;
+  `connections` lists which kind pairs may be joined by `swing`, `sliding` or `open` (`double-swing` is swing, `double-sliding` is
+  sliding, `folding` and `fixed` are allowed nowhere). The rules: HR-001 every node's kind is known · 002 edges name spaces ·
+  003 counts · 004 areas · 005 connections · 006 a closet has one door and one neighbour · 007 a porch opens only into living, kitchen or
+  dining · 008 every bedroom is reached from the entry without crossing a bedroom or a bath (no entry fails) · 009 the entry is a
+  living, kitchen, dining or hall. The extractor gives a node no `kind`; whoever checks a traced graph adds it.
+- **The closet rule departs from the spec's wording.** The spec sends a closet's door "to a bedroom or a hall", but the traced entry closet
+  opens off the kitchen. HR-006 counts only; which kinds a closet joins is the connection table's, which allows closet and kitchen by a
+  sliding door because the trace does (and the rule's `exceptions` say so).
+- **The older packs** hold `GR-001` to `GR-006` and `PR-001` (`origin: slice1_hard_rules`, `hard`, `approved_by` the spec's "Hard Rules For
+  Slice 1"): the generator's own report reads its role pairs and minimum groups from them now (`generate/report.rs`), and a test pins
+  the reports of sixteen briefs to the bytes they had when the rules were hard-coded. Whether the spec counts as Slice 2's explicit
+  human approval is the reviewer's call. Their checker needs a `kind` and a `role` on each node and an entry, and refuses a graph without.
+- **A pack that fails to load** makes `PACK-001` fail in a report; it never panics.
+
+```sh
+bimcraft-cli rule-pack check --archetype house --graph topology.json   # topology.json with kinds added
+jq '.checks[] | select(.status == "FAIL")' <<< "$(bimcraft-cli rule-pack check --archetype house --graph g.json 2>&1)"
+```

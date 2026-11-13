@@ -1934,6 +1934,13 @@ fn hostile_params_never_panic_or_break_the_model() {
         // `rule_pack`: a directory that can never be made, so the sweep writes nothing.
         json!({"path": "/nonexistent/library"}),
         json!({"path": "/nonexistent/library", "archetype": "office"}),
+        // `rule_check`: a graph that is missing, hostile or in the params, and a pack that doesn't exist.
+        json!({"archetype": "house", "graph": "/nonexistent/g.json"}),
+        json!({"archetype": "barn", "graph": 5}),
+        json!({"graph": ""}),
+        json!({"archetype": "house", "graph": {}, "extra": 1}),
+        json!({"archetype": "house", "graph": {"nodes": [{"id": "a", "area_m2": 1e308}], "edges": [{"from": "a", "to": "b"}], "entry": 5}}),
+        json!({"archetype": "office", "graph": {"nodes": [{"id": "a", "kind": [], "role": "x"}], "edges": [], "entry": "a"}}),
         // `topology`: a file that can never be written.
         json!({"path": "/nonexistent/topology.json"}),
         json!({"path": "/nonexistent/topology.json", "extra": 1}),

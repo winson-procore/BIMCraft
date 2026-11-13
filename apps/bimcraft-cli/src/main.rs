@@ -36,6 +36,11 @@ const USAGE: &str = "USAGE:
                                  write the frontier-model rule pack seed library: a manifest, a validation report and one pack of
                                  rules for each of office, clinic, hospital, datacenter and airport. The same files every time; a
                                  library that fails its own checks exits non-zero, naming why, and writes nothing
+  bimcraft-cli rule-pack check --archetype house|office|clinic|hospital --graph GRAPH.json
+                                 judge a topology graph by the archetype's rule pack and print each rule's PASS or FAIL. Exit 0
+                                 when none fails; otherwise exit non-zero with a JSON error `rule_violation` on stderr holding
+                                 `failed` (the rule ids) and `checks`. House graphs need a `kind` on each node (the extractor
+                                 gives none); office, clinic and hospital graphs a `kind` and a `role`
   bimcraft-cli drawing-miner cad --corpus DIR --out DIR
                                  mine a CAD corpus described by DIR/sources.json into normalized scene, semantic element, space graph,
                                  overlay, candidate-rule, report and manifest artifacts. Oracles in the corpus are used for fixture
@@ -118,6 +123,20 @@ fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
         [cmd, sub, rest @ ..] if cmd == "rule-pack" && sub == "seed" => {
             let params = rule_pack_params(rest)?;
             print(out, &s.execute("rule_pack", &params)?)
+        }
+        [cmd, sub, rest @ ..] if cmd == "rule-pack" && sub == "check" => {
+            let params = rule_check_params(rest)?;
+            let reply = s.execute("rule_check", &params)?;
+            if reply["pass"] == true {
+                return print(out, &reply);
+            }
+            let failed: Vec<&Value> =
+                reply["checks"].as_array().into_iter().flatten().filter(|c| c["status"] == "FAIL").map(|c| &c["id"]).collect();
+            Err(json!({
+                "error": "rule_violation", "archetype": reply["archetype"], "pack_id": reply["pack_id"],
+                "failed": failed, "checks": reply["checks"],
+            })
+            .to_string())
         }
         [cmd, sub, rest @ ..] if cmd == "drawing-miner" && sub == "cad" => {
             let params = drawing_miner_params(rest)?;
@@ -207,6 +226,25 @@ fn rule_pack_params(args: &[String]) -> Result<Value, String> {
     }
     let out = out.ok_or_else(|| format!("rule-pack seed needs --out\n\n{USAGE}"))?;
     Ok(json!({ "path": out }))
+}
+
+/// What follows `rule-pack check`, as the command's params: `--archetype` and `--graph`, each once.
+fn rule_check_params(args: &[String]) -> Result<Value, String> {
+    let (mut archetype, mut graph) = (None, None);
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        let value = rest.next().ok_or_else(|| format!("{arg} needs a value\n\n{USAGE}"))?;
+        let slot = match arg.as_str() {
+            "--archetype" => &mut archetype,
+            "--graph" => &mut graph,
+            other => return Err(format!("unknown option `{other}` for rule-pack check\n\n{USAGE}")),
+        };
+        if slot.replace(value).is_some() {
+            return Err(format!("{arg} given twice\n\n{USAGE}"));
+        }
+    }
+    let need = |what: Option<&String>, flag: &str| what.cloned().ok_or_else(|| format!("rule-pack check needs {flag}\n\n{USAGE}"));
+    Ok(json!({"archetype": need(archetype, "--archetype")?, "graph": need(graph, "--graph")?}))
 }
 
 /// What follows `topology`: the model to read, and the `topology` command's params (`--out` as `path`); each option once.
@@ -534,6 +572,51 @@ mod tests {
             assert!(e.contains(says), "{args:?}: {e}");
         }
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn rule_pack_check_passes_a_graph_or_exits_with_the_rules_that_failed() {
+        let dir = std::env::temp_dir().join(format!("bimcraft-cli-rule-check-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = |n: &str| dir.join(n).to_string_lossy().into_owned();
+        let room = |id: &str, kind: &str, area: f64| json!({"id": id, "kind": kind, "area_m2": area});
+        let door = |a: &str, b: &str| json!({"kind": "door", "from": a, "to": b, "operation": "swing"});
+        let mut g = json!({
+            "entry": {"room": "living"},
+            "nodes": [room("living", "living", 20.0), room("kitchen", "kitchen", 12.0), room("bed", "bedroom", 12.0), room("bath", "bath", 5.0),
+                      room("hall", "hall", 4.0)],
+            "edges": [door("hall", "living"), door("bed", "hall"), door("bath", "hall"), json!({"kind": "open", "from": "living", "to": "kitchen"})],
+        });
+        std::fs::write(path("good.json"), g.to_string()).unwrap();
+        let out = cli_out(&["rule-pack", "check", "--archetype", "house", "--graph", &path("good.json")]).unwrap();
+        let reply: Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!((reply["pass"].clone(), reply["archetype"].clone()), (json!(true), json!("house")));
+        // A second bedroom reached only through the first.
+        g["nodes"].as_array_mut().unwrap().push(room("bed2", "bedroom", 12.0));
+        g["edges"].as_array_mut().unwrap().push(door("bed2", "bed"));
+        std::fs::write(path("bad.json"), g.to_string()).unwrap();
+        let e = cli_out(&["rule-pack", "check", "--archetype", "house", "--graph", &path("bad.json")]).unwrap_err();
+        let reply: Value = serde_json::from_str(e.trim()).unwrap();
+        assert_eq!(reply["error"], "rule_violation");
+        assert!(reply["failed"].as_array().unwrap().contains(&json!("HR-008")), "{reply}");
+        assert_eq!(reply["checks"].as_array().unwrap().len(), 9);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn rule_pack_check_names_what_is_wrong_with_its_arguments() {
+        for (args, says) in [
+            (vec!["rule-pack", "check", "--archetype", "house"], "--graph"),
+            (vec!["rule-pack", "check", "--graph", "g.json"], "--archetype"),
+            (vec!["rule-pack", "check", "--archetype", "house", "--archetype", "office", "--graph", "g"], "twice"),
+            (vec!["rule-pack", "check", "--colour", "red"], "unknown option"),
+            (vec!["rule-pack", "check", "--graph"], "needs a value"),
+            (vec!["rule-pack", "check", "--archetype", "barn", "--graph", "g.json"], "house"),
+            (vec!["rule-pack", "check", "--archetype", "house", "--graph", "/nonexistent/g.json"], "/nonexistent/g.json"),
+        ] {
+            let e = cli_out(&args).unwrap_err();
+            assert!(e.contains(says), "{args:?}: {e}");
+        }
     }
 
     #[test]
