@@ -5,7 +5,7 @@
 //! written is one whose extracted graph is the generated one. Detail: `docs/areas/graph-generator.md`.
 
 mod emit;
-mod place;
+pub(crate) mod place;
 mod sample;
 pub(crate) mod swing;
 #[cfg(test)]
@@ -15,6 +15,7 @@ use serde_json::Value;
 
 use super::{AreaRequest, Built, Refusal, refuse};
 use crate::engine::Session;
+pub(crate) use emit::{longest, sheet_for};
 
 /// The kinds of room the house generator makes: the house pack's, as far as it uses them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

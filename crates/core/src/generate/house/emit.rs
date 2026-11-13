@@ -37,7 +37,7 @@ fn line(id: &'static str, params: Value) -> (&'static str, Value) {
     (id, params)
 }
 
-fn sheet_for(w: i64, h: i64) -> (&'static str, i64) {
+pub(crate) fn sheet_for(w: i64, h: i64) -> (&'static str, i64) {
     for size in ["A3", "A2", "A1", "A0"] {
         let (sw, sh) = sheet_size(size);
         for scale in [50, 100, 200, 250, 500] {
@@ -50,7 +50,7 @@ fn sheet_for(w: i64, h: i64) -> (&'static str, i64) {
 }
 
 /// The longest edge of the outline that runs the given way: its ends, and which side is outside.
-fn longest(boundary: &[[i64; 2]], vertical: bool) -> Option<([i64; 2], [i64; 2], i64)> {
+pub(crate) fn longest(boundary: &[[i64; 2]], vertical: bool) -> Option<([i64; 2], [i64; 2], i64)> {
     let n = boundary.len();
     let cx = boundary.iter().map(|p| p[0]).sum::<i64>() / n.max(1) as i64;
     let cy = boundary.iter().map(|p| p[1]).sum::<i64>() / n.max(1) as i64;

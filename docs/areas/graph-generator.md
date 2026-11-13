@@ -186,6 +186,20 @@ has any).
   end) and SW-004 are as traced. The pairs only Unit 1 has (ensuite, garage) are recorded in its file as SW-005 and SW-006 and not
   judged yet. Generated houses hang their doors by the traced rules and so pass the judged ones.
 
+## Studio office: graph first
+
+`generate --archetype studio-office` is its own family, not an alias of `office`: the program is the approved trace
+`done/fixtures/studio-office/traced-studio`, a reception, a corridor with a meeting room and a store off it, a passage of WCs, and
+a large studio. `generate/studio.rs` samples the graph by the seed (`studio/sample.rs`: 2 to 5 WCs, 1 to 2 meeting rooms and stores
+in a shuffled order, the corridor 1500, 2000 or 2400 mm wide, double-swing doors where a door is wide enough, a studio way out or
+not), `studio/place.rs` finds geometry (the studio the south band, the core of the other rooms against it: `bar`, `flush_west`,
+`flush_east` or `inset`, turned and mirrored by the seed; windows are Fixed Windows on the studio, reception and meeting
+rooms' outside walls) and `studio/emit.rs` builds each try in a scratch project, reads it back with the topology extractor and
+compares: rooms, doors (operation, width, side, jamb), the open passage-studio link, the ways out and the entry. The reception's
+way in is the widest door and the first, so the extractor takes it for the entry. The least area is 150 m2; below it the brief is
+refused as `unsatisfiable_area`. The generated graph, and the extracted one with the generated kinds, must pass the studio-office
+pack ([rule packs](rule-packs.md#graph-rule-packs-and-the-checker)).
+
 ## Not yet
 
 No stairs, shafts, structure or MEP; one storey; no datacenters or airports;

@@ -1,0 +1,115 @@
+{
+  "schema_version": "graph-rule-pack/1",
+  "pack_id": "studio-office.graph-rules/1",
+  "archetype": "studio-office",
+  "origin": "authored_from_trace",
+  "reference_plans": [
+    "done/fixtures/studio-office/traced-studio"
+  ],
+  "reference_plan_count": 1,
+  "sources": [
+    "done/fixtures/studio-office/traced-studio"
+  ],
+  "note": "One approved trace is the source: done/fixtures/studio-office/traced-studio, a reception, a corridor with a meeting room and a store, a passage of WCs open to a large studio. Every range and every allowed connection is what the trace holds, widened to what such a plan plausibly holds, so each rule is exploratory until more plans are traced. Double-swing is kept as a means of its own, which the other packs fold into swing.",
+  "kinds": {
+    "reception": {"role": "public", "count": [1, 1], "area_m2": [8.0, 120.0]},
+    "hall": {"role": "circulation", "count": [2, 2], "area_m2": [3.0, 90.0]},
+    "storage": {"role": "support", "count": [1, 3], "area_m2": [2.0, 40.0]},
+    "meeting": {"role": "shared", "count": [1, 3], "area_m2": [8.0, 80.0]},
+    "bath": {"role": "private", "count": [1, 6], "area_m2": [2.0, 12.0]},
+    "office": {"role": "work", "count": [1, 1], "area_m2": [60.0, 450.0]}
+  },
+  "connections": [
+    {"pair": ["reception", "hall"], "means": ["swing", "double-swing"]},
+    {"pair": ["hall", "meeting"], "means": ["swing", "double-swing"]},
+    {"pair": ["hall", "storage"], "means": ["swing"]},
+    {"pair": ["hall", "bath"], "means": ["swing"]},
+    {"pair": ["hall", "office"], "means": ["swing", "open"]}
+  ],
+  "rules": [
+    {
+      "id": "SO-001", "name": "kinds-known", "classification": "exploratory",
+      "category": "vocabulary", "subject": "every space", "predicate": "has a kind", "object": "defined in the pack's kinds",
+      "checkability": "deterministic", "confidence": 0.9,
+      "rationale": "Counts, areas and connections are judged by kind, so a space of no known kind is judged by nothing.",
+      "exceptions": [], "provenance": "traced-studio: its six kinds", "check": {}
+    },
+    {
+      "id": "SO-002", "name": "edges-name-spaces", "classification": "exploratory",
+      "category": "graph", "subject": "every edge that is not to the exterior", "predicate": "joins", "object": "two spaces of the graph",
+      "checkability": "deterministic", "confidence": 0.95,
+      "rationale": "An edge to nothing is a graph that was not read right.",
+      "exceptions": ["an edge marked exterior goes outside and is skipped"], "provenance": "traced-studio", "check": {}
+    },
+    {
+      "id": "SO-003", "name": "kind-counts", "classification": "exploratory",
+      "category": "program", "subject": "each kind", "predicate": "occurs a number of times", "object": "inside its count range",
+      "checkability": "deterministic", "confidence": 0.6,
+      "rationale": "One reception, one studio, a corridor and a passage; the other counts widen the trace's 3 WCs, 1 meeting room and 1 store.",
+      "exceptions": [], "provenance": "traced-studio: 3 WCs, 1 meeting room, 1 store, 2 halls", "check": {}
+    },
+    {
+      "id": "SO-004", "name": "kind-areas", "classification": "exploratory",
+      "category": "dimensions", "subject": "each space", "predicate": "has an area in square metres", "object": "inside its kind's area range",
+      "checkability": "deterministic", "confidence": 0.4,
+      "rationale": "Widens the trace's areas to what such rooms plausibly measure in plans of 180 to 540 m2.",
+      "exceptions": [], "provenance": "traced-studio: reception 51.7, corridor 25.3, passage 14.4, store 12.2, meeting 25.0, WCs 3.5 to 3.6, studio 182.9 m2", "check": {}
+    },
+    {
+      "id": "SO-005", "name": "connections-by-means", "classification": "exploratory",
+      "category": "adjacency", "subject": "each door or open edge", "predicate": "joins a pair of kinds by a means", "object": "listed in the pack's connections, double-swing apart from swing",
+      "checkability": "deterministic", "confidence": 0.5,
+      "rationale": "Double-swing doors are reception to corridor and corridor to meeting room; baths and stores have plain swing doors; the studio is reached by a swing door from the corridor and open from the passage.",
+      "exceptions": [], "provenance": "traced-studio: 9 links, 6 swing, 2 double-swing, 1 open", "check": {}
+    },
+    {
+      "id": "SO-006", "name": "entry-is-reception", "classification": "exploratory",
+      "category": "access", "subject": "the way in from outside", "predicate": "opens into", "object": "a reception",
+      "checkability": "deterministic", "confidence": 0.8,
+      "rationale": "The trace is entered through its reception, though the studio has an outside door too.",
+      "exceptions": [], "provenance": "traced-studio", "check": {"kinds": ["reception"]}
+    },
+    {
+      "id": "SO-007", "name": "service-reach", "classification": "exploratory",
+      "category": "access", "subject": "a meeting room, a store, a WC or a hall", "predicate": "is reached from the entry", "object": "without passing through the studio",
+      "checkability": "deterministic", "confidence": 0.7,
+      "rationale": "The studio is a room to work in, not a way through to the rooms that serve it.",
+      "exceptions": [], "provenance": "traced-studio", "check": {"targets": ["meeting", "storage", "bath", "hall"], "through_blocked": ["office"]}
+    },
+    {
+      "id": "SO-008", "name": "wc-joins-passage", "classification": "exploratory",
+      "category": "adjacency", "subject": "a WC", "predicate": "opens only into", "object": "a hall",
+      "checkability": "deterministic", "confidence": 0.8,
+      "rationale": "Each WC is a cubicle off the passage with one door.",
+      "exceptions": [], "provenance": "traced-studio", "check": {"kind": "bath", "joins_only": ["hall"]}
+    },
+    {
+      "id": "SO-009", "name": "passage-open-to-studio", "classification": "exploratory",
+      "category": "adjacency", "subject": "a hall that has WCs off it (the passage)", "predicate": "is joined to the studio", "object": "by an open link, not a door",
+      "checkability": "deterministic", "confidence": 0.6,
+      "rationale": "The trace's passage runs open into the studio at its end, drawn with a room separation line.",
+      "exceptions": [], "provenance": "traced-studio: the room separation line between passage and studio", "check": {"with": "bath", "to": "office"}
+    },
+    {
+      "id": "SO-010", "name": "corridor-serves", "classification": "exploratory",
+      "category": "adjacency", "subject": "a meeting room or a store", "predicate": "has a door to", "object": "a hall that has no WC off it (the corridor), which also joins the studio",
+      "checkability": "deterministic", "confidence": 0.6,
+      "rationale": "The trace's corridor serves the meeting room and the store and ends at the studio; none of them is off the studio.",
+      "exceptions": [], "provenance": "traced-studio", "check": {"kinds": ["meeting", "storage"], "hall_without": "bath", "hall_joins": "office"}
+    },
+    {
+      "id": "SO-011", "name": "reception-joins-corridor-and-passage", "classification": "exploratory",
+      "category": "adjacency", "subject": "the reception", "predicate": "joins", "object": "a corridor and a passage",
+      "checkability": "deterministic", "confidence": 0.6,
+      "rationale": "Reception is the hinge of the plan: the corridor one way, the WCs' passage the other.",
+      "exceptions": [], "provenance": "traced-studio", "check": {"kind": "reception", "with": "bath"}
+    },
+    {
+      "id": "SO-012", "name": "studio-is-largest", "classification": "exploratory",
+      "category": "dimensions", "subject": "the studio", "predicate": "is", "object": "the largest space",
+      "checkability": "deterministic", "confidence": 0.6,
+      "rationale": "The studio is 183 m2 in the trace, three and a half times the reception.",
+      "exceptions": [], "provenance": "traced-studio", "check": {"kind": "office"}
+    }
+  ]
+}

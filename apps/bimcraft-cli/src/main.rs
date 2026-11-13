@@ -19,7 +19,7 @@ const USAGE: &str = "USAGE:
       commands and scripts (one `ID {json}` per line), save. --save writes by extension:
       .bimcraft (the project), .ifc (IFC4), .glb (the 3D view's scene as glTF), .svg or .png (the lowest level's plan).
       --highrise builds an original 20-storey performance sample (about 10,000 elements).
-  bimcraft-cli generate --archetype office|clinic|hospital|house --seed N (--area M2 | --area-sqft SQFT) --out DIR
+  bimcraft-cli generate --archetype office|clinic|hospital|house|studio-office --seed N (--area M2 | --area-sqft SQFT) --out DIR
                                  write a generated plan's run directory: program, topology and building graphs, a script for
                                  `run --script`, a report and a manifest. The same brief gives the same files; a brief that
                                  can't be met (an area too small) exits non-zero with a JSON error (`error`, a code, and `message`) on stderr, and writes nothing
@@ -36,11 +36,11 @@ const USAGE: &str = "USAGE:
                                  write the frontier-model rule pack seed library: a manifest, a validation report and one pack of
                                  rules for each of office, clinic, hospital, datacenter and airport. The same files every time; a
                                  library that fails its own checks exits non-zero, naming why, and writes nothing
-  bimcraft-cli rule-pack check --archetype house|office|clinic|hospital --graph GRAPH.json
+  bimcraft-cli rule-pack check --archetype house|office|clinic|hospital|studio-office --graph GRAPH.json
                                  judge a topology graph by the archetype's rule pack and print each rule's PASS or FAIL. Exit 0
                                  when none fails; otherwise exit non-zero with a JSON error `rule_violation` on stderr holding
                                  `failed` (the rule ids) and `checks`. House graphs need a `kind` on each node (the extractor
-                                 gives none); office, clinic and hospital graphs a `kind` and a `role`
+                                 gives none); office, clinic and hospital graphs a `kind` and a `role`; studio-office graphs a `kind`
   bimcraft-cli drawing-miner cad --corpus DIR --out DIR
                                  mine a CAD corpus described by DIR/sources.json into normalized scene, semantic element, space graph,
                                  overlay, candidate-rule, report and manifest artifacts. Oracles in the corpus are used for fixture
@@ -617,6 +617,28 @@ mod tests {
         let swing = checks.iter().filter(|c| c["id"].as_str().is_some_and(|i| i.starts_with("SW-"))).count();
         assert!(swing >= 1);
         assert_eq!(checks.len(), 13 + swing);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn generate_makes_a_studio_office_that_the_studio_pack_passes() {
+        let dir = std::env::temp_dir().join(format!("bimcraft-cli-studio-{}", std::process::id()));
+        let at = dir.to_string_lossy().into_owned();
+        let out = cli_out(&["generate", "--archetype", "studio-office", "--seed", "2", "--area", "300", "--out", &at]).unwrap();
+        let reply: Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(reply["archetype"], "studio-office");
+        let graph = dir.join("topology-graph.json").to_string_lossy().into_owned();
+        let out = cli_out(&["rule-pack", "check", "--archetype", "studio-office", "--graph", &graph]).unwrap();
+        let reply: Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(reply["pass"], json!(true));
+        // A graph whose entry is the studio fails, naming the pack's rule.
+        let mut g: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("topology-graph.json")).unwrap()).unwrap();
+        g["entry"] = json!({"room": "studio"});
+        let bad = dir.join("bad.json").to_string_lossy().into_owned();
+        std::fs::write(&bad, g.to_string()).unwrap();
+        let e = cli_out(&["rule-pack", "check", "--archetype", "studio-office", "--graph", &bad]).unwrap_err();
+        let reply: Value = serde_json::from_str(e.trim()).unwrap();
+        assert!(reply["failed"].as_array().unwrap().contains(&json!("SO-006")), "{reply}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

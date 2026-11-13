@@ -657,3 +657,12 @@ fn the_catalog_lists_the_command_with_a_params_doc() {
         assert!(c.params.contains(key), "the params doc names {key}");
     }
 }
+
+#[test]
+fn a_brief_the_seeds_layout_cannot_fit_is_tried_with_the_other_layouts() {
+    // Office seed 1 at 180 m2 was refused for its own family and strategy; another fits it, and what is met today is unchanged.
+    let a = archetype("office");
+    let built = build(a, 1, 180.0).unwrap_or_else(|e| panic!("{e}"));
+    assert!(built.gross_m2 > 150.0);
+    assert!(build(a, 1, 40.0).is_err(), "a brief no layout fits is still refused");
+}
