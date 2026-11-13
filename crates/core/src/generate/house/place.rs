@@ -530,7 +530,7 @@ fn build_once(g: &HouseGraph, seed: u64, area_m2: f64, v: Variant, adjust: f64) 
 }
 
 /// The shared run of two rectangles' edges: `(vertical, line, lo, hi)`, a wall along `x = line` when vertical.
-fn shared(a: &Rect, b: &Rect) -> Option<(bool, i64, i64, i64)> {
+pub(crate) fn shared(a: &Rect, b: &Rect) -> Option<(bool, i64, i64, i64)> {
     let along = |lo0: i64, hi0: i64, lo1: i64, hi1: i64| {
         let (lo, hi) = (lo0.max(lo1), hi0.min(hi1));
         (hi > lo).then_some((lo, hi))
@@ -550,7 +550,7 @@ fn shared(a: &Rect, b: &Rect) -> Option<(bool, i64, i64, i64)> {
     None
 }
 
-fn point(vertical: bool, line: i64, along: i64) -> [i64; 2] {
+pub(crate) fn point(vertical: bool, line: i64, along: i64) -> [i64; 2] {
     if vertical { [line, along] } else { [along, line] }
 }
 
@@ -740,7 +740,7 @@ fn assemble(g: &HouseGraph, seed: u64, shell: &'static str, rects: Vec<Rect>, ou
     Ok(Layout { shell, rects, doors, separators, walls, boundary, width: max_x - min_x, depth: max_y - min_y, gross_mm2: gross })
 }
 
-fn counter_clockwise(mut points: Vec<[i64; 2]>) -> Vec<[i64; 2]> {
+pub(crate) fn counter_clockwise(mut points: Vec<[i64; 2]>) -> Vec<[i64; 2]> {
     let twice: i64 = points.iter().zip(points.iter().cycle().skip(1)).map(|(a, b)| a[0] * b[1] - b[0] * a[1]).sum();
     if twice < 0 {
         points.reverse();
@@ -749,7 +749,7 @@ fn counter_clockwise(mut points: Vec<[i64; 2]>) -> Vec<[i64; 2]> {
 }
 
 /// The outline the outside walls make, as the corners of its one loop.
-fn trace(exterior: &[(bool, i64, i64, i64)]) -> Result<Vec<[i64; 2]>, String> {
+pub(crate) fn trace(exterior: &[(bool, i64, i64, i64)]) -> Result<Vec<[i64; 2]>, String> {
     let mut next: BTreeMap<[i64; 2], Vec<[i64; 2]>> = BTreeMap::new();
     for &(vertical, line, lo, hi) in exterior {
         let (a, b) = (point(vertical, line, lo), point(vertical, line, hi));

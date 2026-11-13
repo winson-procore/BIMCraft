@@ -5,7 +5,7 @@
 //! written is one whose extracted graph is the generated one. Detail: `docs/areas/graph-generator.md`.
 
 mod emit;
-mod place;
+pub(crate) mod place;
 mod sample;
 pub(crate) mod swing;
 #[cfg(test)]
@@ -13,6 +13,7 @@ mod tests;
 
 use serde_json::Value;
 
+pub(crate) use emit::{longest, sheet_for};
 use super::{AreaRequest, Built, Refusal, refuse};
 use crate::engine::Session;
 

@@ -49,6 +49,7 @@ fn ordinal(archetype: Archetype) -> u64 {
         Archetype::Clinic => 1,
         Archetype::Hospital => 2,
         Archetype::House => 3,
+        Archetype::StudioOffice => 4,
     }
 }
 

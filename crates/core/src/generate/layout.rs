@@ -286,6 +286,9 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     if archetype == Archetype::House {
         return Err("a house is laid out graph first, by `house`, not by a corridor plan".into());
     }
+    if archetype == Archetype::StudioOffice {
+        return Err("a studio office is laid out graph first, by `studio`, not by a corridor plan".into());
+    }
     let layout_family = layout_family(seed);
     let area_mm2 = area_m2 * 1.0e6;
     let depth = round_to_100((area_mm2 / layout_family.target_aspect()).sqrt()).clamp(MIN_DEPTH, layout_family.max_depth());
