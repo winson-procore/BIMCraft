@@ -1,0 +1,87 @@
+{
+  "schema_version": "graph-rule-pack/1",
+  "pack_id": "clinic.graph-rules/1",
+  "archetype": "clinic",
+  "origin": "slice1_hard_rules",
+  "note": "The hard rules of the generator's first slice, as data: the code owns each predicate, the pack owns its parameters.",
+  "rules": [
+    {
+      "id": "GR-001", "name": "edges-name-spaces", "classification": "hard",
+      "category": "graph", "subject": "every edge", "predicate": "joins", "object": "two spaces of the graph",
+      "checkability": "deterministic", "confidence": 1.0,
+      "rationale": "An edge to nothing is a graph that was not made right.",
+      "exceptions": [],
+      "provenance": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "approved_by": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "check": {}
+    },
+    {
+      "id": "GR-002", "name": "private-reachable", "classification": "hard",
+      "category": "access", "subject": "every private and clinical space", "predicate": "is reached from", "object": "a circulation, shared or public space",
+      "checkability": "deterministic", "confidence": 1.0,
+      "rationale": "A private space is entered from the open ones.",
+      "exceptions": [],
+      "provenance": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "approved_by": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "check": {"private_roles": ["private", "clinical"], "open_roles": ["circulation", "shared", "public"]}
+    },
+    {
+      "id": "GR-003", "name": "private-not-to-private", "classification": "hard",
+      "category": "adjacency", "subject": "a private space", "predicate": "does not open into", "object": "another private space",
+      "checkability": "deterministic", "confidence": 1.0,
+      "rationale": "Private spaces are entered from the open ones.",
+      "exceptions": [],
+      "provenance": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "approved_by": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "check": {"between": ["private", "private"]}
+    },
+    {
+      "id": "GR-004", "name": "clinical-not-to-clinical", "classification": "hard",
+      "category": "adjacency", "subject": "a clinical space", "predicate": "does not open into", "object": "another clinical space",
+      "checkability": "deterministic", "confidence": 1.0,
+      "rationale": "Clinical spaces are entered from the open ones.",
+      "exceptions": [],
+      "provenance": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "approved_by": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "check": {"between": ["clinical", "clinical"]}
+    },
+    {
+      "id": "GR-005", "name": "private-not-to-clinical", "classification": "hard",
+      "category": "adjacency", "subject": "a private space", "predicate": "does not open into", "object": "a clinical space",
+      "checkability": "deterministic", "confidence": 1.0,
+      "rationale": "Private and clinical spaces are kept apart.",
+      "exceptions": [],
+      "provenance": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "approved_by": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "check": {"between": ["private", "clinical"]}
+    },
+    {
+      "id": "GR-006", "name": "entry-connected", "classification": "hard",
+      "category": "access", "subject": "every space", "predicate": "is reached from", "object": "the entry over door and open edges",
+      "checkability": "deterministic", "confidence": 1.0,
+      "rationale": "A space nobody can walk to is not part of the building.",
+      "exceptions": [],
+      "provenance": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "approved_by": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "check": {}
+    },
+    {
+      "id": "PR-001", "name": "minimum-program", "classification": "hard",
+      "category": "program", "subject": "the clinic program", "predicate": "holds at least", "object": "each group of kinds",
+      "checkability": "deterministic", "confidence": 1.0,
+      "rationale": "A clinic without these is not a clinic.",
+      "exceptions": [],
+      "provenance": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "approved_by": "specs/graph-building-generator.md, Hard Rules For Slice 1",
+      "check": {"groups": [
+        {"what": "an entry or lobby", "kinds": ["entry_lobby"], "at_least": 1},
+        {"what": "a waiting room", "kinds": ["waiting"], "at_least": 1},
+        {"what": "a corridor", "kinds": ["corridor"], "at_least": 1},
+        {"what": "two exam rooms", "kinds": ["exam"], "at_least": 2},
+        {"what": "a restroom", "kinds": ["restroom"], "at_least": 1},
+        {"what": "a staff or nurse space", "kinds": ["staff_room", "nurse_station"], "at_least": 1},
+        {"what": "a clean, support or storage space", "kinds": ["clean_storage"], "at_least": 1}
+      ]}
+    }
+  ]
+}

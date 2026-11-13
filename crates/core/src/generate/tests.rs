@@ -414,6 +414,31 @@ fn each_rule_fails_on_a_graph_that_breaks_it_and_only_that_one() {
     assert!(c.detail.contains("waiting room"), "{}", c.detail);
 }
 
+/// FNV-1a, so a golden value does not move with the standard library.
+fn fnv(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3))
+}
+
+/// The rules and the report were hard-coded and now read their parameters from the packs: what they say, for every brief,
+/// must not move by a byte. The values were taken before the move.
+#[test]
+fn the_reports_and_rule_checks_are_the_same_bytes_as_when_the_rules_were_hard_coded() {
+    let (mut reports, mut graphs, mut checks) = (String::new(), String::new(), String::new());
+    for (name, seed, area) in BRIEFS {
+        let b = built(archetype(name), seed, area);
+        reports.push_str(&text(&b, "report.json"));
+        graphs.push_str(&format!("{name} {seed} {}\n", fnv(&text(&b, "topology-graph.json"))));
+        for c in &b.checks {
+            checks.push_str(&format!("{}|{}|{:?}|{}\n", c.id, c.name, c.status, c.detail));
+        }
+    }
+    assert_eq!(
+        (fnv(&reports), fnv(&graphs), fnv(&checks)),
+        (16790089926828375207, 6893511448378566540, 7520680808967075935),
+        "the golden values"
+    );
+}
+
 pub(super) fn count(s: &Session, f: impl Fn(&Element) -> bool) -> usize {
     s.model.elements.values().filter(|e| f(e)).count()
 }
