@@ -127,3 +127,14 @@ the entry being the reception, services reached without crossing the studio, WCs
 corridor serving the meeting rooms and stores, the reception joining both halls, and the studio being the largest space. The
 evaluators are in `graph_rules/studio.rs`; a passage is a hall with a WC off it, a corridor a hall without. Graphs need a `kind`
 on each node and no `role`.
+
+### The office-pattern pack
+
+`data/graph-rules/office-pattern.json` (OP-001 to OP-012, all exploratory, from `generated/office-variations-20261112/generate.py`,
+which no trace backs): kinds lobby, hall, private_office, conference, restroom, pantry, focus_room and open_office, one swing means
+for every link (double-swing counts as swing here), and rules for the counts, the areas, exactly one way in from outside and on
+the lobby (OP-006, counted by edges with `exterior`), the entry being the lobby, the lobby joining the hall, every side room and
+every private office having a door (not an open link) to the hall (OP-009, OP-010), the open office joining the hall and neither
+the lobby nor a side room (OP-011), and every space being reached from the entry. The evaluators are in `graph_rules/pattern.rs`.
+Graphs need a `kind` on each node and no `role`. `generate --archetype office-pattern` ([graph generator](graph-generator.md#office-pattern-graph-first))
+checks its graph and the extracted one against it.

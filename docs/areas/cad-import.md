@@ -150,7 +150,7 @@ DWG the session's `DwgWriter` turns that text into the file.
   and a sheet alike. acadrust's DXF reader takes those pairs as the document's summary information and its DWG writer writes
   them in `AcDb:SummaryInfo`, which AutoCAD shows under DWGPROPS > Custom; BIMCraft does nothing of its own in the bridge. That
   section is from AutoCAD 2004 on, so a 2000 DWG is written without them and the reply's `notes` say so. Every script the
-  generator writes sets `building_type` this way, as `Archetype::building_type` says: `office` (office and studio-office),
+  generator writes sets `building_type` this way, as `Archetype::building_type` says: `office` (office, studio-office and office-pattern),
   `clinic`, `hospital`, `residential` (house). `import_cad` does not read them back.
 
 Tests: `render::dxf::tests` reads the sample house's plan back with `dxf::read_text` (layers, entities per layer, mm, extents,

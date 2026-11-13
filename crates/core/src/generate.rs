@@ -12,6 +12,7 @@ mod lift;
 #[cfg(test)]
 mod lift_tests;
 mod openings;
+pub(crate) mod pattern;
 pub(crate) mod program;
 pub(crate) mod report;
 mod script;
@@ -155,6 +156,9 @@ fn least_area(archetype: Archetype, seed: u64) -> Option<f64> {
     if archetype == Archetype::StudioOffice {
         return Some(studio::least_area());
     }
+    if archetype == Archetype::OfficePattern {
+        return Some(pattern::least_area());
+    }
     (1..=(MAX_AREA_M2 as u32 / 10)).map(|i| f64::from(i) * 10.0).find(|a| layout::plan(archetype, *a, seed).is_ok())
 }
 
@@ -178,6 +182,9 @@ fn build_with_area(archetype: Archetype, seed: u64, area: AreaRequest) -> Result
     }
     if archetype == Archetype::StudioOffice {
         return studio::build(seed, area);
+    }
+    if archetype == Archetype::OfficePattern {
+        return pattern::build(seed, area);
     }
     let plan = layout::plan(archetype, area.m2, seed).map_err(|why| {
         let least = least_area(archetype, seed)
