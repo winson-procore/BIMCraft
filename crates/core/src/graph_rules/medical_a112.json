@@ -1,0 +1,509 @@
+{
+ "archetype": "medical-day",
+ "nodes": [
+  {
+   "id": "1-0904",
+   "kind": "treatment_room"
+  },
+  {
+   "id": "1-0903",
+   "kind": "washroom"
+  },
+  {
+   "id": "1-0902",
+   "kind": "washroom"
+  },
+  {
+   "id": "1-0608",
+   "kind": "meeting"
+  },
+  {
+   "id": "1-0908",
+   "kind": "treatment_room"
+  },
+  {
+   "id": "1-0912",
+   "kind": "medication"
+  },
+  {
+   "id": "1-0913",
+   "kind": "clean_utility"
+  },
+  {
+   "id": "1-0914",
+   "kind": "soiled_utility"
+  },
+  {
+   "id": "1-0916",
+   "kind": "office"
+  },
+  {
+   "id": "1-0805",
+   "kind": "isolation"
+  },
+  {
+   "id": "1-0805b",
+   "kind": "washroom"
+  },
+  {
+   "id": "1-0805a",
+   "kind": "anteroom"
+  },
+  {
+   "id": "1-0802",
+   "kind": "washroom"
+  },
+  {
+   "id": "1-0610",
+   "kind": "office"
+  },
+  {
+   "id": "1-0611",
+   "kind": "office"
+  },
+  {
+   "id": "1-0612",
+   "kind": "office"
+  },
+  {
+   "id": "3.06.27.01",
+   "kind": "shell"
+  },
+  {
+   "id": "3.06.27.02",
+   "kind": "shell"
+  },
+  {
+   "id": "3.06.27.03",
+   "kind": "shell"
+  },
+  {
+   "id": "1-0616",
+   "kind": "plant"
+  },
+  {
+   "id": "1-0615",
+   "kind": "plant"
+  },
+  {
+   "id": "1-0806",
+   "kind": "washroom"
+  },
+  {
+   "id": "10.06.01",
+   "kind": "shaft"
+  },
+  {
+   "id": "1-0906",
+   "kind": "treatment_bay"
+  },
+  {
+   "id": "1-0907",
+   "kind": "treatment_bay"
+  },
+  {
+   "id": "1-0909",
+   "kind": "treatment_bay"
+  },
+  {
+   "id": "1-0910",
+   "kind": "treatment_bay"
+  },
+  {
+   "id": "1-0807",
+   "kind": "treatment_bay"
+  },
+  {
+   "id": "1-0809",
+   "kind": "treatment_bay"
+  },
+  {
+   "id": "1-0811",
+   "kind": "treatment_bay"
+  },
+  {
+   "id": "1-0901",
+   "kind": "waiting"
+  },
+  {
+   "id": "1-0905-charting",
+   "kind": "staff_work"
+  },
+  {
+   "id": "1-0905-tube",
+   "kind": "staff_work"
+  },
+  {
+   "id": "1-0804",
+   "kind": "staff_work"
+  },
+  {
+   "id": "1-0915",
+   "kind": "alcove"
+  },
+  {
+   "id": "1-0917",
+   "kind": "storage"
+  },
+  {
+   "id": "1-0917b",
+   "kind": "storage"
+  },
+  {
+   "id": "C1-0901",
+   "kind": "corridor"
+  },
+  {
+   "id": "C1-0902",
+   "kind": "corridor"
+  },
+  {
+   "id": "C1-0903",
+   "kind": "corridor"
+  },
+  {
+   "id": "C1-0801",
+   "kind": "corridor"
+  },
+  {
+   "id": "C1-0802",
+   "kind": "corridor"
+  },
+  {
+   "id": "C1-0602",
+   "kind": "corridor"
+  },
+  {
+   "id": "C1-0603",
+   "kind": "corridor"
+  }
+ ],
+ "edges": [
+  {
+   "kind": "door",
+   "operation": "double-swing",
+   "id": "door:1-0904:C1-0901",
+   "from": "1-0904",
+   "to": "C1-0901"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0904:1-0903",
+   "from": "1-0904",
+   "to": "1-0903"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0903:C1-0901",
+   "from": "1-0903",
+   "to": "C1-0901"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0902:C1-0901",
+   "from": "1-0902",
+   "to": "C1-0901"
+  },
+  {
+   "kind": "door",
+   "operation": "double-swing",
+   "id": "door:C1-0901:C1-0602",
+   "from": "C1-0901",
+   "to": "C1-0602"
+  },
+  {
+   "kind": "door",
+   "operation": "double-swing",
+   "id": "door:1-0608:C1-0602",
+   "from": "1-0608",
+   "to": "C1-0602"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0908:C1-0902",
+   "from": "1-0908",
+   "to": "C1-0902"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0912:C1-0903",
+   "from": "1-0912",
+   "to": "C1-0903"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0913:C1-0903",
+   "from": "1-0913",
+   "to": "C1-0903"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0914:C1-0903",
+   "from": "1-0914",
+   "to": "C1-0903"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0916:C1-0602",
+   "from": "1-0916",
+   "to": "C1-0602"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:C1-0903:C1-0602",
+   "from": "C1-0903",
+   "to": "C1-0602"
+  },
+  {
+   "kind": "door",
+   "operation": "double-swing",
+   "id": "door:C1-0902:C1-0802",
+   "from": "C1-0902",
+   "to": "C1-0802"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0806:C1-0802",
+   "from": "1-0806",
+   "to": "C1-0802"
+  },
+  {
+   "kind": "door",
+   "operation": "double-swing",
+   "id": "door:1-0805:C1-0802",
+   "from": "1-0805",
+   "to": "C1-0802"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0805:1-0805b",
+   "from": "1-0805",
+   "to": "1-0805b"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0805:1-0805a",
+   "from": "1-0805",
+   "to": "1-0805a"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0805a:C1-0801",
+   "from": "1-0805a",
+   "to": "C1-0801"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0802:C1-0801",
+   "from": "1-0802",
+   "to": "C1-0801"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:C1-0801:C1-0602",
+   "from": "C1-0801",
+   "to": "C1-0602"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0610:C1-0602",
+   "from": "1-0610",
+   "to": "C1-0602"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0611:C1-0602",
+   "from": "1-0611",
+   "to": "C1-0602"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:1-0612:C1-0602",
+   "from": "1-0612",
+   "to": "C1-0602"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:3.06.27.02:C1-0802",
+   "from": "3.06.27.02",
+   "to": "C1-0802"
+  },
+  {
+   "kind": "door",
+   "operation": "swing",
+   "id": "door:3.06.27.01:C1-0802",
+   "from": "3.06.27.01",
+   "to": "C1-0802"
+  },
+  {
+   "kind": "door",
+   "operation": "double-swing",
+   "id": "door:C1-0802:C1-0603",
+   "from": "C1-0802",
+   "to": "C1-0603"
+  },
+  {
+   "kind": "door",
+   "operation": "double-swing",
+   "id": "door:1-0616:C1-0603",
+   "from": "1-0616",
+   "to": "C1-0603"
+  },
+  {
+   "kind": "door",
+   "operation": "double-swing",
+   "id": "door:1-0615:C1-0603",
+   "from": "1-0615",
+   "to": "C1-0603"
+  },
+  {
+   "kind": "open",
+   "id": "open:1-0906:C1-0902",
+   "from": "1-0906",
+   "to": "C1-0902"
+  },
+  {
+   "kind": "open",
+   "id": "open:1-0907:C1-0902",
+   "from": "1-0907",
+   "to": "C1-0902"
+  },
+  {
+   "kind": "open",
+   "id": "open:1-0909:C1-0902",
+   "from": "1-0909",
+   "to": "C1-0902"
+  },
+  {
+   "kind": "open",
+   "id": "open:1-0910:C1-0902",
+   "from": "1-0910",
+   "to": "C1-0902"
+  },
+  {
+   "kind": "open",
+   "id": "open:1-0807:C1-0802",
+   "from": "1-0807",
+   "to": "C1-0802"
+  },
+  {
+   "kind": "open",
+   "id": "open:1-0809:C1-0802",
+   "from": "1-0809",
+   "to": "C1-0802"
+  },
+  {
+   "kind": "open",
+   "id": "open:1-0811:C1-0802",
+   "from": "1-0811",
+   "to": "C1-0802"
+  },
+  {
+   "kind": "open",
+   "id": "open:C1-0902:C1-0901",
+   "from": "C1-0902",
+   "to": "C1-0901"
+  },
+  {
+   "kind": "open",
+   "id": "open:C1-0902:1-0905-charting",
+   "from": "C1-0902",
+   "to": "1-0905-charting"
+  },
+  {
+   "kind": "open",
+   "id": "open:1-0905-charting:C1-0901",
+   "from": "1-0905-charting",
+   "to": "C1-0901"
+  },
+  {
+   "kind": "open",
+   "id": "open:1-0905-tube:1-0905-charting",
+   "from": "1-0905-tube",
+   "to": "1-0905-charting"
+  },
+  {
+   "kind": "open",
+   "id": "open:C1-0902:C1-0903",
+   "from": "C1-0902",
+   "to": "C1-0903"
+  },
+  {
+   "kind": "open",
+   "id": "open:C1-0903:1-0915",
+   "from": "C1-0903",
+   "to": "1-0915"
+  },
+  {
+   "kind": "open",
+   "id": "open:C1-0903:1-0917",
+   "from": "C1-0903",
+   "to": "1-0917"
+  },
+  {
+   "kind": "open",
+   "id": "open:C1-0903:1-0917b",
+   "from": "C1-0903",
+   "to": "1-0917b"
+  },
+  {
+   "kind": "open",
+   "id": "open:C1-0901:1-0901",
+   "from": "C1-0901",
+   "to": "1-0901"
+  },
+  {
+   "kind": "open",
+   "id": "open:C1-0802:C1-0801",
+   "from": "C1-0802",
+   "to": "C1-0801"
+  },
+  {
+   "kind": "open",
+   "id": "open:C1-0802:1-0804",
+   "from": "C1-0802",
+   "to": "1-0804"
+  },
+  {
+   "kind": "open",
+   "id": "open:1-0804:C1-0801",
+   "from": "1-0804",
+   "to": "C1-0801"
+  },
+  {
+   "kind": "open",
+   "id": "open:3.06.27.02:3.06.27.03",
+   "from": "3.06.27.02",
+   "to": "3.06.27.03"
+  },
+  {
+   "kind": "open",
+   "id": "open:C1-0603:C1-0602",
+   "from": "C1-0603",
+   "to": "C1-0602"
+  }
+ ],
+ "entry": {
+  "room": "C1-0602",
+  "via": "open"
+ }
+}

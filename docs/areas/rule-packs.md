@@ -138,3 +138,16 @@ every private office having a door (not an open link) to the hall (OP-009, OP-01
 the lobby nor a side room (OP-011), and every space being reached from the entry. The evaluators are in `graph_rules/pattern.rs`.
 Graphs need a `kind` on each node and no `role`. `generate --archetype office-pattern` ([graph generator](graph-generator.md#office-pattern-graph-first))
 checks its graph and the extracted one against it.
+
+### The medical-day pack
+
+`data/graph-rules/medical-day.json` (MD-001 to MD-011, exploratory, from `specs/medical-day-pattern-generator.md`; the frozen A112
+trace's 44 rooms, given kinds, pass all eleven): kinds treatment_bay, treatment_room, isolation, anteroom, washroom, medication,
+clean_utility, soiled_utility, staff_work, office, meeting, storage, alcove, waiting, shell, plant, shaft and corridor. Bays open to a
+corridor with no door; treatment rooms, offices and utilities with a door to a corridor; isolation with an anteroom and a washroom
+of its own; clean and soiled apart; medication with one link; staff work open and doorless; the corridors one set; every room but a
+shaft reaching a corridor; and no link with a room on one side only (MD-011, from `exterior` edges, edges naming a node the graph
+lacks, and a top-level `exterior_doors` list). The evaluators are in `graph_rules/medical.rs` and follow the done check's own
+literally: links count one by one, a door is any operation but `open`. A node with no kind, or one outside the eighteen, is refused
+rather than failed. Graphs need a `kind` on each node and no `role` or `entry`. `generate --archetype medical-day`
+([graph generator](graph-generator.md#medical-day-graph-first)) checks its graph and the extracted one against it.

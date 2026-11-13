@@ -1,0 +1,376 @@
+{
+  "schema_version": "graph-rule-pack/1",
+  "pack_id": "medical-day.graph-rules/1",
+  "archetype": "medical-day",
+  "origin": "authored_from_generator",
+  "reference_plans": [],
+  "reference_plan_count": 0,
+  "note": "The medical-day pattern: a window band of treatment bays, a patient corridor, core blocks between cross corridors, an optional office band and a staff corridor. A department, not a building: no entry. The A112 trace passes all eleven rules. Every rule is exploratory.",
+  "kinds": {
+    "treatment_bay": {
+      "role": "clinical",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "treatment_room": {
+      "role": "clinical",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "isolation": {
+      "role": "clinical",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "anteroom": {
+      "role": "support",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "washroom": {
+      "role": "service",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "medication": {
+      "role": "support",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "clean_utility": {
+      "role": "support",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "soiled_utility": {
+      "role": "support",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "staff_work": {
+      "role": "support",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "office": {
+      "role": "private",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "meeting": {
+      "role": "shared",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "storage": {
+      "role": "support",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "alcove": {
+      "role": "support",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "waiting": {
+      "role": "public",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "shell": {
+      "role": "support",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "plant": {
+      "role": "service",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "shaft": {
+      "role": "service",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    },
+    "corridor": {
+      "role": "circulation",
+      "count": [
+        0,
+        null
+      ],
+      "area_m2": [
+        0,
+        null
+      ]
+    }
+  },
+  "rules": [
+    {
+      "id": "MD-001",
+      "name": "bay-open-to-corridor",
+      "classification": "exploratory",
+      "category": "vocabulary",
+      "subject": "every treatment bay",
+      "predicate": "has an open link to",
+      "object": "a corridor, and no door",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "A bay is a cubicle or station on the window band, open to the patient corridor.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    },
+    {
+      "id": "MD-002",
+      "name": "treatment-room-door-to-corridor",
+      "classification": "exploratory",
+      "category": "adjacency",
+      "subject": "every treatment room",
+      "predicate": "has a door to",
+      "object": "a corridor",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "A treatment room is entered from a corridor.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    },
+    {
+      "id": "MD-003",
+      "name": "isolation-with-anteroom-and-washroom",
+      "classification": "exploratory",
+      "category": "adjacency",
+      "subject": "an isolation room",
+      "predicate": "has a door to a corridor, to an anteroom that has a door to a corridor, and to a washroom that has no other link",
+      "object": "those rooms",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "An isolation room is entered through its anteroom and keeps its own washroom.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    },
+    {
+      "id": "MD-004",
+      "name": "clean-and-soiled-apart",
+      "classification": "exploratory",
+      "category": "adjacency",
+      "subject": "clean and soiled utility",
+      "predicate": "are not linked to each other; each has a door to",
+      "object": "a corridor",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "Clean and soiled flows stay apart.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    },
+    {
+      "id": "MD-005",
+      "name": "medication-one-door",
+      "classification": "exploratory",
+      "category": "adjacency",
+      "subject": "a medication room",
+      "predicate": "has exactly one link, a door to",
+      "object": "a corridor",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "Medication is held behind a single door.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    },
+    {
+      "id": "MD-006",
+      "name": "washroom-doors-only",
+      "classification": "exploratory",
+      "category": "adjacency",
+      "subject": "a washroom",
+      "predicate": "has doors only: one to a corridor, or one to the single room it serves, or both",
+      "object": "those doors",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "A washroom is private: doors only, one each way.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    },
+    {
+      "id": "MD-007",
+      "name": "office-door-to-corridor",
+      "classification": "exploratory",
+      "category": "adjacency",
+      "subject": "every office and meeting room",
+      "predicate": "has a door to a corridor and no open link",
+      "object": "the corridor",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "Staff rooms are closed rooms off a corridor.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    },
+    {
+      "id": "MD-008",
+      "name": "staff-work-open",
+      "classification": "exploratory",
+      "category": "adjacency",
+      "subject": "a staff work area",
+      "predicate": "has an open link to a corridor or another staff work area, and no door",
+      "object": "that open link",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "A staff work area is an open counter.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    },
+    {
+      "id": "MD-009",
+      "name": "corridors-connected",
+      "classification": "exploratory",
+      "category": "access",
+      "subject": "the corridors",
+      "predicate": "are one connected set by",
+      "object": "open links and doors",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "A department's corridors are one network.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    },
+    {
+      "id": "MD-010",
+      "name": "every-room-reaches-a-corridor",
+      "classification": "exploratory",
+      "category": "access",
+      "subject": "every room but a shaft",
+      "predicate": "is linked to a corridor, or to a room that is",
+      "object": "by doors and open links",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "A room nobody can reach is no plan.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    },
+    {
+      "id": "MD-011",
+      "name": "no-entry",
+      "classification": "exploratory",
+      "category": "access",
+      "subject": "every door and open link",
+      "predicate": "has a room on both sides",
+      "object": "so the plan has no entry",
+      "checkability": "deterministic",
+      "confidence": 0.7,
+      "rationale": "A department is a part of a building: no door goes outside.",
+      "exceptions": [],
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "check": {}
+    }
+  ]
+}

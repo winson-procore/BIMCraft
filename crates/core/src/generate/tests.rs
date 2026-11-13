@@ -678,6 +678,7 @@ fn every_archetypes_script_says_its_building_type_as_a_drawing_property() {
         (Archetype::House, 3, 115.0, "residential"),
         (Archetype::StudioOffice, 3, 260.0, "office"),
         (Archetype::OfficePattern, 1, 300.0, "office"),
+        (Archetype::MedicalDay, 1, 780.0, "hospital"),
     ] {
         let b = built(archetype, seed, area);
         let script = text(&b, "script.bimcraft.txt");
