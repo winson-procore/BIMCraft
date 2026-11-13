@@ -8,10 +8,12 @@ pub enum Archetype {
     Office,
     Clinic,
     Hospital,
+    /// Graph first: a house is not laid out by `layout` and `program` but by `house`.
+    House,
 }
 
 impl Archetype {
-    pub const ALL: [Archetype; 3] = [Archetype::Office, Archetype::Clinic, Archetype::Hospital];
+    pub const ALL: [Archetype; 4] = [Archetype::Office, Archetype::Clinic, Archetype::Hospital, Archetype::House];
 
     pub fn parse(name: &str) -> Option<Archetype> {
         Archetype::ALL.into_iter().find(|a| a.name() == name)
@@ -22,6 +24,7 @@ impl Archetype {
             Archetype::Office => "office",
             Archetype::Clinic => "clinic",
             Archetype::Hospital => "hospital",
+            Archetype::House => "house",
         }
     }
 
@@ -34,6 +37,7 @@ impl Archetype {
             Archetype::Office => 0x000F_F1CE,
             Archetype::Clinic => 0x00C1_191C,
             Archetype::Hospital => 0x0000_0A51_17A1,
+            Archetype::House => 0x0000_0A05_E000,
         }
     }
 }
@@ -122,6 +126,7 @@ pub fn program(archetype: Archetype, area_m2: f64, seed: u64) -> Program {
         Archetype::Office => spec("entry_lobby", "Lobby", Role::Public, 16, 40, true),
         Archetype::Clinic => spec("entry_lobby", "Entry Lobby", Role::Public, 16, 30, true),
         Archetype::Hospital => spec("entry_lobby", "Hospital Entry Lobby", Role::Public, 24, 70, true),
+        Archetype::House => spec("entry_lobby", "Entry", Role::Public, 4, 6, true),
     };
     let corridor = spec("corridor", "Corridor", Role::Circulation, 0, 0, false);
     match archetype {
@@ -143,6 +148,8 @@ pub fn program(archetype: Archetype, area_m2: f64, seed: u64) -> Program {
             several(&mut cells, 1, spec("nurse_station", "Nurse Station", Role::Support, 8, 12, true));
             several(&mut cells, 1, spec("clean_storage", "Clean Storage", Role::Support, 8, 12, false));
         }
+        // A house has no corridor program: `house` samples its graph from the rule pack.
+        Archetype::House => {}
         Archetype::Hospital => {
             several(&mut cells, 1 + a / 2500, spec("waiting_reception", "Waiting and Reception", Role::Public, 30, 80, true));
             several(&mut cells, 4 + a / 1200 + rng.below(2), spec("exam", "Exam Room", Role::Clinical, 10, 14, true));

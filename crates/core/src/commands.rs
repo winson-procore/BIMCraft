@@ -69,12 +69,14 @@ pub static ALL: &[Command] = &[
     other(
         "generate",
         "Generate Building",
-        "{path, archetype: office|clinic|hospital, seed, area_m2} write a run directory at `path` for a generated one-storey plan of about \
+        "{path, archetype: office|clinic|hospital|house, seed, area_m2 | area_sqft} write a run directory at `path` for a generated one-storey plan of about \
          `area_m2` gross (above 0, at most 5000): program-graph.json, topology-graph.json, building-ir.json, script.bimcraft.txt (a \
          script for `run`, which builds the plan, its sheet and its annotation), report.json and manifest.json. `seed` is an integer \
          from 0: the same brief gives the same bytes, other seeds other plans. A brief that can't be met (an area too small for the \
-         program: `unsatisfiable_area`, with the least that fits) or can't be written writes no file; the error starts with its code. \
-         The project is not touched",
+         program: `unsatisfiable_area`, with the least that fits; a house no shell fits: `unplaceable_graph`) or can't be written \
+         writes no file; the error starts with its code. A `house` is graph first: a graph of rooms is sampled from the house rule pack by \
+         the seed, then placed in a shell (bar, l_shape, corner_notch, narrow, t_shape, side_nub or stepped, turned and mirrored by the \
+         seed), and what the `topology` command reads from the built project is that graph. The project is not touched",
         crate::generate::generate,
     ),
     other(

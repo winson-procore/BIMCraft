@@ -16,8 +16,8 @@ use crate::model::Element;
 
 fn lifted(name: &str, seed: u64, area: f64) -> (Built, Topology, Building) {
     let b = built(archetype(name), seed, area);
-    let topology = Topology::of(&b.plan);
-    let building = Building::lift(&b.plan, &topology);
+    let topology = Topology::of(b.plan.as_ref().unwrap());
+    let building = Building::lift(b.plan.as_ref().unwrap(), &topology);
     (b, topology, building)
 }
 
@@ -232,7 +232,7 @@ fn a_failed_lift_rule_says_what_to_fix() {
 /// A brief's building, its script as compiled from it, and the answers of a fresh project that ran it.
 fn ran(name: &str, seed: u64, area: f64) -> (Built, Building, Script, Vec<Value>, Session) {
     let (b, _, building) = lifted(name, seed, area);
-    let script = script::compile(&b.plan, &building);
+    let script = script::compile(b.plan.as_ref().unwrap(), &building);
     assert_eq!(script.text, text(&b, "script.bimcraft.txt"), "the file holds the script compiled from the building");
     let mut s = Session::new();
     let replies = s.script(&script.text).unwrap_or_else(|e| panic!("{name} {seed} {area}: {e}"));
@@ -240,7 +240,7 @@ fn ran(name: &str, seed: u64, area: f64) -> (Built, Building, Script, Vec<Value>
 }
 
 fn run_status(b: &Built, building: &Building, script: &Script, replies: &[Value], s: &Session) -> BTreeMap<&'static str, Status> {
-    report::run_checks(&b.plan, building, script, replies, &s.model).into_iter().map(|c| (c.id, c.status)).collect()
+    report::run_checks(b.plan.as_ref().unwrap(), building, script, replies, &s.model).into_iter().map(|c| (c.id, c.status)).collect()
 }
 
 #[test]
@@ -296,6 +296,8 @@ fn the_script_makes_the_walls_of_the_plan_where_the_plan_put_them() {
         // The plan's polylines, a segment to a wall, in the order the plan lists them.
         let planned: Vec<([i64; 2], [i64; 2])> = b
             .plan
+            .as_ref()
+            .unwrap()
             .walls
             .iter()
             .flat_map(|w| {
@@ -462,7 +464,7 @@ fn the_script_makes_a_type_for_each_symbol_before_the_doors_and_windows_that_use
         let used: BTreeSet<&str> = building.openings.iter().map(|o| o.type_name.as_str()).collect();
         let doors = s.model.types.door.keys().chain(s.model.types.window.keys()).filter(|k| used.contains(k.as_str())).count();
         assert_eq!(doors, used.len(), "{label}");
-        assert_eq!(b.plan.openings.len(), building.openings.len(), "{label}");
+        assert_eq!(b.plan.as_ref().unwrap().openings.len(), building.openings.len(), "{label}");
         assert_eq!(replies.len(), script.lines.len(), "{label}");
     }
 }
@@ -489,7 +491,7 @@ fn a_symbol_the_script_did_not_make_fails_the_symbol_rule() {
         assert_eq!(run_status(&b, broken, &script, &replies, &s)["LIFT-007"], Status::Fail);
     }
     // A symbol that no door has is refused before the script runs.
-    let t = Topology::of(&b.plan);
+    let t = Topology::of(b.plan.as_ref().unwrap());
     let bad = with(&|x| x.openings[door].symbol = "revolving");
     assert_eq!(lift_status(&bad, &t)["LIFT-003"], Status::Fail);
     assert_eq!(lift_status(&good, &t)["LIFT-003"], Status::Pass);

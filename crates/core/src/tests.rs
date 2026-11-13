@@ -1931,6 +1931,10 @@ fn hostile_params_never_panic_or_break_the_model() {
         json!({"path": "/nonexistent/run", "archetype": "hospital", "seed": 1, "area_m2": 900}),
         json!({"path": "/nonexistent/run", "archetype": "office", "seed": -1, "area_m2": f64::MAX}),
         json!({"path": "/nonexistent/run", "archetype": "office", "seed": 1.5, "area_m2": 5e-324}),
+        json!({"path": "/nonexistent/run", "archetype": "house", "seed": 1, "area_m2": 12}),
+        json!({"path": "/nonexistent/run", "archetype": "house", "seed": u64::MAX, "area_m2": 1e300}),
+        json!({"path": "/nonexistent/run", "archetype": "house", "seed": 7, "area_sqft": 1.0}),
+        json!({"path": "/nonexistent/run", "archetype": "house", "seed": 3, "area_m2": 115}),
         // `rule_pack`: a directory that can never be made, so the sweep writes nothing.
         json!({"path": "/nonexistent/library"}),
         json!({"path": "/nonexistent/library", "archetype": "office"}),

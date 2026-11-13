@@ -30,7 +30,7 @@ pub struct Script {
 pub const REQUIRED: [&str; 12] = ["new", "level", "grid", "wall", "door", "floor", "room", "text", "dimension", "tag", "sheet", "place"];
 
 /// The sheet's size in millimetres, landscape.
-fn sheet_size(name: &str) -> (i64, i64) {
+pub(super) fn sheet_size(name: &str) -> (i64, i64) {
     match name {
         "A0" => (1189, 841),
         "A1" => (841, 594),
@@ -65,7 +65,7 @@ fn line(id: &'static str, params: Value) -> Line {
     Line { id, params, room_of: None, wall_of: None, opening_of: None }
 }
 
-fn grid_name(mut i: usize, letters: bool) -> String {
+pub(super) fn grid_name(mut i: usize, letters: bool) -> String {
     if !letters {
         return (i + 1).to_string();
     }
@@ -82,8 +82,8 @@ fn grid_name(mut i: usize, letters: bool) -> String {
 
 fn grid_positions(plan: &Plan, building: &Building) -> (Vec<i64>, Vec<i64>) {
     let mut xs: BTreeSet<i64> = [0, plan.width].into();
-    let mut ys: BTreeSet<i64> =
-        [0, plan.depth, plan.corridor_bottom, plan.corridor_top, (plan.corridor_bottom + plan.corridor_top) / 2].into();
+    let mut ys: BTreeSet<i64> = [0, plan.depth].into();
+    ys.extend(plan.guide_ys());
     for p in &building.boundary {
         xs.insert(p[0]);
         ys.insert(p[1]);
@@ -138,10 +138,7 @@ pub fn compile(plan: &Plan, building: &Building) -> Script {
             lines.push(Line { opening_of: Some(o.id.clone()), ..line(id, params) });
         }
     }
-    let corridor = &plan.program.corridor;
-    let mut rooms = vec![(corridor.id.clone(), corridor.label.clone(), [w / 2, (plan.corridor_bottom + plan.corridor_top) / 2])];
-    rooms.extend(plan.cells.iter().map(|c| (c.spec.id.clone(), c.spec.label.clone(), c.middle())));
-    for (i, (space, name, point)) in rooms.into_iter().enumerate() {
+    for (i, (space, name, point)) in plan.room_points().into_iter().enumerate() {
         let number = (101 + i).to_string();
         lines.push(Line { room_of: Some(space), ..line("room", json!({"point": point, "name": name, "number": number})) });
     }
@@ -149,8 +146,7 @@ pub fn compile(plan: &Plan, building: &Building) -> Script {
     let top_span = horizontal_span(&building.boundary, d).unwrap_or((0, w));
     let overlap = (bottom_span.0.max(top_span.0), bottom_span.1.min(top_span.1));
     let depth_x = if overlap.0 < overlap.1 { (overlap.0 + overlap.1) / 2 } else { w / 2 };
-    let corridor_y = (plan.corridor_bottom + plan.corridor_top) / 2;
-    let corridor_dim_y = corridor_y + 137;
+    let corridor_dim_y = plan.width_dimension_y();
     let depth_dim_x = depth_x + 137;
     lines.push(line("dimension", json!({"refs": [[0, corridor_dim_y], [w, corridor_dim_y]], "at": [w / 2, -1300]})));
     lines.push(line("dimension", json!({"refs": [[depth_dim_x, 0], [depth_dim_x, d]], "at": [w + 900, d / 2]})));
@@ -181,7 +177,7 @@ pub fn compile(plan: &Plan, building: &Building) -> Script {
     Script { lines, text }
 }
 
-fn capital(word: &str) -> String {
+pub(super) fn capital(word: &str) -> String {
     let mut chars = word.chars();
     chars.next().map_or_else(String::new, |c| c.to_uppercase().chain(chars).collect())
 }

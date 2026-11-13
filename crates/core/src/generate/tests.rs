@@ -464,10 +464,10 @@ fn the_script_runs_in_a_fresh_project_and_makes_a_plan_with_bounded_rooms() {
         let replies = s.script(&script).unwrap_or_else(|e| panic!("{label}: {e}"));
         assert_eq!(replies.len(), commands);
         assert!(replies.iter().all(|r| r.get("warning").is_none()), "{label}: a room is unbounded");
-        let rooms = b.plan.cells.len() + 1;
+        let rooms = b.plan.as_ref().unwrap().cells.len() + 1;
         assert_eq!(count(&s, |e| matches!(e, Element::Room(_))), rooms, "{label}");
         assert!(count(&s, |e| matches!(e, Element::Wall(_))) >= rooms, "{label}: walls");
-        let exits = b.plan.openings.iter().filter(|o| matches!(o.role, "back_door" | "service_exit")).count();
+        let exits = b.plan.as_ref().unwrap().openings.iter().filter(|o| matches!(o.role, "back_door" | "service_exit")).count();
         assert!(exits >= 1, "{label}: a way out the back");
         assert_eq!(
             count(&s, |e| matches!(e, Element::Door(_))),
@@ -595,10 +595,10 @@ fn the_report_says_what_was_checked_and_what_the_generator_cannot_do() {
     assert_eq!(r["summary"]["fail"], 0);
     assert!(!r["capability_notes"].as_array().unwrap().is_empty());
     assert_eq!(r["rule_set"], report::RULE_SET);
-    assert_eq!(r["scores"]["room_count"].as_u64(), Some(b.plan.cells.len() as u64 + 1));
+    assert_eq!(r["scores"]["room_count"].as_u64(), Some(b.plan.as_ref().unwrap().cells.len() as u64 + 1));
     let net = r["scores"]["net_to_gross"].as_f64().unwrap();
     assert!((0.5..1.0).contains(&net), "{net}");
-    assert_eq!(r["measured_rooms"].as_array().unwrap().len(), b.plan.cells.len() + 1);
+    assert_eq!(r["measured_rooms"].as_array().unwrap().len(), b.plan.as_ref().unwrap().cells.len() + 1);
     assert!(r["measured_rooms"].as_array().unwrap().iter().all(|m| m["net_area_m2"].as_f64().unwrap_or(0.0) > 0.0));
     // A plan far from the area asked for says so rather than passing quietly: the depth is held, so the length can't make up.
     let wide = built(Archetype::Office, 1, 5000.0);
@@ -643,7 +643,7 @@ fn areas_are_met_closely_across_the_range() {
     for area in [250.0, 400.0, 900.0, 1600.0, 3000.0, 5000.0] {
         for name in ["office", "clinic", "hospital"] {
             if let Ok(b) = build(archetype(name), 1, area) {
-                let gross = b.plan.gross_m2();
+                let gross = b.plan.as_ref().unwrap().gross_m2();
                 assert!((gross - area).abs() / area <= 0.05, "{name} {area}: {gross}");
             }
         }

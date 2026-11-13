@@ -4,7 +4,10 @@
 //! that can't be met writes nothing. Detail: `docs/areas/graph-generator.md`.
 
 pub(crate) mod graph;
+pub(crate) mod house;
 mod layout;
+#[cfg(test)]
+mod legacy_tests;
 mod lift;
 #[cfg(test)]
 mod lift_tests;
@@ -118,7 +121,10 @@ impl AreaRequest {
 pub struct Built {
     pub archetype: Archetype,
     pub seed: u64,
-    pub plan: Plan,
+    /// The corridor plan the files were made from; a house has none.
+    pub plan: Option<Plan>,
+    pub gross_m2: f64,
+    pub rooms: usize,
     pub checks: Vec<Check>,
     /// The file name and its text: the manifest last.
     pub files: Vec<(&'static str, String)>,
@@ -142,6 +148,9 @@ fn pretty(v: &Value) -> Result<String, Refusal> {
 
 /// The least area, in 10 m2 steps, that a brief of this archetype and seed is met at, when there is one.
 fn least_area(archetype: Archetype, seed: u64) -> Option<f64> {
+    if archetype == Archetype::House {
+        return Some(house::least_area());
+    }
     (1..=(MAX_AREA_M2 as u32 / 10)).map(|i| f64::from(i) * 10.0).find(|a| layout::plan(archetype, *a, seed).is_ok())
 }
 
@@ -159,6 +168,9 @@ fn build_with_area(archetype: Archetype, seed: u64, area: AreaRequest) -> Result
                 area.value, area.unit, area.m2
             ),
         ));
+    }
+    if archetype == Archetype::House {
+        return house::build(seed, area);
     }
     let plan = layout::plan(archetype, area.m2, seed).map_err(|why| {
         let least = least_area(archetype, seed)
@@ -213,7 +225,8 @@ fn build_with_area(archetype: Archetype, seed: u64, area: AreaRequest) -> Result
     }))?;
     let mut files: Vec<(&'static str, String)> = FILES.iter().map(|(_, name)| *name).zip(texts).collect();
     files.push((MANIFEST, manifest));
-    Ok(Built { archetype, seed, plan, checks, files, topology_hash })
+    let (gross_m2, rooms) = (plan.gross_m2(), plan.cells.len() + 1);
+    Ok(Built { archetype, seed, plan: Some(plan), gross_m2, rooms, checks, files, topology_hash })
 }
 
 /// Writes the files to `dir`, made if need be; a file that can't be written takes the ones before it away again.
@@ -272,8 +285,8 @@ fn run(p: &Value) -> Result<Value, Refusal> {
         "path": dir,
         "archetype": archetype.name(),
         "seed": built.seed,
-        "gross_area_m2": built.plan.gross_m2(),
-        "rooms": built.plan.cells.len() + 1,
+        "gross_area_m2": built.gross_m2,
+        "rooms": built.rooms,
         "topology_hash": built.topology_hash,
         "checks": {"pass": count(Status::Pass), "warn": count(Status::Warn), "fail": count(Status::Fail)},
         "files": built.files.iter().map(|(name, _)| *name).collect::<Vec<_>>(),

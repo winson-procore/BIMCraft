@@ -8,7 +8,7 @@
 use serde_json::{Value, json};
 
 use super::graph::{BUILDING_KIND, SCHEMA_VERSION, Topology};
-use super::layout::{Band, EXTERIOR, INTERIOR, Plan};
+use super::layout::{EXTERIOR, INTERIOR, Plan};
 
 pub const LEVEL_1: &str = "level_1";
 pub const LEVEL_2: &str = "level_2";
@@ -152,14 +152,7 @@ impl Building {
             Level { id: LEVEL_2.into(), name: "Level 2", elevation_mm: STOREY_MM },
             Level { id: ROOF.into(), name: "Roof", elevation_mm: ROOF_MM },
         ];
-        let corridor = &plan.program.corridor.id;
-        let rect = |id: &str| -> Option<[i64; 4]> {
-            if id == corridor {
-                Some([0, plan.corridor_bottom, plan.width, plan.corridor_top])
-            } else {
-                plan.cells.iter().find(|c| c.spec.id == id).map(|c| [c.x0, c.y0, c.x1, c.y1])
-            }
-        };
+        let rect = |id: &str| plan.rect_of(id);
         let spaces: Vec<Space> = topology
             .nodes
             .iter()
@@ -184,16 +177,10 @@ impl Building {
             let wall_type = if w.kind == "exterior" { EXTERIOR } else { INTERIOR };
             for (seg_index, seg) in points.windows(2).enumerate() {
                 let [a, b] = [seg[0], seg[1]];
-                let id = match (w.kind, a, b) {
-                    ("exterior", ..) => exterior_id(plan, seg_index, a, b),
-                    ("corridor", [_, y], [_, y2]) if y == y2 && y == plan.corridor_bottom => "wall_corr_south".into(),
-                    ("corridor", [_, y], [_, y2]) if y == y2 && y == plan.corridor_top => "wall_corr_north".into(),
-                    ("partition", ..) => plan
-                        .cells
-                        .iter()
-                        .find(|c| c.x1 == a[0] && a[0] == b[0] && c.y0 == a[1].min(b[1]) && c.y1 == a[1].max(b[1]))
-                        .map_or_else(|| format!("wall_unplaced_{}", walls.len()), |c| format!("wall_part_{}", c.spec.id)),
-                    _ => format!("wall_unplaced_{}", walls.len()),
+                let id = if w.kind == "exterior" {
+                    exterior_id(plan, seg_index, a, b)
+                } else {
+                    plan.inner_wall_id(w.kind, a, b).unwrap_or_else(|| format!("wall_unplaced_{}", walls.len()))
                 };
                 let source_2d_refs =
                     topology.nodes.iter().filter(|n| rect(&n.id).is_some_and(|r| bounds_along(a, b, r))).map(|n| n.id.clone()).collect();
@@ -215,16 +202,12 @@ impl Building {
 
         let (mut openings, mut windows) = (Vec::new(), 0);
         for o in &plan.openings {
-            let band = plan.cells.iter().find(|c| c.spec.id == o.space).map(|c| c.band);
-            let (host, id, source_edge) = match (o.kind, o.role, band) {
-                ("door", "main_entry", _) => (exterior_host(&walls, o.at), "door_entry".to_string(), None),
-                ("door", "back_door" | "service_exit", _) => {
+            let (host, id, source_edge) = match (o.kind, o.role) {
+                ("door", "main_entry") => (exterior_host(&walls, o.at), "door_entry".to_string(), None),
+                ("door", "back_door" | "service_exit") => {
                     (exterior_host(&walls, o.at), format!("door_{}_{}", o.role.trim_end_matches("_door"), o.space), None)
                 }
-                ("door", _, Some(Band::North)) => {
-                    ("wall_corr_north".to_string(), format!("door_{}", o.space), door_edge(topology, &o.space))
-                }
-                ("door", ..) => ("wall_corr_south".to_string(), format!("door_{}", o.space), door_edge(topology, &o.space)),
+                ("door", _) => (plan.corridor_wall_of(&o.space).to_string(), format!("door_{}", o.space), door_edge(topology, &o.space)),
                 _ => {
                     windows += 1;
                     (exterior_host(&walls, o.at), format!("window_{windows}_{}", o.space), None)

@@ -19,10 +19,10 @@ const USAGE: &str = "USAGE:
       commands and scripts (one `ID {json}` per line), save. --save writes by extension:
       .bimcraft (the project), .ifc (IFC4), .glb (the 3D view's scene as glTF), .svg or .png (the lowest level's plan).
       --highrise builds an original 20-storey performance sample (about 10,000 elements).
-  bimcraft-cli generate --archetype office|clinic|hospital --seed N (--area M2 | --area-sqft SQFT) --out DIR
+  bimcraft-cli generate --archetype office|clinic|hospital|house --seed N (--area M2 | --area-sqft SQFT) --out DIR
                                  write a generated plan's run directory: program, topology and building graphs, a script for
                                  `run --script`, a report and a manifest. The same brief gives the same files; a brief that
-                                 can't be met (an area too small) exits non-zero, naming why, and writes nothing
+                                 can't be met (an area too small) exits non-zero with a JSON error (`error`, a code, and `message`) on stderr, and writes nothing
   bimcraft-cli topology --model FILE.bimcraft --out FILE.json
                                  read a saved project and write its 2D topology graph from geometry alone: rooms as nodes, door,
                                  open and adjacent edges, the entry, the footprint and typed diagnostics (a room no walls enclose).
@@ -94,7 +94,7 @@ fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
         }
         [cmd, rest @ ..] if cmd == "generate" => {
             let params = generate_params(rest)?;
-            print(out, &s.execute("generate", &params)?)
+            print(out, &s.execute("generate", &params).map_err(typed_refusal)?)
         }
         [cmd, rest @ ..] if cmd == "topology" => {
             let (model, params) = topology_params(rest)?;
@@ -160,6 +160,17 @@ fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
             writeln!(out, "bimcraft-cli {}", env!("CARGO_PKG_VERSION")).map_err(|e| format!("stdout: {e}"))
         }
         _ => Err(USAGE.into()),
+    }
+}
+
+/// A refusal the generator words as `code: message`, as the JSON object `{"error": code, "message": message}` on stderr, so a
+/// program can read the code. Anything else is left as it is.
+fn typed_refusal(e: String) -> String {
+    match e.split_once(": ") {
+        Some((code, message)) if !code.is_empty() && code.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') => {
+            json!({"error": code, "message": message}).to_string()
+        }
+        _ => e,
     }
 }
 
@@ -522,7 +533,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("bimcraft-cli-generate-bad-{}", std::process::id()));
         let at = dir.to_string_lossy().into_owned();
         let e = cli_out(&["generate", "--archetype", "office", "--seed", "1", "--area", "40", "--out", &at]).unwrap_err();
-        assert!(e.starts_with("unsatisfiable_area: ") && e.contains("too small"), "{e}");
+        let refusal: Value = serde_json::from_str(&e).unwrap();
+        assert_eq!(refusal["error"], "unsatisfiable_area", "{e}");
+        assert!(refusal["message"].as_str().unwrap().contains("too small"), "{e}");
         assert!(!dir.exists());
         for (args, says) in [
             (vec!["--archetype", "office", "--seed", "1", "--area", "900"], "--out"),

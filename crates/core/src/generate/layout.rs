@@ -134,6 +134,9 @@ pub struct Cell {
     pub x1: i64,
     pub y0: i64,
     pub y1: i64,
+    /// The y of the wall to the corridor, where its door is, and of the outside wall, where its windows are.
+    pub inside_y: i64,
+    pub outside_y: i64,
 }
 
 impl Cell {
@@ -194,6 +197,64 @@ pub struct Plan {
 }
 
 impl Plan {
+    /// Every room's `(id, label, point)`, the corridor first, in the order rooms are numbered.
+    pub fn room_points(&self) -> Vec<(String, String, [i64; 2])> {
+        let corridor = &self.program.corridor;
+        let mut rooms = vec![(corridor.id.clone(), corridor.label.clone(), [self.width / 2, self.corridor_mid()])];
+        rooms.extend(self.cells.iter().map(|c| (c.spec.id.clone(), c.spec.label.clone(), c.middle())));
+        rooms
+    }
+
+    fn corridor_mid(&self) -> i64 {
+        (self.corridor_bottom + self.corridor_top) / 2
+    }
+
+    /// The y of the dimension along the plan's width: the corridor's middle, a little off it.
+    pub fn width_dimension_y(&self) -> i64 {
+        self.corridor_mid() + 137
+    }
+
+    /// The ys a grid line is drawn at beside the plan's edges and its rooms'.
+    pub fn guide_ys(&self) -> [i64; 3] {
+        [self.corridor_bottom, self.corridor_top, self.corridor_mid()]
+    }
+
+    /// Where the building is entered from outside, and the clear width of the wall there.
+    pub fn entry_wall(&self) -> ([i64; 2], i64) {
+        ([0, self.corridor_mid()], self.corridor_width())
+    }
+
+    /// The box of a room by its id, on wall centre lines.
+    pub fn rect_of(&self, id: &str) -> Option<[i64; 4]> {
+        if id == self.program.corridor.id {
+            Some([0, self.corridor_bottom, self.width, self.corridor_top])
+        } else {
+            self.cells.iter().find(|c| c.spec.id == id).map(|c| [c.x0, c.y0, c.x1, c.y1])
+        }
+    }
+
+    /// The id of the wall of a given kind that runs from `a` to `b`, when the layout names it (an exterior wall is named by lift).
+    pub fn inner_wall_id(&self, kind: &str, a: [i64; 2], b: [i64; 2]) -> Option<String> {
+        match kind {
+            "corridor" if a[1] == b[1] && a[1] == self.corridor_bottom => Some("wall_corr_south".into()),
+            "corridor" if a[1] == b[1] && a[1] == self.corridor_top => Some("wall_corr_north".into()),
+            "partition" => self
+                .cells
+                .iter()
+                .find(|c| c.x1 == a[0] && a[0] == b[0] && c.y0 == a[1].min(b[1]) && c.y1 == a[1].max(b[1]))
+                .map(|c| format!("wall_part_{}", c.spec.id)),
+            _ => None,
+        }
+    }
+
+    /// The wall a room's door to the corridor is in.
+    pub fn corridor_wall_of(&self, space: &str) -> &'static str {
+        match self.cells.iter().find(|c| c.spec.id == space).map(|c| c.band) {
+            Some(Band::North) => "wall_corr_north",
+            _ => "wall_corr_south",
+        }
+    }
+
     pub fn corridor_width(&self) -> i64 {
         self.corridor_top - self.corridor_bottom
     }
@@ -222,6 +283,9 @@ fn round_to_100(x: f64) -> i64 {
 
 /// A plan for the brief, or why none fits.
 pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, String> {
+    if archetype == Archetype::House {
+        return Err("a house is laid out graph first, by `house`, not by a corridor plan".into());
+    }
     let layout_family = layout_family(seed);
     let area_mm2 = area_m2 * 1.0e6;
     let depth = round_to_100((area_mm2 / layout_family.target_aspect()).sqrt()).clamp(MIN_DEPTH, layout_family.max_depth());
@@ -271,7 +335,8 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     let boundary = boundary(width, depth, corridor_bottom, corridor_top, &cells);
     let walls = walls(width, corridor_bottom, corridor_top, &boundary, &cells);
     let opening_symbol_profile = openings::profile(archetype, seed);
-    let openings = openings::place(opening_symbol_profile, seed, &cells, corridor_bottom, corridor_top, depth);
+    let openings =
+        openings::place(opening_symbol_profile, seed, &cells, [0, (corridor_bottom + corridor_top) / 2], corridor_top - corridor_bottom);
     Ok(Plan {
         archetype,
         seed,
@@ -390,7 +455,8 @@ fn deal(band: Band, specs: Vec<Spec>, band_depth: i64, span: Span, y0: i64, y1: 
         .into_iter()
         .zip(widths)
         .map(|(spec, w)| {
-            let cell = Cell { spec, band, x0: x, x1: x + w, y0, y1 };
+            let (inside_y, outside_y) = if band == Band::North { (y0, y1) } else { (y1, y0) };
+            let cell = Cell { spec, band, x0: x, x1: x + w, y0, y1, inside_y, outside_y };
             x += w;
             cell
         })
