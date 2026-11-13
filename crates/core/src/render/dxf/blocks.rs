@@ -64,11 +64,6 @@ impl Frame {
         let each = |pts: &[P2]| pts.iter().map(|p| self.local(*p)).collect::<Vec<P2>>();
         let shape = match &ink.shape {
             Shape::Line { pts, closed, weight } => Shape::Line { pts: each(pts), closed: *closed, weight: *weight },
-            Shape::Arc { centre, radius, start, end, weight } => {
-                let sweep = end - start;
-                let start = (start - self.angle).rem_euclid(360.0);
-                Shape::Arc { centre: self.local(*centre), radius: *radius, start, end: start + sweep, weight: *weight }
-            }
             Shape::Fill { rings } => Shape::Fill { rings: rings.iter().map(|r| each(r)).collect() },
         };
         Ink { layer: ink.layer.clone(), ltype: ink.ltype.clone(), color: ink.color, shape }
@@ -133,12 +128,6 @@ pub(super) struct Blocks {
     held: BTreeSet<Id>,
 }
 
-/// Whether two angles are the same turn, to a twentieth of a degree.
-fn ang_near(a: f64, b: f64) -> bool {
-    let d = (a - b).rem_euclid(360.0);
-    d <= 0.05 || d >= 359.95
-}
-
 /// Whether two ways of drawing are one, to within [`SAME`].
 fn same(a: &[Ink], b: &[Ink]) -> bool {
     let near = |p: &[P2], q: &[P2]| p.len() == q.len() && p.iter().zip(q).all(|(p, q)| p.dist(*q) <= SAME);
@@ -151,10 +140,6 @@ fn same(a: &[Ink], b: &[Ink]) -> bool {
                     (Shape::Line { pts: p, closed: c, weight: w }, Shape::Line { pts: q, closed: d, weight: v }) => {
                         c == d && w == v && near(p, q)
                     }
-                    (
-                        Shape::Arc { centre: c, radius: r, start: s, end: e, weight: w },
-                        Shape::Arc { centre: d, radius: q, start: t, end: f, weight: v },
-                    ) => c.dist(*d) <= SAME && (r - q).abs() <= SAME && w == v && ang_near(*s, *t) && ang_near(*e, *f),
                     (Shape::Fill { rings: p }, Shape::Fill { rings: q }) => p.len() == q.len() && p.iter().zip(q).all(|(p, q)| near(p, q)),
                     _ => false,
                 }
