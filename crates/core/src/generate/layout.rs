@@ -39,6 +39,8 @@ pub enum Strategy {
 }
 
 impl Strategy {
+    pub const ALL: [Strategy; 3] = [Strategy::DoubleLoaded, Strategy::SingleLoaded, Strategy::Offset];
+
     pub fn name(self) -> &'static str {
         match self {
             Strategy::DoubleLoaded => "double_loaded_corridor",
@@ -57,6 +59,9 @@ pub enum LayoutFamily {
 }
 
 impl LayoutFamily {
+    pub const ALL: [LayoutFamily; 4] =
+        [LayoutFamily::CorridorBar, LayoutFamily::CentralCommons, LayoutFamily::ClusteredCommons, LayoutFamily::AtriumCommons];
+
     pub fn name(self) -> &'static str {
         match self {
             LayoutFamily::CorridorBar => "corridor_bar",
@@ -289,16 +294,64 @@ pub fn plan(archetype: Archetype, area_m2: f64, seed: u64) -> Result<Plan, Strin
     if archetype == Archetype::StudioOffice {
         return Err("a studio office is laid out graph first, by `studio`, not by a corridor plan".into());
     }
-    let layout_family = layout_family(seed);
+    // The seed's own family and strategy first; a brief they can't fit is tried with the others, in a fixed order, so a brief
+    // that is met today keeps its plan and one that is not may still find a layout that fits it.
+    let own = (layout_family(seed), strategy(seed));
+    let first = plan_with(archetype, area_m2, seed, own.0, own.1);
+    if first.is_ok() {
+        return first;
+    }
+    for family in LayoutFamily::ALL {
+        for strat in Strategy::ALL {
+            if (family, strat) != own
+                && let Ok(found) = plan_with(archetype, area_m2, seed, family, strat)
+            {
+                return Ok(found);
+            }
+        }
+    }
+    // Nothing fits the full program: the lean one, with only the rooms an office needs, is tried the same way.
+    if archetype == Archetype::Office {
+        for family in LayoutFamily::ALL {
+            for strat in Strategy::ALL {
+                if let Ok(found) = plan_program(archetype, area_m2, seed, family, strat, true) {
+                    return Ok(found);
+                }
+            }
+        }
+    }
+    first
+}
+
+fn plan_with(
+    archetype: Archetype,
+    area_m2: f64,
+    seed: u64,
+    layout_family: LayoutFamily,
+    layout_strategy: Strategy,
+) -> Result<Plan, String> {
+    plan_program(archetype, area_m2, seed, layout_family, layout_strategy, false)
+}
+
+fn plan_program(
+    archetype: Archetype,
+    area_m2: f64,
+    seed: u64,
+    layout_family: LayoutFamily,
+    layout_strategy: Strategy,
+    lean: bool,
+) -> Result<Plan, String> {
     let area_mm2 = area_m2 * 1.0e6;
     let depth = round_to_100((area_mm2 / layout_family.target_aspect()).sqrt()).clamp(MIN_DEPTH, layout_family.max_depth());
     let width = round_to_100(area_mm2 / depth as f64);
     if width < MIN_WIDTH {
         return Err(format!("a plan {depth} mm deep and {width} mm long is narrower than the {MIN_WIDTH} mm a corridor and a room need"));
     }
-    let program = program(archetype, area_m2, seed);
+    let mut program = program(archetype, area_m2, seed);
+    if lean {
+        program = super::program::lean(program);
+    }
     let mut rng = Rng::new(seed, 0x1A7_0001);
-    let layout_strategy = strategy(seed);
     let boundary_shape = boundary_shape(seed);
     let corridor_width = corridor_width(layout_family, depth, &mut rng);
     let corridor_bottom = corridor_bottom(layout_family, layout_strategy, depth, corridor_width);

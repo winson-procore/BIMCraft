@@ -118,3 +118,12 @@ each rule's predicate, the pack owns its parameters (`check`).
 bimcraft-cli rule-pack check --archetype house --graph topology.json   # topology.json with kinds added
 jq '.checks[] | select(.status == "FAIL")' <<< "$(bimcraft-cli rule-pack check --archetype house --graph g.json 2>&1)"
 ```
+
+### The studio-office pack
+
+`data/graph-rules/studio-office.json` (SO-001 to SO-012, all exploratory, from `done/fixtures/studio-office/traced-studio`): kinds
+reception, hall, storage, meeting, bath and office, and rules for the means of each link (double-swing kept apart from swing),
+the entry being the reception, services reached without crossing the studio, WCs off a passage that is open to the studio, the
+corridor serving the meeting rooms and stores, the reception joining both halls, and the studio being the largest space. The
+evaluators are in `graph_rules/studio.rs`; a passage is a hall with a WC off it, a corridor a hall without. Graphs need a `kind`
+on each node and no `role`.

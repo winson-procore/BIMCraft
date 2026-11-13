@@ -173,3 +173,21 @@ pub fn program(archetype: Archetype, area_m2: f64, seed: u64) -> Program {
     }
     Program { lobby, corridor, cells }
 }
+
+/// The least an office needs: one open office, one conference room, two private offices, a restroom and IT storage.
+pub fn lean(mut program: Program) -> Program {
+    let (mut conference, mut private) = (0, 0);
+    program.cells.retain(|c| match c.kind {
+        "focus_room" | "pantry" => false,
+        "conference" => {
+            conference += 1;
+            conference <= 1
+        }
+        "private_office" => {
+            private += 1;
+            private <= 2
+        }
+        _ => true,
+    });
+    program
+}
