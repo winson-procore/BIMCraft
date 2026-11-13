@@ -76,7 +76,11 @@ fn every_embedded_pack_parses_and_each_rule_has_an_evaluator() {
         }
         let checks = check(pack, &Graph::from_value(&graph).unwrap()).unwrap();
         let said: Vec<&str> = checks.iter().map(|c| c.id.as_str()).collect();
-        let rules: Vec<&str> = pack.rules.iter().map(|r| r.id.as_str()).collect();
+        let mut rules: Vec<&str> = pack.rules.iter().map(|r| r.id.as_str()).collect();
+        if archetype == "house" {
+            // The swing rules follow the pack's own.
+            rules.extend(crate::generate::house::swing::rules().unwrap().iter().map(|r| r.id.as_str()));
+        }
         assert_eq!(said, rules, "{archetype}: one check for each rule, in the pack's order");
     }
     assert!(Pack::embedded("barn").unwrap_err().contains("house"));
@@ -106,7 +110,7 @@ fn the_legacy_packs_are_hard_and_say_who_approved_them() {
 #[test]
 fn the_traced_house_passes_every_rule() {
     let checks = house(&traced());
-    assert_eq!(checks.len(), 9);
+    assert_eq!(checks.len(), 9 + crate::generate::house::swing::rules().unwrap().len());
     assert!(failing(&checks).is_empty(), "{checks:?}");
 }
 
@@ -330,8 +334,9 @@ fn the_command_reads_a_graph_given_inline_or_by_path_and_never_touches_the_proje
     assert_eq!(r["pass"], true);
     assert_eq!(r["archetype"], "house");
     assert_eq!(r["pack_id"], "house.graph-rules/1");
-    assert_eq!(r["checks"].as_array().unwrap().len(), 9);
-    assert_eq!(r["summary"], json!({"pass": 9, "fail": 0}));
+    let n = 9 + crate::generate::house::swing::rules().unwrap().len();
+    assert_eq!(r["checks"].as_array().unwrap().len(), n);
+    assert_eq!(r["summary"], json!({"pass": n, "fail": 0}));
 
     let path = std::env::temp_dir().join(format!("bimcraft-rule-check-{}.json", std::process::id()));
     let mut g = traced();
@@ -343,6 +348,76 @@ fn the_command_reads_a_graph_given_inline_or_by_path_and_never_touches_the_proje
     assert_eq!(r["checks"][5]["id"], "HR-006");
     assert_eq!(r["checks"][5]["status"], "FAIL");
     assert!(s.model == before);
+}
+
+/// The traced graph with fields put on the first door edge between `a` and `b`.
+fn with_swing(a: &str, b: &str, fields: Value) -> Value {
+    let mut g = traced();
+    for e in edges(&mut g) {
+        if e["kind"] == "door" && [&e["from"], &e["to"]].iter().all(|x| *x == a || *x == b || *x == "exterior") && e["operation"] == "swing" {
+            for (k, v) in fields.as_object().unwrap() {
+                e[k] = v.clone();
+            }
+            break;
+        }
+    }
+    g
+}
+
+fn status_of(checks: &[Check], id: &str) -> Status {
+    checks.iter().find(|c| c.id == id).unwrap_or_else(|| panic!("no {id}")).status
+}
+
+#[test]
+fn swing_rules_judge_the_side_and_the_hinge_of_a_swing_door() {
+    let ok = house(&with_swing("single_bedroom", "hall", json!({"opens_into": "single_bedroom", "hinge": "start"})));
+    assert!(failing(&ok).is_empty(), "{:?}", failing(&ok));
+    assert_eq!(status_of(&ok, "SW-002"), Status::Pass);
+
+    let into_hall = house(&with_swing("single_bedroom", "hall", json!({"opens_into": "hall", "hinge": "start"})));
+    assert_eq!(failing(&into_hall), vec!["SW-002"]);
+    let wrong_hand = house(&with_swing("single_bedroom", "hall", json!({"opens_into": "single_bedroom", "hinge": "end"})));
+    assert_eq!(failing(&wrong_hand), vec!["SW-002"]);
+
+    // Not judged without the fields.
+    assert!(failing(&house(&traced())).is_empty());
+}
+
+#[test]
+fn the_exterior_door_is_judged_by_the_exterior_rule() {
+    let ok = house(&with_swing("kitchen_dining", "exterior", json!({"opens_into": "kitchen_dining", "hinge": "end"})));
+    assert!(failing(&ok).is_empty(), "{:?}", failing(&ok));
+    let out = house(&with_swing("kitchen_dining", "exterior", json!({"opens_into": "exterior", "hinge": "end"})));
+    assert_eq!(failing(&out), vec!["SW-003"]);
+    // Whatever room it is in.
+    let mut g = with_swing("kitchen_dining", "exterior", json!({"opens_into": "kitchen_dining", "hinge": "start"}));
+    for n in g["nodes"].as_array_mut().unwrap() {
+        if n["id"] == "kitchen_dining" {
+            n["kind"] = json!("living");
+        }
+    }
+    assert!(failing(&house(&g)).contains(&"SW-003"));
+}
+
+#[test]
+fn a_pair_with_no_swing_rule_is_not_judged() {
+    let g = with_swing("master_bedroom", "hall", json!({"opens_into": "hall", "hinge": "end"}));
+    // bedroom-hall has a rule, so this fails; a bath-bedroom swing door has none.
+    assert_eq!(failing(&house(&g)), vec!["SW-002"]);
+    let mut g = traced();
+    edges(&mut g).push(json!({"kind": "door", "from": "bath", "to": "single_bedroom", "operation": "swing", "opens_into": "bath", "hinge": "end"}));
+    assert!(!failing(&house(&g)).iter().any(|i| i.starts_with("SW-")));
+}
+
+#[test]
+fn a_hostile_swing_field_is_refused_with_a_message() {
+    let mut g = traced();
+    edges(&mut g)[0]["opens_into"] = json!(5);
+    let e = Graph::from_value(&g).unwrap_err();
+    assert!(e.contains("opens_into"), "{e}");
+    let mut g = traced();
+    edges(&mut g)[0]["hinge"] = json!({"a": 1});
+    assert!(Graph::from_value(&g).unwrap_err().contains("hinge"));
 }
 
 #[test]
