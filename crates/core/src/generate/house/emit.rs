@@ -108,7 +108,14 @@ pub fn compile(g: &HouseGraph, l: &Layout, seed: u64, area: AreaRequest) -> Scri
         lines.push(line("family", json!({"name": family, "types": set})));
     }
     for (i, d) in l.doors.iter().enumerate() {
-        lines.push(line("door", json!({"at": d.at, "family": d.family, "type": d.ty, "mark": format!("D{}", i + 1)})));
+        let mut params = json!({"at": d.at, "family": d.family, "type": d.ty, "mark": format!("D{}", i + 1)});
+        if d.flip_facing {
+            params["flip_facing"] = json!(true);
+        }
+        if d.flip_hand {
+            params["flip_hand"] = json!(true);
+        }
+        lines.push(line("door", params));
     }
     for run in &l.separators {
         lines.push(line("room_separator", json!({"points": run})));
@@ -158,6 +165,14 @@ fn pair(a: &str, b: &str) -> (String, String) {
     if a <= b { (a.into(), b.into()) } else { (b.into(), a.into()) }
 }
 
+/// A swing door's `opens_into` and `hinge`; a door of any other operation has neither.
+fn swing_fields(edge: &mut Value, d: &super::place::DoorAt) {
+    if let (Some(o), Some(h)) = (&d.opens_into, d.hinge) {
+        edge["opens_into"] = json!(o);
+        edge["hinge"] = json!(h);
+    }
+}
+
 /// The generated graph: its rooms with the net areas measured (by id), and its doors and open edges.
 fn graph_json(g: &HouseGraph, l: &Layout, seed: u64, areas: &BTreeMap<String, f64>) -> Value {
     let nodes: Vec<Value> = g
@@ -172,10 +187,12 @@ fn graph_json(g: &HouseGraph, l: &Layout, seed: u64, areas: &BTreeMap<String, f6
         let Some(k) = d.link else { continue };
         let link = &g.links[k];
         let (a, b) = (id_of(g, link.a), id_of(g, link.b));
-        edges.push(json!({
+        let mut edge = json!({
             "id": format!("door:{a}:{b}"), "from": a, "to": b, "kind": "door", "operation": d.op, "family": d.family, "type": d.ty,
             "width_mm": d.width,
-        }));
+        });
+        swing_fields(&mut edge, d);
+        edges.push(edge);
     }
     for link in g.links.iter().filter(|l| l.means == Means::Open) {
         let (a, b) = (id_of(g, link.a), id_of(g, link.b));
@@ -183,10 +200,12 @@ fn graph_json(g: &HouseGraph, l: &Layout, seed: u64, areas: &BTreeMap<String, f6
     }
     if let Some(d) = l.doors.iter().find(|d| d.link.is_none()) {
         let a = id_of(g, g.entry);
-        edges.push(json!({
+        let mut edge = json!({
             "id": format!("door:{a}:exterior"), "from": a, "to": "exterior", "kind": "door", "exterior": true, "operation": d.op,
             "family": d.family, "type": d.ty, "width_mm": d.width,
-        }));
+        });
+        swing_fields(&mut edge, d);
+        edges.push(edge);
     }
     json!({
         "schema_version": SCHEMA_VERSION,
@@ -212,24 +231,31 @@ pub fn compare(g: &HouseGraph, l: &Layout, extracted: &Value) -> Result<(), Stri
     if ids.len() != g.rooms.len() {
         problems.push(format!("{} rooms for {}", ids.len(), g.rooms.len()));
     }
-    let mut want: BTreeMap<((String, String), String, i64), i64> = BTreeMap::new();
+    type Key = ((String, String), String, i64, Option<String>, Option<String>);
+    let mut want: BTreeMap<Key, i64> = BTreeMap::new();
     for d in &l.doors {
         if let Some(k) = d.link {
             let (a, b) = (id_of(g, g.links[k].a), id_of(g, g.links[k].b));
-            *want.entry((pair(a, b), d.op.to_string(), d.width)).or_default() += 1;
+            *want.entry((pair(a, b), d.op.to_string(), d.width, d.opens_into.clone(), d.hinge.map(String::from))).or_default() += 1;
         }
     }
-    let mut got: BTreeMap<((String, String), String, i64), i64> = BTreeMap::new();
+    let mut got: BTreeMap<Key, i64> = BTreeMap::new();
     let mut opens: BTreeMap<(String, String), i64> = BTreeMap::new();
     let mut exterior = 0;
+    let want_exterior = l.doors.iter().find(|d| d.link.is_none()).map(|d| (d.opens_into.clone(), d.hinge.map(String::from)));
+    let mut got_exterior = None;
     for e in extracted["edges"].as_array().into_iter().flatten() {
         let (a, b) = (e["from"].as_str().unwrap_or_default(), e["to"].as_str().unwrap_or_default());
         match e["kind"].as_str() {
-            Some("door") if e["exterior"] == true => exterior += 1,
+            Some("door") if e["exterior"] == true => {
+                exterior += 1;
+                got_exterior = Some((e["opens_into"].as_str().map(String::from), e["hinge"].as_str().map(String::from)));
+            }
             Some("door") => {
                 let op = e["operation"].as_str().unwrap_or("?").to_string();
                 let w = e["width_mm"].as_f64().map_or(-1, |w| w.round() as i64);
-                *got.entry((pair(a, b), op, w)).or_default() += 1;
+                let (oi, hg) = (e["opens_into"].as_str().map(String::from), e["hinge"].as_str().map(String::from));
+                *got.entry((pair(a, b), op, w, oi, hg)).or_default() += 1;
             }
             Some("open") => *opens.entry(pair(a, b)).or_default() += 1,
             _ => {}
@@ -239,12 +265,12 @@ pub fn compare(g: &HouseGraph, l: &Layout, extracted: &Value) -> Result<(), Stri
         let missing: Vec<_> = want
             .iter()
             .filter(|(k, n)| got.get(*k) != Some(n))
-            .map(|(k, _)| format!("{} to {} by {} {}", k.0.0, k.0.1, k.1, k.2))
+            .map(|(k, _)| format!("{} to {} by {} {} opening into {:?}, hinge {:?}", k.0.0, k.0.1, k.1, k.2, k.3, k.4))
             .collect();
         let extra: Vec<_> = got
             .iter()
             .filter(|(k, n)| want.get(*k) != Some(n))
-            .map(|(k, _)| format!("{} to {} by {} {}", k.0.0, k.0.1, k.1, k.2))
+            .map(|(k, _)| format!("{} to {} by {} {} opening into {:?}, hinge {:?}", k.0.0, k.0.1, k.1, k.2, k.3, k.4))
             .collect();
         problems.push(format!("doors: missing {missing:?}, extra {extra:?}"));
     }
@@ -258,6 +284,9 @@ pub fn compare(g: &HouseGraph, l: &Layout, extracted: &Value) -> Result<(), Stri
             want_open.keys().collect::<Vec<_>>(),
             opens.keys().collect::<Vec<_>>()
         ));
+    }
+    if want_exterior != got_exterior {
+        problems.push(format!("the exterior door: wanted {want_exterior:?}, extracted {got_exterior:?}"));
     }
     if exterior != 1 {
         problems.push(format!("{exterior} exterior doors"));
@@ -421,7 +450,7 @@ pub fn finish(g: &HouseGraph, l: &Layout, done: Done, seed: u64, area: AreaReque
         "capability_notes": [
             "The graph is sampled from the house rule pack (`data/graph-rules/house.json`) by the seed, then placed in a shell; the topology extractor, run on the built project, gives the same graph, which the house rules judge.",
             "Areas in the building file are gross, to wall centre lines; the topology graph's `area_m2` and `measured_rooms` are the net areas BIMCraft computed for each room.",
-            "One storey; shells bar, l_shape, corner_notch, narrow, t_shape, side_nub and stepped, turned and mirrored by the seed. Doors are of the Single Door and Sliding Door families; which way a swing door opens and which jamb it hangs from is left at the default. No windows, stairs, roof or furniture.",
+            "One storey; shells bar, l_shape, corner_notch, narrow, t_shape, side_nub and stepped, turned and mirrored by the seed. Doors are of the Single Door and Sliding Door families; a swing door's side and jamb follow the traced house's swing rules (`data/house-swing.json`, exploratory) and are recorded as `opens_into` and `hinge`. No windows, stairs, roof or furniture.",
         ],
         "scores": {"room_count": g.rooms.len(), "net_to_gross": if gross > 0.0 { (net / gross * 1000.0).round() / 1000.0 } else { 0.0 }},
         "measured_rooms": measured,

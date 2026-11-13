@@ -61,6 +61,11 @@ pub struct DoorAt {
     pub ty: String,
     pub width: i64,
     pub op: &'static str,
+    /// A swing door's flips, and what the extractor will say of it: the room it opens into (`exterior` outside) and the jamb.
+    pub flip_facing: bool,
+    pub flip_hand: bool,
+    pub opens_into: Option<String>,
+    pub hinge: Option<&'static str>,
 }
 
 #[derive(Clone, Debug)]
@@ -568,7 +573,7 @@ fn assemble(g: &HouseGraph, seed: u64, shell: &'static str, rects: Vec<Rect>, po
                 g.rooms[l.b].id
             ));
         };
-        doors.push(DoorAt { link: Some(k), rooms: (l.a, Some(l.b)), at: point(vertical, line, (lo + hi) / 2), family, ty, width, op });
+        doors.push(DoorAt { link: Some(k), rooms: (l.a, Some(l.b)), at: point(vertical, line, (lo + hi) / 2), family, ty, width, op, flip_facing: false, flip_hand: false, opens_into: None, hinge: None });
     }
     let e = &rects[g.entry];
     let run = e.x1 - e.x0;
@@ -583,6 +588,10 @@ fn assemble(g: &HouseGraph, seed: u64, shell: &'static str, rects: Vec<Rect>, po
         ty: "900 x 2100".into(),
         width: 900,
         op: "swing",
+        flip_facing: false,
+        flip_hand: false,
+        opens_into: None,
+        hinge: None,
     });
     for piece in merge(opened) {
         let (a, b) = corner(&piece);
