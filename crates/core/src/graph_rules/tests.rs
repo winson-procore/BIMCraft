@@ -354,7 +354,8 @@ fn the_command_reads_a_graph_given_inline_or_by_path_and_never_touches_the_proje
 fn with_swing(a: &str, b: &str, fields: Value) -> Value {
     let mut g = traced();
     for e in edges(&mut g) {
-        if e["kind"] == "door" && [&e["from"], &e["to"]].iter().all(|x| *x == a || *x == b || *x == "exterior") && e["operation"] == "swing" {
+        if e["kind"] == "door" && [&e["from"], &e["to"]].iter().all(|x| *x == a || *x == b || *x == "exterior") && e["operation"] == "swing"
+        {
             for (k, v) in fields.as_object().unwrap() {
                 e[k] = v.clone();
             }
@@ -405,7 +406,8 @@ fn a_pair_with_no_swing_rule_is_not_judged() {
     // bedroom-hall has a rule, so this fails; a bath-bedroom swing door has none.
     assert_eq!(failing(&house(&g)), vec!["SW-002"]);
     let mut g = traced();
-    edges(&mut g).push(json!({"kind": "door", "from": "bath", "to": "single_bedroom", "operation": "swing", "opens_into": "bath", "hinge": "end"}));
+    edges(&mut g)
+        .push(json!({"kind": "door", "from": "bath", "to": "single_bedroom", "operation": "swing", "opens_into": "bath", "hinge": "end"}));
     assert!(!failing(&house(&g)).iter().any(|i| i.starts_with("SW-")));
 }
 

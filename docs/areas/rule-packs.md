@@ -89,6 +89,9 @@ each rule's predicate, the pack owns its parameters (`check`).
   003 counts · 004 areas · 005 connections · 006 a closet has one door and one neighbour · 007 a porch opens only into living, kitchen or
   dining · 008 every bedroom is reached from the entry without crossing a bedroom or a bath (no entry fails) · 009 the entry is a
   living, kitchen, dining or hall. The extractor gives a node no `kind`; whoever checks a traced graph adds it.
+  After these the checker appends `SW-001` to `SW-004`, from `generate/data/house-swing.json` (not part of the pack, so HR ids stay
+  the pack's): which room kind a swing door opens into and which jamb it hangs from, by the kind pair, with the exterior door judged
+  by its own rule. Edges without `opens_into` and `hinge` are not judged. See [the graph generator](graph-generator.md).
 - **The closet rule departs from the spec's wording.** The spec sends a closet's door "to a bedroom or a hall", but the traced entry closet
   opens off the kitchen. HR-006 counts only; which kinds a closet joins is the connection table's, which allows closet and kitchen by a
   sliding door because the trace does (and the rule's `exceptions` say so).

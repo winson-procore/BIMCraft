@@ -95,6 +95,9 @@ line and asking which room holds each (`Spaces::room_at`):
 - `door`: the rooms either side of a door's host wall (at the wall's centre ± half its thickness + 150 mm), with the door's family
   (a typed door's type), type, `operation` and `width_mm` from `Model::opening_dims`. A room on one side only is an exterior door
   (`to: "exterior"`). `entry` is the room of the exterior door that is a swing door, then the widest, then the lowest id.
+  A swing or double-swing door also carries `opens_into` (the room on its swing side: the wall's left, or the right with
+  `flip_facing`; `exterior` where no room is) and `hinge` (`start`, or `end` with `flip_hand`), on its edge and its `exterior_doors`
+  entry. Any other operation has neither key: absent, not null.
 - `open`: rooms sharing at least `MIN_SHARED` (300 mm) of room separation line; a shorter touch (a separator's end grazing a third
   room) is no link, and a separator with a room on one side only gives nothing.
 - `adjacent`: rooms sharing at least 300 mm of wall, with no door or open edge between them.
@@ -146,7 +149,17 @@ has any).
 - **Walls** come from the room rectangles: every edge is cut where another room's corner lies on it; a stretch with a room on one
   side only is exterior (300 mm), one between two rooms an interior wall (100 mm) unless the graph opens the pair, when it is a
   room separation line. Doors are the built-in `Single Door` and `Sliding Door` families (the sliding family gets a 1200 type), so
-  a sliding door is drawn as one; a door sits at the middle of its shared run and leaves `flip_facing` and `flip_hand` alone.
+  a sliding door is drawn as one; a door sits at the middle of its shared run.
+- **Swing** (`house/swing.rs`, `data/house-swing.json`): `swing::orient` finds each swing door's host wall in the layout and the room
+  either side of it, then sets `flip_facing` (to open into the rule's room) and `flip_hand` (hinge `end`) from the traced house's
+  rules: `SW-001` to `SW-004`, all `exploratory`, one for each kind pair (a sorted pair, `opens_into` a kind, `hinge`) and one for the
+  exterior door. The exterior object applies to every exterior swing door whatever its room's kind: `opens_into: exterior` means it
+  opens out, any other value (here `kitchen`) opens in, toward its own room; `either` is not enforced. A pair with no rule keeps the
+  default (left side, `start`). The predicted fields go on the generated graph and `emit::compare` fails a try whose extracted
+  fields differ. The checker (`rule_check`, house) appends one `SW-` check for each rule to the pack's own; a swing door without both
+  fields is not judged, so graphs from before them still pass. The list in the file is `swing`, not `rules`, so it is not a pack.
+  A door tag that a neighbour's swung leaf would hide under (its mask clips the leaf) is moved: `swing::tag_moves`, then a `tag` command
+  with `ids` and `offset` before the closing `tag {}`; the door ids come from a first run of the script in the scratch project.
 - **The area** is the centre-line gross, porch included, within 6% of the request (the shared band is sized once, then again for
   what the first try came to); `unsatisfiable_area` below 45 m2.
 

@@ -16,8 +16,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::engine::Session;
-use crate::generate::house::swing;
 use crate::generate::graph::{Edge as TopologyEdge, Node as TopologyNode, Topology};
+use crate::generate::house::swing;
 use crate::generate::program::{Archetype, Role};
 use crate::generate::report;
 
@@ -412,7 +412,7 @@ impl<'a> World<'a> {
             .enumerate()
             .map(|(i, r)| {
                 let name = format!("door-swing {}-{}", r.pair[0], r.pair[1]);
-                let ok = format!("{} swing doors judged: opens into {}, hinge {}", judged[i], r.opens_into, r.hinge);
+                let ok = format!("{} swing doors judged ({}): opens into {}, hinge {}", judged[i], r.status, r.opens_into, r.hinge);
                 let mut p = std::mem::take(&mut problems[i]);
                 p.sort();
                 p.dedup();

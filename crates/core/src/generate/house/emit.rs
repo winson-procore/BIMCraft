@@ -70,7 +70,8 @@ fn longest(boundary: &[[i64; 2]], vertical: bool) -> Option<([i64; 2], [i64; 2],
         })
 }
 
-pub fn compile(g: &HouseGraph, l: &Layout, seed: u64, area: AreaRequest) -> Script {
+/// `tags`: door tags that are moved off the default, as the door's element id and the offset (see `swing::tag_moves`).
+pub fn compile(g: &HouseGraph, l: &Layout, seed: u64, area: AreaRequest, tags: &[(i64, [f64; 2])]) -> Script {
     let title = format!("House {} m2, seed {seed}", area.m2.round());
     let mut lines = vec![
         line("new", json!({"name": title})),
@@ -135,6 +136,9 @@ pub fn compile(g: &HouseGraph, l: &Layout, seed: u64, area: AreaRequest) -> Scri
             };
             lines.push(line("dimension", json!({"refs": refs, "at": at})));
         }
+    }
+    for (id, offset) in tags {
+        lines.push(line("tag", json!({"ids": [id], "offset": offset})));
     }
     lines.push(line("tag", json!({})));
     let note = format!("House of {} m2 gross, seed {seed}", (l.gross_mm2 as f64 / 1.0e6).round());
@@ -311,9 +315,22 @@ fn rules_pass(graph: &Value) -> Result<Vec<Value>, String> {
 
 /// Builds the layout in a scratch project and reads it back: its graph is what was generated, or why not.
 pub fn verify(g: &HouseGraph, l: &Layout, seed: u64, area: AreaRequest) -> Result<Done, String> {
-    let script = compile(g, l, seed, area);
+    let mut script = compile(g, l, seed, area, &[]);
     let mut scratch = Session::new();
-    let replies = scratch.script(&script.text).map_err(|e| format!("the script does not run: {e}"))?;
+    let mut replies = scratch.script(&script.text).map_err(|e| format!("the script does not run: {e}"))?;
+    // A door tag a neighbour's leaf would hide under is moved: the doors' ids are known once the script has run.
+    let moves = super::swing::tag_moves(l);
+    if !moves.is_empty() {
+        let first_door = script.lines.iter().position(|(id, _)| *id == "door").unwrap_or(0);
+        let tags: Vec<(i64, [f64; 2])> =
+            moves.iter().filter_map(|(i, off)| Some((replies.get(first_door + i)?.get("id")?.as_i64()?, *off))).collect();
+        if tags.len() != moves.len() {
+            return Err("a door's id is not in the reply of its command".into());
+        }
+        script = compile(g, l, seed, area, &tags);
+        scratch = Session::new();
+        replies = scratch.script(&script.text).map_err(|e| format!("the script does not run: {e}"))?;
+    }
     for (at, room) in &script.rooms {
         if let Some(w) = replies.get(*at).and_then(|r| r.get("warning")).and_then(Value::as_str) {
             return Err(format!("the room `{}` is not bounded: {w}", g.rooms[*room].id));
