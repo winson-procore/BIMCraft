@@ -51,6 +51,17 @@ pub enum Role {
 }
 
 impl Role {
+    pub const ALL: [Role; 7] =
+        [Role::Private, Role::Circulation, Role::Shared, Role::Public, Role::Service, Role::Clinical, Role::Support];
+
+    pub fn parse(name: &str) -> Option<Role> {
+        Role::ALL.into_iter().find(|r| r.name() == name)
+    }
+
+    pub fn names() -> String {
+        Role::ALL.map(Role::name).join(", ")
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Role::Private => "private",

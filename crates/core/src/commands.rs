@@ -88,6 +88,19 @@ pub static ALL: &[Command] = &[
         crate::rulepack::rule_pack,
     ),
     other(
+        "rule_check",
+        "Rule Pack Check",
+        "{archetype: house|office|clinic|hospital, graph} judge a topology graph (the `nodes`, `edges` and `entry` that `topology` and \
+         `generate` write) by the archetype's rule pack, and say which rules pass. `graph` is a file's path or the graph itself. Read it \
+         kindly: unknown keys are left alone, `entry` is a name, {room} or null, edges to the exterior (`exterior`: true) are skipped. \
+         The house pack's rules (HR-…, exploratory, from one traced plan) read each node's `kind` (the extractor gives none: add it) and \
+         `area_m2`, and each door's `operation`; the office, clinic and hospital packs (GR-…, PR-001) read each node's `kind` and `role`. \
+         Reply: {archetype, pack_id, pass, summary: {pass, fail}, checks: [{id, name, status: PASS|FAIL, detail}]}, in the pack's order, \
+         the same every time. A failed rule is a reply with `pass` false; a graph or archetype that can't be read is an error. The \
+         project is not touched",
+        crate::graph_rules::rule_check,
+    ),
+    other(
         "topology",
         "Topology Graph",
         "{path?, expect?} the project's 2D topology graph from its geometry alone (it only reads), and with `path` the same written \
