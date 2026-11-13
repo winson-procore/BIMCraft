@@ -13,7 +13,7 @@ use serde::Deserialize;
 use super::HouseGraph;
 use super::place::{Layout, Rect};
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SwingRule {
     pub id: String,
@@ -48,6 +48,60 @@ pub fn rules() -> Result<&'static [SwingRule], String> {
         Ok(f) => Ok(&f.swing),
         Err(e) => Err(e.clone()),
     }
+}
+
+/// Unit 1's rules, read off its script by the same definition (`data/house-swing-unit1.json`).
+fn unit1_rules() -> Result<&'static [SwingRule], String> {
+    static RULES: OnceLock<Result<File, String>> = OnceLock::new();
+    match RULES.get_or_init(|| {
+        serde_json::from_str(include_str!("../data/house-swing-unit1.json")).map_err(|e| format!("the embedded Unit 1 swing rules: {e}"))
+    }) {
+        Ok(f) => Ok(&f.swing),
+        Err(e) => Err(e.clone()),
+    }
+}
+
+/// Whether an exterior rule's `opens_into` says the door opens in (any value but `exterior` and `either`).
+fn inward(rule: &SwingRule, word: &str) -> bool {
+    rule.pair.iter().any(|k| k == "exterior") && word != "exterior" && word != "either"
+}
+
+/// What the checker judges by: the traced house's rules, each half (`opens_into`, `hinge`) left to `either` where a pair that
+/// Unit 1 also has says something else. A pair only one trace has keeps that trace's rule, and where the two traces agree
+/// the rule is as it was.
+pub fn judged_rules() -> Result<&'static [SwingRule], String> {
+    static JUDGED: OnceLock<Result<Vec<SwingRule>, String>> = OnceLock::new();
+    match JUDGED.get_or_init(|| {
+        let unit1 = unit1_rules()?;
+        let relax = |rule: &SwingRule, ours: &str, theirs: &str| {
+            if ours == theirs || (inward(rule, ours) && inward(rule, theirs)) { ours.to_string() } else { "either".to_string() }
+        };
+        Ok(rules()?
+            .iter()
+            .map(|r| match unit1.iter().find(|u| u.pair == r.pair) {
+                Some(u) => SwingRule {
+                    opens_into: relax(r, &r.opens_into, &u.opens_into),
+                    hinge: relax(r, &r.hinge, &u.hinge),
+                    ..r.clone()
+                },
+                None => r.clone(),
+            })
+            .collect())
+    }) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(e.clone()),
+    }
+}
+
+/// The judged rule for two room kinds, in either order.
+pub fn judged_rule_for(a: &str, b: &str) -> Option<&'static SwingRule> {
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    judged_rules().ok()?.iter().find(|r| r.pair[0] == lo && r.pair[1] == hi)
+}
+
+/// The judged exterior rule.
+pub fn judged_exterior() -> Option<&'static SwingRule> {
+    judged_rules().ok()?.iter().find(|r| r.pair.iter().any(|k| k == "exterior"))
 }
 
 /// The rule for two room kinds, in either order.

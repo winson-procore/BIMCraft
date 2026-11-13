@@ -89,8 +89,10 @@ fn every_embedded_pack_parses_and_each_rule_has_an_evaluator() {
 #[test]
 fn the_house_pack_is_exploratory_from_one_trace_and_keeps_to_its_own_ids() {
     let pack = Pack::embedded("house").unwrap();
-    assert_eq!(pack.kinds.len(), 12);
+    assert_eq!(pack.kinds.len(), 14);
+    // HR-001..009 were authored from one plan; Unit 1's trace is a second source that added HR-010..013.
     assert_eq!(pack.reference_plans.len(), 1);
+    assert!(pack.sources.iter().any(|s| s.ends_with("houses/traced-house")) && pack.sources.iter().any(|s| s.ends_with("houses/unit1-house")));
     assert!(pack.rules.iter().all(|r| r.classification == "exploratory" && r.id.starts_with("HR-")));
     for (name, role) in [("bedroom", "private"), ("closet", "support"), ("hall", "circulation"), ("porch", "public")] {
         assert_eq!(pack.kinds[name].role, role);
@@ -110,7 +112,7 @@ fn the_legacy_packs_are_hard_and_say_who_approved_them() {
 #[test]
 fn the_traced_house_passes_every_rule() {
     let checks = house(&traced());
-    assert_eq!(checks.len(), 9 + crate::generate::house::swing::rules().unwrap().len());
+    assert_eq!(checks.len(), 13 + crate::generate::house::swing::rules().unwrap().len());
     assert!(failing(&checks).is_empty(), "{checks:?}");
 }
 
@@ -192,10 +194,10 @@ fn counts_areas_and_connections_are_judged() {
     edges(&mut g).push(door("bath", "porch", "swing"));
     assert!(failing(&house(&g)).contains(&"HR-005"));
 
-    // A folding door is no means the pack allows.
+    // A folding door between a bedroom and a hall is no means the pack allows, and no closet's or laundry's.
     let mut g = traced();
     g["edges"][0]["operation"] = json!("folding");
-    assert_eq!(failing(&house(&g)), ["HR-005"]);
+    assert_eq!(failing(&house(&g)), ["HR-005", "HR-012"]);
     g["edges"][0]["operation"] = json!("double-swing");
     assert!(failing(&house(&g)).is_empty());
 
@@ -222,10 +224,165 @@ fn a_graph_that_cannot_be_read_says_why() {
     assert!(Graph::from_value(&json!({"nodes": many, "edges": []})).is_err());
 }
 
+// ---- the Unit 1 trace
+
+const UNIT1: [(&str, &str, f64); 17] = [
+    ("living", "living", 25.194),
+    ("kitchen", "kitchen", 13.465),
+    ("dining", "dining", 20.999),
+    ("entry", "hall", 10.487),
+    ("hall", "hall", 5.235),
+    ("bed_1", "bedroom", 15.415),
+    ("ens", "bath", 4.805),
+    ("wir", "closet", 4.22),
+    ("bed_2", "bedroom", 12.819),
+    ("robe_2", "closet", 1.413),
+    ("bed_3", "bedroom", 11.593),
+    ("robe_3", "closet", 1.37),
+    ("linen", "closet", 1.222),
+    ("bath", "bath", 8.483),
+    ("laundry", "laundry", 1.915),
+    ("garage", "garage", 37.083),
+    ("deck", "deck", 20.422),
+];
+
+/// A swing door as the extractor writes it, with the room it opens into and its jamb.
+fn swung(a: &str, b: &str, into: &str, hinge: &str) -> Value {
+    json!({"kind": "door", "from": a, "to": b, "operation": "swing", "width_mm": 820.0, "opens_into": into, "hinge": hinge})
+}
+
+/// The Unit 1 house trace, its doors and open edges as `topology --out` reads them from its script.
+fn unit1() -> Value {
+    json!({
+        "entry": {"room": "entry", "door_id": 100035},
+        "nodes": UNIT1.iter().map(|(id, kind, area)| json!({"id": id, "kind": kind, "area_m2": area})).collect::<Vec<_>>(),
+        "edges": [
+            swung("bed_1", "ens", "ens", "end"), door("bed_2", "robe_2", "folding"), door("bed_3", "robe_3", "folding"),
+            door("dining", "deck", "sliding"), door("living", "deck", "sliding"),
+            swung("entry", "bed_1", "bed_1", "end"), swung("entry", "garage", "garage", "end"),
+            {"kind": "door", "from": "entry", "to": "exterior", "exterior": true, "operation": "swing", "opens_into": "entry", "hinge": "end"},
+            {"kind": "door", "from": "garage", "to": "exterior", "exterior": true, "operation": "swing", "opens_into": "garage", "hinge": "end"},
+            {"kind": "door", "from": "garage", "to": "exterior", "exterior": true, "operation": "folding"},
+            swung("hall", "bath", "bath", "end"), swung("hall", "bed_2", "bed_2", "start"), swung("hall", "bed_3", "bed_3", "end"),
+            door("hall", "laundry", "folding"), door("hall", "linen", "folding"),
+            open("bed_1", "wir"), open("entry", "hall"), open("kitchen", "dining"), open("kitchen", "entry"),
+            open("living", "dining"), open("living", "kitchen"),
+            {"kind": "adjacent", "from": "bath", "to": "ens", "length_mm": 700.0},
+        ],
+    })
+}
+
+/// Moves the one door or open edge `a`-`b` so that its end `old` is `new`.
+fn rehome(g: &mut Value, a: &str, b: &str, old: &str, new: &str) {
+    let hit: Vec<&mut Value> =
+        edges(g).iter_mut().filter(|e| e["kind"] != "adjacent" && [&e["from"], &e["to"]].iter().all(|x| *x == a || *x == b)).collect();
+    assert_eq!(hit.len(), 1, "{a}-{b}");
+    for e in hit {
+        for key in ["from", "to", "opens_into"] {
+            if e[key] == old {
+                e[key] = json!(new);
+            }
+        }
+    }
+}
+
+#[test]
+fn the_unit1_house_passes_every_rule() {
+    let checks = house(&unit1());
+    assert!(failing(&checks).is_empty(), "{checks:?}");
+}
+
+#[test]
+fn the_pack_knows_the_garage_and_the_deck() {
+    let pack = Pack::embedded("house").unwrap();
+    for (name, role) in [("garage", "service"), ("deck", "public")] {
+        let k = &pack.kinds[name];
+        assert_eq!(k.role, role);
+        assert_eq!(k.count.0, 0.0, "{name}: a house without one still passes");
+        assert!(k.count.1.is_some_and(|hi| hi >= 1.0));
+    }
+    assert!((15.0..=37.0).contains(&pack.kinds["garage"].area_m2.0) && pack.kinds["garage"].area_m2.1.unwrap() >= 37.1);
+    assert!(pack.kinds["deck"].area_m2.0 <= 20.4 && pack.kinds["deck"].area_m2.1.unwrap() >= 20.4);
+}
+
+#[test]
+fn hand_broken_unit1_graphs_fail_the_named_pack_rule_and_nothing_else() {
+    let ids: Vec<&str> = Pack::embedded("house").unwrap().rules.iter().map(|r| r.id.as_str()).collect();
+    let mut cases: Vec<(&str, Value, &str)> = Vec::new();
+
+    // The garage only through a bedroom.
+    let mut g = unit1();
+    rehome(&mut g, "entry", "garage", "entry", "bed_1");
+    cases.push(("garage through a bedroom", g, "HR-010"));
+
+    // The deck only off a bedroom.
+    let mut g = unit1();
+    drop_edge(&mut g, "dining", "deck");
+    rehome(&mut g, "living", "deck", "living", "bed_1");
+    cases.push(("deck off a bedroom", g, "HR-011"));
+
+    // A folding robe door off the living room.
+    let mut g = unit1();
+    rehome(&mut g, "bed_3", "robe_3", "bed_3", "living");
+    cases.push(("folding robe off the living room", g, "HR-012"));
+
+    // No way from the entry to the hall.
+    let mut g = unit1();
+    drop_edge(&mut g, "entry", "hall");
+    cases.push(("no path to the hall", g, "HR-013"));
+
+    for (what, g, rule) in cases {
+        let checks = house(&g);
+        let f = failing(&checks);
+        assert!(f.contains(&rule), "{what}: {f:?}");
+        assert!(f.iter().all(|id| ids.contains(id)), "{what}: fails a rule that is not the pack's: {f:?}");
+    }
+}
+
+#[test]
+fn legal_edits_of_the_unit1_house_still_pass() {
+    let mut g = unit1();
+    rehome(&mut g, "entry", "garage", "entry", "hall");
+    assert!(failing(&house(&g)).is_empty(), "garage off the hall");
+
+    let mut g = unit1();
+    drop_edge(&mut g, "living", "deck");
+    assert!(failing(&house(&g)).is_empty(), "deck off the dining only");
+
+    let mut g = unit1();
+    rehome(&mut g, "bed_3", "robe_3", "bed_3", "hall");
+    assert!(failing(&house(&g)).is_empty(), "robe folding off the hall");
+}
+
+#[test]
+fn a_garage_with_no_door_to_a_hall_or_the_entry_fails() {
+    let mut g = unit1();
+    rehome(&mut g, "entry", "garage", "entry", "kitchen");
+    let c = house(&g);
+    assert!(failing(&c).contains(&"HR-010"), "{:?}", failing(&c));
+}
+
+#[test]
+fn the_judged_swing_rules_leave_a_side_alone_where_the_two_traces_disagree() {
+    use crate::generate::house::swing;
+    for id in ["SW-001", "SW-002"] {
+        let r = swing::judged_rules().unwrap().iter().find(|r| r.id == id).unwrap();
+        assert_eq!(r.hinge, "either", "{id}: the traced house hangs these from the start, Unit 1's from both");
+        assert_eq!(r.opens_into, swing::rules().unwrap().iter().find(|r| r.id == id).unwrap().opens_into, "{id}");
+    }
+    for id in ["SW-003", "SW-004"] {
+        let (judged, traced) = (swing::judged_rules().unwrap(), swing::rules().unwrap());
+        let (j, t) = (judged.iter().find(|r| r.id == id).unwrap(), traced.iter().find(|r| r.id == id).unwrap());
+        assert_eq!((&j.opens_into, &j.hinge), (&t.opens_into, &t.hinge), "{id}");
+    }
+}
+
 // ---- office, clinic, hospital
 
 fn legacy(archetype: &str, seed: u64, area: f64) -> Value {
-    let dir = std::env::temp_dir().join(format!("bimcraft-graph-rules-{}-{archetype}-{seed}", std::process::id()));
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("bimcraft-graph-rules-{}-{archetype}-{seed}-{n}", std::process::id()));
     let mut s = Session::new();
     s.execute("generate", &json!({"path": dir, "archetype": archetype, "seed": seed, "area_m2": area})).unwrap();
     let g = serde_json::from_str(&std::fs::read_to_string(dir.join("topology-graph.json")).unwrap()).unwrap();
@@ -334,7 +491,7 @@ fn the_command_reads_a_graph_given_inline_or_by_path_and_never_touches_the_proje
     assert_eq!(r["pass"], true);
     assert_eq!(r["archetype"], "house");
     assert_eq!(r["pack_id"], "house.graph-rules/1");
-    let n = 9 + crate::generate::house::swing::rules().unwrap().len();
+    let n = 13 + crate::generate::house::swing::rules().unwrap().len();
     assert_eq!(r["checks"].as_array().unwrap().len(), n);
     assert_eq!(r["summary"], json!({"pass": n, "fail": 0}));
 
@@ -377,8 +534,11 @@ fn swing_rules_judge_the_side_and_the_hinge_of_a_swing_door() {
 
     let into_hall = house(&with_swing("single_bedroom", "hall", json!({"opens_into": "hall", "hinge": "start"})));
     assert_eq!(failing(&into_hall), vec!["SW-002"]);
-    let wrong_hand = house(&with_swing("single_bedroom", "hall", json!({"opens_into": "single_bedroom", "hinge": "end"})));
-    assert_eq!(failing(&wrong_hand), vec!["SW-002"]);
+    // The two traces hang bedroom doors from both jambs, so that half of SW-002 is not enforced; SW-004's still is.
+    let either_hand = house(&with_swing("single_bedroom", "hall", json!({"opens_into": "single_bedroom", "hinge": "end"})));
+    assert!(failing(&either_hand).is_empty(), "{:?}", failing(&either_hand));
+    let wrong_hand = house(&with_swing("hall", "living", json!({"opens_into": "hall", "hinge": "start"})));
+    assert_eq!(failing(&wrong_hand), vec!["SW-004"]);
 
     // Not judged without the fields.
     assert!(failing(&house(&traced())).is_empty());
