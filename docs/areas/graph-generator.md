@@ -60,8 +60,9 @@ the graphs, the IFC operation and the schedule, not in the picture.
 
 A brief that can't be met writes nothing and the error starts with a code: `invalid_params`, `unknown_archetype`, `invalid_area`
 (above 0, at most 5000 m2), `unsatisfiable_area` (the minimum program doesn't fit: the message says it is too small and the least area
-that works), `rule_violation` (a check failed: a bug in the generator, not in the brief), `generation_failed`, `output_unwritable`.
-The files are made only after every check has passed, and a file that can't be written takes the earlier ones away again.
+that works), `unplaceable_graph` (a house no shell fits),  `rule_violation` (a check failed: a bug in the generator, not in the brief), `generation_failed`, `output_unwritable`.
+The files are made only after every check has passed, and a file that can't be written takes the earlier ones away again. The
+CLI prints a refusal as a JSON object, `{"error": CODE, "message": ...}`, on stderr.
 
 ## The checks
 
@@ -117,6 +118,37 @@ not in the expected file; `extra_links` (and `extra_rooms`) are in the file and 
 `{expected, extracted}`. The command replies with these under `comparison` (with `agree`); a disagreement is still an `Ok` reply
 there, but the CLI exits non-zero with `{"error": "topology_mismatch", ...six fields}` on stderr. `path` is written before the
 comparison and never holds it, so `--out` gives the same bytes with or without `--expect`.
+
+## House: graph first
+
+`generate --archetype house` (`generate/house.rs`, `house/{sample,place,emit}.rs`) goes the other way round from the corridor
+archetypes: a graph first, then geometry for it. It writes the same six files; `manifest.json` also has `shell`, and
+`topology-graph.json` has no `adjacent` edges (the extractor finds them, and its comparison reads them only when the generated graph
+has any).
+
+- **The graph** (`sample.rs`) is sampled by the seed inside the house pack (`data/graph-rules/house.json`): living and kitchen, a
+  dining room at 100 m2 and up, a hall joined to one of them (open or swing), one to three bedrooms by area, each with a closet
+  (sliding or swing) and an en-suite bath it may have, a bath off the hall, a closet or laundry at the hall's end, a porch off a
+  shared room (sliding or swing), and one exterior swing door into a living room or kitchen that is not the porch's. A dining room is
+  joined only openly; a porch has room separation lines for its sides, so a house with a porch has an open edge, and a house with
+  no open edge has no separation line. Every node id is the room's number in the project.
+- **The shell** (`place.rs`) is a shared band (living, kitchen, dining, dealt along it by area) and a private band, a hall strip with
+  a column of rooms each side and a closet or laundry at its end. The shell is where the private band lies against the shared one:
+  `bar` (as wide), `l_shape`, `corner_notch` and `narrow` (flush with an end, by how much is left), `t_shape` (inset or overhanging
+  both ends), `side_nub` (a third along) and `stepped` (past the end). The seed turns and mirrors the house last. `court`,
+  `opposite_wings` and the other shapes of the first catalogue are not made yet.
+- **A try** is a shell, whether the shared rooms lie in reverse, which side the columns swap to, a proportion and which end of the
+  shared band the private band lies against, in a fixed order starting from the seed's shell. Every `door` and `open` edge must land
+  on a wall the two rooms share, long enough for the door (the door's width and 400 mm); a try that cannot is skipped. A try that
+  can is built in a scratch project, read back by the topology extractor and judged by the house rules (`graph_rules`); it is
+  kept only when the extracted graph is the generated one (the same rooms, doors by pair, operation and width, open edges, entry,
+  one exterior door, no diagnostics) and both graphs pass. If none is, `unplaceable_graph`.
+- **Walls** come from the room rectangles: every edge is cut where another room's corner lies on it; a stretch with a room on one
+  side only is exterior (300 mm), one between two rooms an interior wall (100 mm) unless the graph opens the pair, when it is a
+  room separation line. Doors are the built-in `Single Door` and `Sliding Door` families (the sliding family gets a 1200 type), so
+  a sliding door is drawn as one; a door sits at the middle of its shared run and leaves `flip_facing` and `flip_hand` alone.
+- **The area** is the centre-line gross, porch included, within 6% of the request (the shared band is sized once, then again for
+  what the first try came to); `unsatisfiable_area` below 45 m2.
 
 ## Not yet
 
