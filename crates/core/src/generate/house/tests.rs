@@ -229,3 +229,52 @@ fn sliding_doors_are_of_a_sliding_family_and_every_door_has_a_family() {
         assert_eq!(sliding, slid, "seed {seed}");
     }
 }
+
+#[test]
+fn a_door_tag_a_neighbours_leaf_would_hide_under_is_moved() {
+    // Seed 3 at 115 m2: D4's tag lay on D1's leaf, whose mask clipped it.
+    let b = house(3, 115.0).unwrap();
+    let script = file(&b, "script.bimcraft.txt");
+    assert!(script.lines().any(|l| l.starts_with("tag {\"ids\"")), "{script}");
+    assert!(script.lines().last().is_some_and(|l| !l.starts_with("tag")) || script.contains("tag {}"));
+}
+
+#[test]
+fn swing_doors_carry_the_fields_the_extractor_reads_and_sliding_doors_none() {
+    let (mut enforced, mut flipped) = (0, 0);
+    for seed in 1..=40_u64 {
+        let area = AREAS[(seed as usize - 1) % AREAS.len()];
+        let Ok(b) = house(seed, area) else { continue };
+        let generated = doc(&b, "topology-graph.json");
+        let (_, extracted) = read_back(&b);
+        let key = |e: &Value| {
+            let (a, b) = (e["from"].as_str().unwrap().to_string(), e["to"].as_str().unwrap().to_string());
+            let width = e["width_mm"].as_f64().unwrap().round() as i64;
+            (
+                a.clone().min(b.clone()),
+                a.max(b),
+                e["operation"].as_str().unwrap().to_string(),
+                width,
+                e["opens_into"].clone(),
+                e["hinge"].clone(),
+            )
+        };
+        let doors = |g: &Value| {
+            let mut v: Vec<_> = g["edges"].as_array().unwrap().iter().filter(|e| e["kind"] == "door").map(key).collect();
+            v.sort_by_key(|k| format!("{k:?}"));
+            v
+        };
+        assert_eq!(doors(&generated), doors(&extracted), "seed {seed}");
+        for e in generated["edges"].as_array().unwrap().iter().filter(|e| e["kind"] == "door") {
+            if e["operation"] == "swing" {
+                assert!(e["opens_into"].is_string() && e["hinge"].is_string(), "seed {seed}: {e}");
+            } else {
+                assert!(e.get("opens_into").is_none() && e.get("hinge").is_none(), "seed {seed}: {e}");
+            }
+        }
+        let script = file(&b, "script.bimcraft.txt");
+        flipped += script.lines().filter(|l| l.starts_with("door ") && l.contains("flip_")).count();
+        enforced += generated["edges"].as_array().unwrap().iter().filter(|e| e["opens_into"].is_string()).count();
+    }
+    assert!(enforced > 40 && flipped > 10, "{enforced} swing doors, {flipped} flipped");
+}

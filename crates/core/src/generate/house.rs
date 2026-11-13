@@ -7,6 +7,7 @@
 mod emit;
 mod place;
 mod sample;
+pub(crate) mod swing;
 #[cfg(test)]
 mod tests;
 
@@ -144,7 +145,15 @@ pub(super) fn build(seed: u64, area: AreaRequest) -> Result<Built, Refusal> {
     let mut why = String::from("no try was made");
     for attempt in place::attempts(&graph, seed, area.m2) {
         let layout = match attempt {
-            Ok(layout) => layout,
+            Ok(mut layout) => match swing::orient(&graph, &mut layout) {
+                Ok(()) => layout,
+                Err(e) => {
+                    if why.starts_with("no try") {
+                        why = e;
+                    }
+                    continue;
+                }
+            },
             Err(e) => {
                 if why.starts_with("no try") {
                     why = e;

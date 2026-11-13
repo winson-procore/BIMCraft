@@ -612,7 +612,11 @@ mod tests {
         let reply: Value = serde_json::from_str(e.trim()).unwrap();
         assert_eq!(reply["error"], "rule_violation");
         assert!(reply["failed"].as_array().unwrap().contains(&json!("HR-008")), "{reply}");
-        assert_eq!(reply["checks"].as_array().unwrap().len(), 9);
+        // The nine house rules, then one check for each swing rule.
+        let checks = reply["checks"].as_array().unwrap();
+        let swing = checks.iter().filter(|c| c["id"].as_str().is_some_and(|i| i.starts_with("SW-"))).count();
+        assert!(swing >= 1);
+        assert_eq!(checks.len(), 9 + swing);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -1,0 +1,39 @@
+{
+  "schema_version": "1",
+  "source": "done/fixtures/houses/traced-house",
+  "note": "Which way a swing door opens and which jamb it hangs from, by the kinds it joins, read off the traced house's script. Exploratory: one plan's habits, not approved rules. `opens_into` is a room kind, or for the exterior object `exterior` (opens out) or the entry room's kind (opens in); `either` is not enforced.",
+  "swing": [
+    {
+      "id": "SW-001",
+      "pair": ["bath", "hall"],
+      "opens_into": "bath",
+      "hinge": "start",
+      "status": "exploratory",
+      "provenance": "traced-house: the bath door opens into the bath, hinged at the start of its wall"
+    },
+    {
+      "id": "SW-002",
+      "pair": ["bedroom", "hall"],
+      "opens_into": "bedroom",
+      "hinge": "start",
+      "status": "exploratory",
+      "provenance": "traced-house: the bedroom doors open into the bedroom, hinged at the start of their walls"
+    },
+    {
+      "id": "SW-003",
+      "pair": ["exterior", "kitchen"],
+      "opens_into": "kitchen",
+      "hinge": "end",
+      "status": "exploratory",
+      "provenance": "traced-house: the entry door opens in, into the kitchen, hinged at the end of its wall"
+    },
+    {
+      "id": "SW-004",
+      "pair": ["hall", "living"],
+      "opens_into": "hall",
+      "hinge": "end",
+      "status": "exploratory",
+      "provenance": "traced-house: the hall door opens into the hall, hinged at the end of its wall"
+    }
+  ]
+}

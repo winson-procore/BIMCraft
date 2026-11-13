@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 
 use crate::engine::Session;
 use crate::generate::graph::{Edge as TopologyEdge, Node as TopologyNode, Topology};
+use crate::generate::house::swing;
 use crate::generate::program::{Archetype, Role};
 use crate::generate::report;
 
@@ -138,6 +139,9 @@ pub struct Edge {
     pub to: String,
     pub kind: String,
     pub operation: Option<String>,
+    /// A swing door's side (a room id, or `exterior`) and jamb (`start` or `end`), when the graph says.
+    pub opens_into: Option<String>,
+    pub hinge: Option<String>,
     pub exterior: bool,
 }
 
@@ -189,6 +193,8 @@ impl Graph {
                 to: end("to")?,
                 kind: text(e, "kind", &what)?.unwrap_or_default(),
                 operation: text(e, "operation", &what)?,
+                opens_into: text(e, "opens_into", &what)?,
+                hinge: text(e, "hinge", &what)?,
                 exterior: e.get("exterior") == Some(&Value::Bool(true)),
             });
         }
@@ -249,7 +255,9 @@ fn verdict(rule: &Rule, mut problems: Vec<String>, ok: String) -> Check {
 pub fn check(pack: &Pack, graph: &Graph) -> Result<Vec<Check>, String> {
     if pack.archetype == "house" {
         let world = World::of(pack, graph);
-        return pack.rules.iter().map(|r| world.judge(r)).collect();
+        let mut checks = pack.rules.iter().map(|r| world.judge(r)).collect::<Result<Vec<_>, _>>()?;
+        checks.extend(world.swing()?);
+        return Ok(checks);
     }
     let archetype = Archetype::parse(&pack.archetype).ok_or_else(|| format!("no checker for the `{}` pack", pack.archetype))?;
     let done = report::graph_checks(&topology(graph)?, archetype);
@@ -352,6 +360,70 @@ impl<'a> World<'a> {
             other => return Err(format!("the pack's rule {other} has no evaluator")),
         };
         Ok(verdict(rule, problems, ok))
+    }
+
+    /// One check for each swing rule: the swing doors it covers must open into the kind and hang from the jamb it names. A
+    /// door with neither field is not judged (graphs from before the fields, and hand-broken copies, stay as they were).
+    fn swing(&self) -> Result<Vec<Check>, String> {
+        let rules = swing::rules()?;
+        let exterior = swing::exterior_rule();
+        let mut problems: Vec<Vec<String>> = vec![Vec::new(); rules.len()];
+        let mut judged = vec![0_usize; rules.len()];
+        let index = |id: &str| rules.iter().position(|r| r.id == id);
+        for e in self.graph.edges.iter().filter(|e| e.kind == "door") {
+            if !matches!(e.operation.as_deref(), Some("swing" | "double-swing")) {
+                continue;
+            }
+            let (Some(oi), Some(hinge)) = (e.opens_into.as_deref(), e.hinge.as_deref()) else { continue };
+            let (rule, why) = if e.exterior {
+                let Some(rule) = exterior else { continue };
+                let inner = if e.from == "exterior" { &e.to } else { &e.from };
+                let bad = match rule.opens_into.as_str() {
+                    "either" => false,
+                    "exterior" => oi != "exterior",
+                    _ => oi != inner.as_str(),
+                };
+                (rule, (bad, format!("exterior door of `{inner}` opens into `{oi}`, the rule says {}", rule.opens_into)))
+            } else {
+                let (Some(a), Some(b)) = (self.kind_of(&e.from), self.kind_of(&e.to)) else { continue };
+                if !self.kind.contains_key(e.from.as_str()) || !self.kind.contains_key(e.to.as_str()) {
+                    continue;
+                }
+                let Some(rule) = swing::rule_for(a, b) else { continue };
+                let bad = a != b
+                    && rule.opens_into != "either"
+                    && match self.kind_of(oi) {
+                        Some(k) => k != rule.opens_into || (oi != e.from && oi != e.to),
+                        None => true,
+                    };
+                (rule, (bad, format!("`{}` ({a}) to `{}` ({b}) opens into `{oi}`, the rule says {}", e.from, e.to, rule.opens_into)))
+            };
+            let Some(i) = index(&rule.id) else { continue };
+            judged[i] += 1;
+            if why.0 {
+                problems[i].push(why.1);
+            }
+            if rule.hinge != "either" && hinge != rule.hinge {
+                problems[i].push(format!("`{}` to `{}` hangs from the {hinge} jamb, the rule says {}", e.from, e.to, rule.hinge));
+            }
+        }
+        Ok(rules
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let name = format!("door-swing {}-{}", r.pair[0], r.pair[1]);
+                let ok = format!("{} swing doors judged ({}): opens into {}, hinge {}", judged[i], r.status, r.opens_into, r.hinge);
+                let mut p = std::mem::take(&mut problems[i]);
+                p.sort();
+                p.dedup();
+                let detail = match p.len() {
+                    0 => ok,
+                    n if n <= NAMED => p.join("; "),
+                    n => format!("{} (and {} more)", p[..NAMED].join("; "), n - NAMED),
+                };
+                Check { id: r.id.clone(), name, status: if p.is_empty() { Status::Pass } else { Status::Fail }, detail }
+            })
+            .collect())
     }
 
     fn kinds_known(&self) -> (Vec<String>, String) {
