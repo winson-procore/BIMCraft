@@ -5,6 +5,8 @@
 
 pub(crate) mod graph;
 mod layout;
+#[cfg(test)]
+mod legacy_tests;
 mod lift;
 #[cfg(test)]
 mod lift_tests;
