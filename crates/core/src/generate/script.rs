@@ -104,6 +104,7 @@ pub fn compile(plan: &Plan, building: &Building) -> Script {
     let title = format!("{} {} m2, seed {}", plan.archetype.name(), plan.gross_m2().round(), plan.seed);
     let mut lines = vec![
         line("new", json!({"name": title})),
+        line("drawing_property", json!({"name": "building_type", "value": plan.archetype.building_type()})),
         line("room_area", json!({"at": "finish"})),
         line("level", json!({"elevation": 3600, "name": "Roof"})),
     ];

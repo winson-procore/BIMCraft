@@ -62,6 +62,8 @@ pub const RAILING_INSET: f64 = 50.0;
 pub const MAX_BALUSTERS: f64 = 10_000.0;
 /// Names, marks and numbers longer than this are refused.
 pub const MAX_TEXT: usize = 256;
+/// The most custom drawing properties a project has.
+pub const MAX_DRAWING_PROPERTIES: usize = 64;
 /// Points one command or floor outline may carry.
 pub const MAX_POINTS: usize = 10_000;
 /// Height of a reflected ceiling plan's cut plane above its level: it looks up from there.
@@ -2745,6 +2747,10 @@ pub struct Model {
     /// Where room areas are measured: at the walls' centre lines, or at their finish faces.
     #[serde(default, skip_serializing_if = "RoomArea::is_default")]
     pub room_area: RoomArea,
+    /// Its custom drawing properties, by name: what a DXF's header and a DWG's drawing properties (AutoCAD's DWGPROPS >
+    /// Custom) carry of it, such as `building_type`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub drawing_properties: BTreeMap<String, String>,
     pub next_id: Id,
     pub types: Shared<Types>,
     /// What layers are made of, by name.
@@ -2900,6 +2906,7 @@ impl Model {
             units: Units::default(),
             language,
             room_area: RoomArea::default(),
+            drawing_properties: BTreeMap::new(),
             next_id: FIRST_ID,
             types: Types::default().into(),
             materials: BTreeMap::new().into(),
@@ -5904,12 +5911,38 @@ impl Model {
         out
     }
 
+    /// A drawing property is a name and a value a DXF header holds on one line each: text of 1 to [`MAX_TEXT`] characters with
+    /// no control character, the name with no space at either end and unlike any other whatever the case of its letters.
+    fn check_drawing_properties(&self) -> Result<(), String> {
+        if self.drawing_properties.len() > MAX_DRAWING_PROPERTIES {
+            return Err(format!("a project has at most {MAX_DRAWING_PROPERTIES} drawing properties: delete one first"));
+        }
+        let line = |t: &str| !t.is_empty() && t.chars().count() <= MAX_TEXT && !t.chars().any(char::is_control);
+        let mut seen: BTreeMap<String, &str> = BTreeMap::new();
+        for (name, value) in &self.drawing_properties {
+            let shown: String = name.chars().take(40).collect();
+            if !line(name) || name.trim() != name {
+                return Err(format!(
+                    "drawing property `{shown}`: `name` is 1 to {MAX_TEXT} characters on one line, with no space at either end"
+                ));
+            }
+            if !line(value) {
+                return Err(format!("drawing property `{shown}`: `value` is 1 to {MAX_TEXT} characters on one line"));
+            }
+            if let Some(other) = seen.insert(name.to_lowercase(), name) {
+                return Err(format!("drawing property `{shown}`: the project has `{other}`, the same name in other letters; set that one"));
+            }
+        }
+        Ok(())
+    }
+
     /// Everything that must hold between commands: references resolve, geometry is finite and
     /// not degenerate, doors and windows fit their walls and don't overlap.
     pub fn check(&self) -> Result<(), String> {
         if let Some(lw) = &self.line_weights {
             lw.check()?;
         }
+        self.check_drawing_properties()?;
         for (c, style) in &self.object_styles {
             crate::styles::known(c)?;
             style.check(c)?;
@@ -7226,6 +7259,7 @@ impl Model {
             units,
             language,
             room_area,
+            drawing_properties,
             next_id: _,
             types,
             materials,
@@ -7265,6 +7299,7 @@ impl Model {
             && *uid == o.uid
             && *units == o.units
             && *language == o.language
+            && *drawing_properties == o.drawing_properties
             && *room_area == o.room_area
             && *types == o.types
             && *materials == o.materials

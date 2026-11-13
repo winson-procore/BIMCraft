@@ -35,6 +35,16 @@ impl Archetype {
         Archetype::ALL.map(Archetype::name).join(", ")
     }
 
+    /// The kind of building a plan of this archetype is, as its script's `building_type` drawing property says it.
+    pub fn building_type(self) -> &'static str {
+        match self {
+            Archetype::Office | Archetype::StudioOffice => "office",
+            Archetype::Clinic => "clinic",
+            Archetype::Hospital => "hospital",
+            Archetype::House => "residential",
+        }
+    }
+
     fn salt(self) -> u64 {
         match self {
             Archetype::Office => 0x000F_F1CE,

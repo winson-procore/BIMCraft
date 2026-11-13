@@ -58,7 +58,7 @@ const FIRST: u64 = 0x30;
 pub fn dxf(d: &Drawing, m: &Model) -> String {
     let mut doc = Doc::default();
     doc.add(d, m, MODEL_SPACE, P2(0.0, 0.0));
-    doc.finish()
+    doc.finish(m)
 }
 
 /// Sheet `e` of `m` as a DXF file's text: the title block, the views' viewports and what is drawn on the paper in paper space, the
@@ -194,7 +194,7 @@ impl Doc {
     }
 
     /// The file's text.
-    fn finish(self) -> String {
+    fn finish(self, m: &Model) -> String {
         let Doc { shared, ext, paper_ext, ents, dims, blocks, title } = self;
         let Shared { mut w, layers, ltypes, .. } = shared;
         let mut tables = String::new();
@@ -312,6 +312,13 @@ impl Doc {
             pair(s, 70, 1);
             pair(s, 9, "$LUNITS");
             pair(s, 70, 2);
+            // The project's drawing properties: what DWGPROPS > Custom shows, and what the DWG bridge writes as the DWG's own.
+            for (name, value) in &m.drawing_properties {
+                pair(s, 9, "$CUSTOMPROPERTYTAG");
+                pair(s, 1, escaped(name, false));
+                pair(s, 9, "$CUSTOMPROPERTY");
+                pair(s, 1, escaped(value, false));
+            }
             pair(s, 9, "$EXTMIN");
             point3(s, 10, lo);
             pair(s, 9, "$EXTMAX");
