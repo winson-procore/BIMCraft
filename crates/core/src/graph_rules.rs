@@ -21,6 +21,9 @@ use crate::generate::house::swing;
 use crate::generate::program::{Archetype, Role};
 use crate::generate::report;
 
+mod studio;
+#[cfg(test)]
+mod studio_tests;
 #[cfg(test)]
 mod tests;
 
@@ -32,11 +35,12 @@ const MAX_PATH: usize = 4096;
 /// How many problems a rule's detail names before it says how many more there are.
 const NAMED: usize = 5;
 
-const SOURCES: [(&str, &str); 4] = [
+const SOURCES: [(&str, &str); 5] = [
     ("house", include_str!("../data/graph-rules/house.json")),
     ("office", include_str!("../data/graph-rules/office.json")),
     ("clinic", include_str!("../data/graph-rules/clinic.json")),
     ("hospital", include_str!("../data/graph-rules/hospital.json")),
+    ("studio-office", include_str!("../data/graph-rules/studio-office.json")),
 ];
 
 // ---- the pack
@@ -265,6 +269,9 @@ pub fn check(pack: &Pack, graph: &Graph) -> Result<Vec<Check>, String> {
         let mut checks = pack.rules.iter().map(|r| world.judge(r)).collect::<Result<Vec<_>, _>>()?;
         checks.extend(world.swing()?);
         return Ok(checks);
+    }
+    if pack.archetype == "studio-office" {
+        return studio::check(pack, graph);
     }
     let archetype = Archetype::parse(&pack.archetype).ok_or_else(|| format!("no checker for the `{}` pack", pack.archetype))?;
     let done = report::graph_checks(&topology(graph)?, archetype);
