@@ -68,9 +68,9 @@ fn round100(x: f64) -> i64 {
 pub fn attempts<'a>(g: &'a StudioGraph, seed: u64, area_m2: f64) -> impl Iterator<Item = Result<Layout, String>> + 'a {
     let mut rng = Rng::new(seed, SALT + 7);
     let (shell0, aspect0) = (rng.below(SHELLS.len() as u64) as usize, rng.below(3) as usize);
-    (0..SHELLS.len()).flat_map(move |s| (0..3).map(move |a| (s, a))).map(move |(s, a)| {
-        build_once(g, seed, area_m2, (shell0 + s) % SHELLS.len(), (aspect0 + a) % 3)
-    })
+    (0..SHELLS.len())
+        .flat_map(move |s| (0..3).map(move |a| (s, a)))
+        .map(move |(s, a)| build_once(g, seed, area_m2, (shell0 + s) % SHELLS.len(), (aspect0 + a) % 3))
 }
 
 fn rect(x0: i64, y0: i64, x1: i64, y1: i64) -> Rect {
@@ -102,7 +102,11 @@ fn build_once(g: &StudioGraph, seed: u64, area_m2: f64, shell: usize, aspect: us
     let wcore = wz + wr + wc;
     let studio_mm2 = a * 1.0e6 - (wcore * dc) as f64;
     if studio_mm2 < 40.0e6 {
-        return Err(format!("{a:.1} m2 leaves the studio only {:.1} m2 beside a core of {:.1} m2", studio_mm2 / 1.0e6, (wcore * dc) as f64 / 1.0e6));
+        return Err(format!(
+            "{a:.1} m2 leaves the studio only {:.1} m2 beside a core of {:.1} m2",
+            studio_mm2 / 1.0e6,
+            (wcore * dc) as f64 / 1.0e6
+        ));
     }
     let asp = [1.3, 1.8, 2.4][aspect];
     let ideal = (studio_mm2 * asp).sqrt();
@@ -197,21 +201,22 @@ fn assemble(g: &StudioGraph, seed: u64, shell: &'static str, rects: Vec<Rect>) -
     // studio's way out, in the middle of its south wall.
     let mut doors = Vec::new();
     let mut separators: Vec<Vec<[i64; 2]>> = Vec::new();
-    let door = |link: Option<usize>, rooms: (usize, Option<usize>), at: [i64; 2], family: &'static str, width: i64, op: &'static str| DoorAt {
-        link,
-        rooms,
-        at,
-        family,
-        ty: format!("{width} x 2100"),
-        width,
-        op,
-        flip_facing: false,
-        flip_hand: false,
-        opens_into: None,
-        hinge: None,
-        normal: [0.0, 0.0],
-        half: 0.0,
-    };
+    let door =
+        |link: Option<usize>, rooms: (usize, Option<usize>), at: [i64; 2], family: &'static str, width: i64, op: &'static str| DoorAt {
+            link,
+            rooms,
+            at,
+            family,
+            ty: format!("{width} x 2100"),
+            width,
+            op,
+            flip_facing: false,
+            flip_hand: false,
+            opens_into: None,
+            hinge: None,
+            normal: [0.0, 0.0],
+            half: 0.0,
+        };
     let rc = &rects[g.reception];
     if rc.x1 - rc.x0 < 2000 + 2 * DOOR_CLEAR {
         return Err("the reception is too narrow for the way in".into());
@@ -230,14 +235,20 @@ fn assemble(g: &StudioGraph, seed: u64, shell: &'static str, rects: Vec<Rect>) -
             Means::Swing => {
                 let order: [i64; 2] = if pick == 0 { [900, 800] } else { [800, 900] };
                 let Some(w) = order.into_iter().find(|w| run >= w + DOOR_CLEAR) else {
-                    return Err(format!("the wall of {run} mm between `{}` and `{}` is too short for its door", g.rooms[l.a].id, g.rooms[l.b].id));
+                    return Err(format!(
+                        "the wall of {run} mm between `{}` and `{}` is too short for its door",
+                        g.rooms[l.a].id, g.rooms[l.b].id
+                    ));
                 };
                 ("Single Door", w, "swing")
             }
             _ => {
                 let order: [i64; 2] = if pick == 0 { [1600, 1800] } else { [1800, 1600] };
                 let Some(w) = order.into_iter().find(|w| run >= w + DOOR_CLEAR) else {
-                    return Err(format!("the wall of {run} mm between `{}` and `{}` is too short for its door", g.rooms[l.a].id, g.rooms[l.b].id));
+                    return Err(format!(
+                        "the wall of {run} mm between `{}` and `{}` is too short for its door",
+                        g.rooms[l.a].id, g.rooms[l.b].id
+                    ));
                 };
                 ("Double Door", w, "double-swing")
             }
@@ -259,9 +270,8 @@ fn assemble(g: &StudioGraph, seed: u64, shell: &'static str, rects: Vec<Rect>) -
         for s in 0..slots {
             let along = p + 600 + s * WINDOW_SLOT + WINDOW_SLOT / 2;
             let at = point(*vertical, *line, along);
-            let clear = doors.iter().all(|d| {
-                (d.at[0] - at[0]).abs().max((d.at[1] - at[1]).abs()) >= (d.width + WINDOW_WIDTH) / 2 + DOOR_CLEAR
-            });
+            let clear =
+                doors.iter().all(|d| (d.at[0] - at[0]).abs().max((d.at[1] - at[1]).abs()) >= (d.width + WINDOW_WIDTH) / 2 + DOOR_CLEAR);
             if clear {
                 windows.push(WindowAt { at, width: WINDOW_WIDTH, ty: format!("{WINDOW_WIDTH} x 1200") });
             }
@@ -383,9 +393,7 @@ pub fn orient(g: &StudioGraph, l: &mut Layout) -> Result<(), String> {
         };
         let (left, right) = (room_at(1.0), room_at(-1.0));
         let target: Option<Option<usize>> = match (left, right) {
-            (Some(x), Some(y)) if x != y => {
-                Some(Some(if pull(g.rooms[x].kind) >= pull(g.rooms[y].kind) { x } else { y }))
-            }
+            (Some(x), Some(y)) if x != y => Some(Some(if pull(g.rooms[x].kind) >= pull(g.rooms[y].kind) { x } else { y })),
             (Some(_), None) | (None, Some(_)) => Some(None),
             _ => None,
         };

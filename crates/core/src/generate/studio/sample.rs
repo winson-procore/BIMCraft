@@ -16,7 +16,11 @@ fn push(rooms: &mut Vec<Room>, id: String, name: String, kind: Kind) -> usize {
 pub fn sample(seed: u64, area_m2: f64) -> StudioGraph {
     let mut rng = Rng::new(seed, SALT);
     let mut chance = |percent: u64| rng.below(100) < percent;
-    let wc_count = if area_m2 < 300.0 { 2 + usize::from(chance(40)) + usize::from(chance(25)) } else { 3 + usize::from(chance(55)) + usize::from(chance(40)) };
+    let wc_count = if area_m2 < 300.0 {
+        2 + usize::from(chance(40)) + usize::from(chance(25))
+    } else {
+        3 + usize::from(chance(55)) + usize::from(chance(40))
+    };
     let meetings = 1 + usize::from(area_m2 >= 300.0 && chance(55));
     let stores = 1 + usize::from(area_m2 >= 330.0 && chance(55));
     let studio_door = chance(70);
@@ -46,11 +50,16 @@ pub fn sample(seed: u64, area_m2: f64) -> StudioGraph {
     for (kind, k) in order {
         let (id, name, means) = match kind {
             Kind::Meeting => {
-                let (id, name) = if meetings == 1 { ("meeting".into(), "Meeting Room".into()) } else { (format!("meeting_{}", k + 1), format!("Meeting Room {}", k + 1)) };
+                let (id, name) = if meetings == 1 {
+                    ("meeting".into(), "Meeting Room".into())
+                } else {
+                    (format!("meeting_{}", k + 1), format!("Meeting Room {}", k + 1))
+                };
                 (id, name, if double_meeting[k] { Means::DoubleSwing } else { Means::Swing })
             }
             _ => {
-                let (id, name) = if stores == 1 { ("store".into(), "Store".into()) } else { (format!("store_{}", k + 1), format!("Store {}", k + 1)) };
+                let (id, name) =
+                    if stores == 1 { ("store".into(), "Store".into()) } else { (format!("store_{}", k + 1), format!("Store {}", k + 1)) };
                 (id, name, Means::Swing)
             }
         };

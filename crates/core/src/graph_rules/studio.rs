@@ -183,13 +183,7 @@ impl<'a> World<'a> {
     /// The space of `kind` has the biggest area of the plan.
     fn largest(&self, rule: &Rule) -> Result<(Vec<String>, String), String> {
         let kind = Self::word(rule, "kind")?;
-        let biggest = self
-            .graph
-            .nodes
-            .iter()
-            .filter_map(|n| Some((n, n.area_m2?)))
-            .max_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(n, _)| n);
+        let biggest = self.graph.nodes.iter().filter_map(|n| Some((n, n.area_m2?))).max_by(|a, b| a.1.total_cmp(&b.1)).map(|(n, _)| n);
         let problems = match biggest {
             Some(n) if n.kind.as_deref() != Some(kind) => {
                 vec![format!("`{}` is the largest space, and it is not the {kind}", n.id)]

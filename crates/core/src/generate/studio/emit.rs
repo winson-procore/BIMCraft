@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 
 use super::super::graph::{BUILDING_KIND, SCHEMA_VERSION, TOPOLOGY_KIND};
-use super::super::house::{longest, sheet_for};
 use super::super::house::place::{DoorAt, Rect};
+use super::super::house::{longest, sheet_for};
 use super::super::layout::{EXTERIOR, INTERIOR};
 use super::super::program::Archetype;
 use super::super::report::{Check, Status};
@@ -245,7 +245,11 @@ pub fn compare(g: &StudioGraph, l: &Layout, extracted: &Value) -> Result<(), Str
         m
     });
     if want_open != opens {
-        problems.push(format!("open edges: wanted {:?}, extracted {:?}", want_open.keys().collect::<Vec<_>>(), opens.keys().collect::<Vec<_>>()));
+        problems.push(format!(
+            "open edges: wanted {:?}, extracted {:?}",
+            want_open.keys().collect::<Vec<_>>(),
+            opens.keys().collect::<Vec<_>>()
+        ));
     }
     if want_ways != got_ways {
         problems.push(format!("the ways out: wanted {want_ways:?}, extracted {got_ways:?}"));
@@ -336,7 +340,8 @@ pub fn verify(g: &StudioGraph, l: &Layout, seed: u64, area: AreaRequest) -> Resu
 
 fn program_json(g: &StudioGraph, seed: u64, area: AreaRequest) -> Value {
     let pack = Pack::embedded("studio-office").ok();
-    let range = |kind: super::Kind| pack.and_then(|p| p.kinds.get(kind.name()).map(|k| json!([k.area_m2.0, k.area_m2.1]))).unwrap_or(Value::Null);
+    let range =
+        |kind: super::Kind| pack.and_then(|p| p.kinds.get(kind.name()).map(|k| json!([k.area_m2.0, k.area_m2.1]))).unwrap_or(Value::Null);
     json!({
         "schema_version": SCHEMA_VERSION,
         "archetype": "studio-office",

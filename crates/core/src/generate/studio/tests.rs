@@ -125,7 +125,11 @@ fn the_script_draws_each_door_and_window_once_in_the_dxf() {
     let text = std::fs::read_to_string(&path).unwrap();
     let lines: Vec<&str> = text.lines().map(str::trim).collect();
     let inserts = |layer: &str| {
-        lines.windows(2).enumerate().filter(|(i, w)| w[0] == "0" && w[1] == "INSERT" && lines[i + 2..i + 40].windows(2).any(|p| p[0] == "8" && p[1] == layer)).count()
+        lines
+            .windows(2)
+            .enumerate()
+            .filter(|(i, w)| w[0] == "0" && w[1] == "INSERT" && lines[i + 2..i + 40].windows(2).any(|p| p[0] == "8" && p[1] == layer))
+            .count()
     };
     assert_eq!(inserts("A-DOOR"), doors);
     assert_eq!(inserts("A-GLAZ"), windows);

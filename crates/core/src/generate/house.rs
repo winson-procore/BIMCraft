@@ -13,9 +13,9 @@ mod tests;
 
 use serde_json::Value;
 
-pub(crate) use emit::{longest, sheet_for};
 use super::{AreaRequest, Built, Refusal, refuse};
 use crate::engine::Session;
+pub(crate) use emit::{longest, sheet_for};
 
 /// The kinds of room the house generator makes: the house pack's, as far as it uses them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
