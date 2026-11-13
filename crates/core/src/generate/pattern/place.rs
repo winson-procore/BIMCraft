@@ -52,7 +52,6 @@ impl Case {
     pub fn depth(&self) -> i64 {
         self.south_d + self.corr + self.north_d
     }
-
 }
 
 #[derive(Clone, Debug)]
@@ -128,13 +127,9 @@ fn ensure(south: &mut [(Kind, i64)], north: &mut [(Kind, i64)]) -> Result<(), St
             continue;
         }
         let spare = |kind: Kind, s: &[(Kind, i64)], n: &[(Kind, i64)]| kind == Kind::FocusRoom || count(s, n, kind) >= 2;
-        let pick = south
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, r)| spare(r.0, south, north))
-            .map(|(i, _)| (false, i))
-            .or_else(|| if south_only { None } else { north.iter().enumerate().rev().find(|(_, r)| spare(r.0, south, north)).map(|(i, _)| (true, i)) });
+        let pick = south.iter().enumerate().rev().find(|(_, r)| spare(r.0, south, north)).map(|(i, _)| (false, i)).or_else(|| {
+            if south_only { None } else { north.iter().enumerate().rev().find(|(_, r)| spare(r.0, south, north)).map(|(i, _)| (true, i)) }
+        });
         let Some((in_north, i)) = pick else {
             return Err(format!("the bands leave no room to make a {}", need.name()));
         };
@@ -187,7 +182,8 @@ pub fn draw(seed: u64, area_m2: f64, t: u64) -> Result<Case, String> {
         run = max_run;
     }
     let c_ne = clamp_ne(c_ne0, open_w);
-    let mut south = band(&mut rng, run, &[Kind::PrivateOffice, Kind::PrivateOffice, Kind::Conference, Kind::Restroom, Kind::Pantry], south_d, focus);
+    let mut south =
+        band(&mut rng, run, &[Kind::PrivateOffice, Kind::PrivateOffice, Kind::Conference, Kind::Restroom, Kind::Pantry], south_d, focus);
     let mut north = if north_d > 0 {
         band(&mut rng, run, &[Kind::PrivateOffice, Kind::PrivateOffice, Kind::Conference, Kind::FocusRoom], north_d, focus)
     } else {
@@ -270,7 +266,8 @@ pub fn assemble(g: &PatternGraph, c: &Case, seed: u64) -> Result<Layout, String>
     }
 
     // Every edge of every room, cut where another room's corner lies on it: a wall for each stretch two rooms share.
-    let mut lines: BTreeMap<(bool, i64), Vec<(i64, i64, usize)>> = BTreeMap::new();
+    type Edges = Vec<(i64, i64, usize)>;
+    let mut lines: BTreeMap<(bool, i64), Edges> = BTreeMap::new();
     for (i, r) in rects.iter().enumerate() {
         for (vertical, line, lo, hi) in
             [(true, r.x0, r.y0, r.y1), (true, r.x1, r.y0, r.y1), (false, r.y0, r.x0, r.x1), (false, r.y1, r.x0, r.x1)]
@@ -303,21 +300,22 @@ pub fn assemble(g: &PatternGraph, c: &Case, seed: u64) -> Result<Layout, String>
 
     // Doors: the lobby's way in, in the middle of the end wall, clear of the chamfer; then each link's, at the middle of the run
     // its two rooms share.
-    let door = |link: Option<usize>, rooms: (usize, Option<usize>), at: [i64; 2], family: &'static str, width: i64, op: &'static str| DoorAt {
-        link,
-        rooms,
-        at,
-        family,
-        ty: format!("{width} x 2100"),
-        width,
-        op,
-        flip_facing: false,
-        flip_hand: false,
-        opens_into: None,
-        hinge: None,
-        normal: [0.0, 0.0],
-        half: 0.0,
-    };
+    let door =
+        |link: Option<usize>, rooms: (usize, Option<usize>), at: [i64; 2], family: &'static str, width: i64, op: &'static str| DoorAt {
+            link,
+            rooms,
+            at,
+            family,
+            ty: format!("{width} x 2100"),
+            width,
+            op,
+            flip_facing: false,
+            flip_hand: false,
+            opens_into: None,
+            hinge: None,
+            normal: [0.0, 0.0],
+            half: 0.0,
+        };
     let way_in = ((c.c_sw + 1600).max(depth * 62 / 100) / 100) * 100;
     if way_in + 900 + DOOR_CLEAR > depth {
         return Err("the lobby's end wall is too short for its way in".into());
@@ -430,7 +428,11 @@ pub fn assemble(g: &PatternGraph, c: &Case, seed: u64) -> Result<Layout, String>
         mirror,
     };
     for (i, w) in layout.windows.iter().enumerate() {
-        let on: Vec<_> = layout.walls.iter().filter(|wall| wall.exterior && along(wall, w.at).is_some_and(|(s, len)| s >= WINDOW_EDGE && s <= len - WINDOW_EDGE)).collect();
+        let on: Vec<_> = layout
+            .walls
+            .iter()
+            .filter(|wall| wall.exterior && along(wall, w.at).is_some_and(|(s, len)| s >= WINDOW_EDGE && s <= len - WINDOW_EDGE))
+            .collect();
         if on.len() != 1 {
             return Err(format!("window W{} is on {} exterior walls, not one", i + 1, on.len()));
         }

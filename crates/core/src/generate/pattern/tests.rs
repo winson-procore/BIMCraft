@@ -32,7 +32,11 @@ fn briefs() -> impl Iterator<Item = (u64, f64)> {
 type Test = fn(&str) -> bool;
 
 const ROLES: [(&str, Test); 8] = [
-    ("open_office", |v| ["open office", "open_office", "openoffice", "open plan", "open_plan", "open work", "open_work", "workstation"].iter().any(|p| v.contains(p))),
+    ("open_office", |v| {
+        ["open office", "open_office", "openoffice", "open plan", "open_plan", "open work", "open_work", "workstation"]
+            .iter()
+            .any(|p| v.contains(p))
+    }),
     ("lobby", |v| ["lobby", "reception", "foyer", "entry", "entrance"].iter().any(|p| v.contains(p))),
     ("corridor", |v| v.contains("corridor") || v == "hall" || v == "hallway" || v.contains("circulation")),
     ("focus", |v| ["focus", "quiet", "phone"].iter().any(|p| v.contains(p))),
@@ -40,7 +44,9 @@ const ROLES: [(&str, Test); 8] = [
     ("restroom", |v| ["restroom", "toilet", "wc", "bath", "washroom", "lavatory"].iter().any(|p| v.contains(p))),
     ("pantry", |v| ["pantry", "kitchen", "break", "tea"].iter().any(|p| v.contains(p))),
     ("private_office", |v| {
-        v.contains("private") || v == "office" || (v.starts_with("office") && v[6..].starts_with([' ', '_']) && v[7..].starts_with(|c: char| c.is_ascii_digit()))
+        v.contains("private")
+            || v == "office"
+            || (v.starts_with("office") && v[6..].starts_with([' ', '_']) && v[7..].starts_with(|c: char| c.is_ascii_digit()))
     }),
 ];
 
@@ -98,7 +104,15 @@ fn every_label_the_generator_uses_reads_as_its_own_role() {
     assert_eq!(
         ids,
         [
-            "lobby", "corridor", "open_office", "private_office_1", "conference_1", "restroom_1", "pantry_1", "private_office_2", "focus_room_1",
+            "lobby",
+            "corridor",
+            "open_office",
+            "private_office_1",
+            "conference_1",
+            "restroom_1",
+            "pantry_1",
+            "private_office_2",
+            "focus_room_1",
             "conference_2"
         ]
     );
@@ -196,7 +210,8 @@ fn judge(ext: &Value) -> Result<Facts, Vec<String>> {
     if !link(l, c, true) && !link(l, c, false) {
         bad.push("the lobby does not join the corridor".into());
     }
-    let side: Vec<&(String, Option<&str>)> = roles.iter().filter(|(_, r)| !matches!(r, Some("lobby" | "corridor" | "open_office"))).collect();
+    let side: Vec<&(String, Option<&str>)> =
+        roles.iter().filter(|(_, r)| !matches!(r, Some("lobby" | "corridor" | "open_office"))).collect();
     for (i, _) in &side {
         if !link(i, c, true) {
             bad.push(format!("`{i}` has no door to the corridor"));
@@ -305,16 +320,33 @@ fn twenty_seeds_build_read_back_and_keep_the_pattern() {
         assert!((b.gross_m2 - area).abs() / area < 0.06, "seed {seed}: {} m2 for {area}", b.gross_m2);
         let ir = doc(&b, "building-ir.json");
         let poly = ir["footprint"]["boundary"].as_array().unwrap();
-        assert!((shoelace(poly) / 1.0e6 - b.gross_m2).abs() < 0.01, "seed {seed}: polygon {} m2, gross {}", shoelace(poly) / 1.0e6, b.gross_m2);
+        assert!(
+            (shoelace(poly) / 1.0e6 - b.gross_m2).abs() < 0.01,
+            "seed {seed}: polygon {} m2, gross {}",
+            shoelace(poly) / 1.0e6,
+            b.gross_m2
+        );
         // Build the script as the done check does and read the plan back.
         let mut s = Session::new();
         s.script(file(&b, "script.bimcraft.txt")).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
         let ext = crate::topology::extract(&s.model);
         let facts = judge(&ext).unwrap_or_else(|e| panic!("seed {seed} at {area}: {e:?}"));
         counts.insert(facts.rooms);
-        if facts.double { double += 1 } else { single += 1 }
-        if facts.focus > 0 { focus += 1 } else { no_focus += 1 }
-        if facts.chamfered { chamfered += 1 } else { square += 1 }
+        if facts.double {
+            double += 1
+        } else {
+            single += 1
+        }
+        if facts.focus > 0 {
+            focus += 1
+        } else {
+            no_focus += 1
+        }
+        if facts.chamfered {
+            chamfered += 1
+        } else {
+            square += 1
+        }
         let m = doc(&b, "manifest.json");
         assert_eq!(m["chamfers"].as_u64().unwrap() > 0, facts.chamfered, "seed {seed}: the manifest and the outline disagree");
         assert_eq!(m["shear"], 0);

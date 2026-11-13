@@ -200,6 +200,30 @@ way in is the widest door and the first, so the extractor takes it for the entry
 refused as `unsatisfiable_area`. The generated graph, and the extracted one with the generated kinds, must pass the studio-office
 pack ([rule packs](rule-packs.md#graph-rule-packs-and-the-checker)).
 
+## Office pattern: graph first
+
+`generate --archetype office-pattern` follows the pattern of `generated/office-variations-20261112/generate.py`: a lobby at one end
+(the only way in from outside, a Double Door 1800 in the end wall), a corridor the length of the plan, rooms off one side or both
+(private offices, conference rooms, restrooms, a pantry, on some seeds focus rooms in the north band) and an open office at the
+far end, the full depth of the plan. `generate/pattern/place.rs` draws the dimensions from the seed and scales them by the area
+(`draw`: depths, corridor, lobby and open office widths, chamfers), solves the length from the area (rounded to 100 mm, so the
+gross area is within 5% of the request), and rejects a draw whose length to depth is outside 1.6 to 7, whose rooms won't make a
+run (4 rooms of 3000 mm for a single-loaded plan), or whose chamfer cuts into a room; up to 12 draws are tried in a fixed order.
+Bands are dealt in rooms of 3000 to 5200 mm; the plan is then forced to hold a restroom, a pantry, a conference room and a
+private office. Ids are `lobby`, `corridor`, `open_office`, `private_office_1`, `conference_1`, … and names `Lobby`, `Corridor`,
+`Open Office`, `Private Office 1`, …; the room number is the id. A chamfer cuts the lobby's south-west corner and the open
+office's north-east one at 45 degrees (the shell is a polygon, one wall for each side; rooms keep their rectangles for picking
+and door sides). The seed then turns and mirrors the plan; it is never sheared, so every coordinate stays an integer. Doors are
+swing, or double-swing where the corridor (or a conference room 4200 mm wide) has the room; `flip_hand` is never set. Windows
+are Fixed Windows centred in side rooms at least 3200 mm wide (not restrooms) and 1 to 3 on the open office's end wall.
+`pattern/emit.rs` builds each try in a scratch project, reads it back with the topology extractor and compares it as the studio
+does; the generated graph, and the extracted one with the generated kinds, must pass the office-pattern pack
+([rule packs](rule-packs.md#the-office-pattern-pack)). The manifest adds `loaded` (single or double), `focus`, `chamfers`,
+`quarter_turns`, `mirror` and `shear` (0). The least area is 170 m2 (at 160 m2 six seeds of 40 are refused); below it the brief
+is refused as `unsatisfiable_area`, and a brief no draw fits as `unplaceable_graph`. The tests in `generate/pattern/tests.rs` hold
+a port of the done check's geometry rules (the open office at the far end and deep, nothing past it, the lobby at the other end)
+and run it on the plan read back from each of the 20 seeds of the done check.
+
 ## Not yet
 
 No stairs, shafts, structure or MEP; one storey; no datacenters or airports;

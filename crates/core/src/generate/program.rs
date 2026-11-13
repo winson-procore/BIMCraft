@@ -17,14 +17,8 @@ pub enum Archetype {
 }
 
 impl Archetype {
-    pub const ALL: [Archetype; 6] = [
-        Archetype::Office,
-        Archetype::Clinic,
-        Archetype::Hospital,
-        Archetype::House,
-        Archetype::StudioOffice,
-        Archetype::OfficePattern,
-    ];
+    pub const ALL: [Archetype; 6] =
+        [Archetype::Office, Archetype::Clinic, Archetype::Hospital, Archetype::House, Archetype::StudioOffice, Archetype::OfficePattern];
 
     pub fn parse(name: &str) -> Option<Archetype> {
         Archetype::ALL.into_iter().find(|a| a.name() == name)

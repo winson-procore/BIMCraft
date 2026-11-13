@@ -115,8 +115,13 @@ impl<'a> World<'a> {
                 }
             }
         }
-        let problems =
-            self.graph.nodes.iter().filter(|n| !seen.contains(n.id.as_str())).map(|n| format!("`{}` is not reached from `{entry}`", n.id)).collect();
+        let problems = self
+            .graph
+            .nodes
+            .iter()
+            .filter(|n| !seen.contains(n.id.as_str()))
+            .map(|n| format!("`{}` is not reached from `{entry}`", n.id))
+            .collect();
         (problems, ok)
     }
 }
