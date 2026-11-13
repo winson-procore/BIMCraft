@@ -6,6 +6,8 @@
 //! typed diagnostic. Sides are found by sampling points either side of a line and asking which room holds each.
 
 mod expect;
+#[cfg(test)]
+mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -263,11 +265,18 @@ fn door_edges(m: &Model, spaces: &Spaces, diagnostics: &mut Vec<Value>) -> DoorE
         let at = |side: f64| spaces.room_at(w.level, axis.at(o.offset, c + side));
         let (left, right) = (at(reach), at(-reach));
         let operation = dims.operation.unwrap_or(Operation::Swing);
-        let fields = json!({
+        let mut fields = json!({
             "door_id": id, "door_guid": m.guid(id).to_string(), "mark": o.mark,
             "family": o.family.clone().unwrap_or_else(|| o.type_name.clone()), "type": o.type_name,
             "operation": operation.name(), "width_mm": round(dims.width),
         });
+        // A swing door records the room on its swing side (the wall's left, `flip_facing` the right; `exterior` when no room
+        // is there) and the jamb its leaf hangs from. Any other operation leaves both keys out.
+        if matches!(operation, Operation::Swing | Operation::DoubleSwing) {
+            let side = if o.flip_facing { right } else { left };
+            fields["opens_into"] = json!(side.map_or("exterior", |i| spaces.list[i].id.as_str()));
+            fields["hinge"] = json!(if o.flip_hand { "end" } else { "start" });
+        }
         let with = |mut base: Value| {
             if let (Some(b), Some(f)) = (base.as_object_mut(), fields.as_object()) {
                 b.extend(f.clone());
