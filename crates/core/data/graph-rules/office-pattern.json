@@ -1,0 +1,114 @@
+{
+  "schema_version": "graph-rule-pack/1",
+  "pack_id": "office-pattern.graph-rules/1",
+  "archetype": "office-pattern",
+  "origin": "authored_from_generator",
+  "reference_plans": [],
+  "reference_plan_count": 0,
+  "note": "The office pattern of generated/office-variations-20261112/generate.py: a lobby at one end (the only way in from outside), a corridor the length of the plan with private offices, conference rooms, restrooms, a pantry and sometimes focus rooms off it, and an open office at the far end. Every rule is exploratory: the pattern is a generator's, not a traced plan's. Double-swing doors count as swing here.",
+  "kinds": {
+    "lobby": {"role": "public", "count": [1, 1], "area_m2": [12.0, 150.0]},
+    "hall": {"role": "circulation", "count": [1, 1], "area_m2": [8.0, 200.0]},
+    "private_office": {"role": "private", "count": [1, null], "area_m2": [6.0, 45.0]},
+    "conference": {"role": "shared", "count": [1, null], "area_m2": [8.0, 70.0]},
+    "restroom": {"role": "service", "count": [1, null], "area_m2": [4.0, 40.0]},
+    "pantry": {"role": "support", "count": [1, null], "area_m2": [6.0, 45.0]},
+    "focus_room": {"role": "private", "count": [0, null], "area_m2": [4.0, 25.0]},
+    "open_office": {"role": "shared", "count": [1, 1], "area_m2": [30.0, 500.0]}
+  },
+  "connections": [
+    {"pair": ["lobby", "hall"], "means": ["swing"]},
+    {"pair": ["hall", "open_office"], "means": ["swing"]},
+    {"pair": ["hall", "conference"], "means": ["swing"]},
+    {"pair": ["hall", "private_office"], "means": ["swing"]},
+    {"pair": ["hall", "restroom"], "means": ["swing"]},
+    {"pair": ["hall", "pantry"], "means": ["swing"]},
+    {"pair": ["hall", "focus_room"], "means": ["swing"]}
+  ],
+  "rules": [
+    {
+      "id": "OP-001", "name": "kinds-known", "classification": "exploratory",
+      "category": "vocabulary", "subject": "every space", "predicate": "has a kind", "object": "defined in the pack's kinds",
+      "checkability": "deterministic", "confidence": 0.9,
+      "rationale": "Counts, areas and connections are judged by kind, so a space of no known kind is judged by nothing.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {}
+    },
+    {
+      "id": "OP-002", "name": "edges-name-spaces", "classification": "exploratory",
+      "category": "graph", "subject": "every edge that is not to the exterior", "predicate": "joins", "object": "two spaces of the graph",
+      "checkability": "deterministic", "confidence": 0.95,
+      "rationale": "An edge to nothing is a graph that was not read right.",
+      "exceptions": ["an edge marked exterior goes outside and is skipped"], "provenance": "generated/office-variations-20261112/generate.py", "check": {}
+    },
+    {
+      "id": "OP-003", "name": "kind-counts", "classification": "exploratory",
+      "category": "program", "subject": "each kind", "predicate": "occurs a number of times", "object": "inside its count range",
+      "checkability": "deterministic", "confidence": 0.6,
+      "rationale": "One lobby, one corridor and one open office; at least one private office, conference room, restroom and pantry; focus rooms are optional.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {}
+    },
+    {
+      "id": "OP-004", "name": "kind-areas", "classification": "exploratory",
+      "category": "dimensions", "subject": "each space", "predicate": "has an area in square metres", "object": "inside its kind's area range",
+      "checkability": "deterministic", "confidence": 0.4,
+      "rationale": "The ranges hold the rooms the pattern's bands make in plans of 150 to 600 m2.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {}
+    },
+    {
+      "id": "OP-005", "name": "connections-by-means", "classification": "exploratory",
+      "category": "adjacency", "subject": "each door or open edge", "predicate": "joins a pair of kinds by a means", "object": "listed in the pack's connections",
+      "checkability": "deterministic", "confidence": 0.5,
+      "rationale": "Every link is a swing door (or a double-swing one) from the corridor, but the lobby's, which the corridor also has.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {}
+    },
+    {
+      "id": "OP-006", "name": "one-exterior-door-on-lobby", "classification": "exploratory",
+      "category": "access", "subject": "the doors to the outside", "predicate": "are one, and open off", "object": "the lobby",
+      "checkability": "deterministic", "confidence": 0.7,
+      "rationale": "The lobby is the pattern's only way in from outside.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {"kind": "lobby"}
+    },
+    {
+      "id": "OP-007", "name": "entry-is-lobby", "classification": "exploratory",
+      "category": "access", "subject": "the entry", "predicate": "is", "object": "a lobby",
+      "checkability": "deterministic", "confidence": 0.8,
+      "rationale": "The plan is entered through its lobby.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {"kinds": ["lobby"]}
+    },
+    {
+      "id": "OP-008", "name": "lobby-joins-corridor", "classification": "exploratory",
+      "category": "adjacency", "subject": "the lobby", "predicate": "has a door to", "object": "the corridor",
+      "checkability": "deterministic", "confidence": 0.7,
+      "rationale": "The corridor starts at the lobby.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {"kinds": ["lobby"], "to": "hall"}
+    },
+    {
+      "id": "OP-009", "name": "side-rooms-door-to-corridor", "classification": "exploratory",
+      "category": "adjacency", "subject": "a private office, conference room, restroom, pantry or focus room", "predicate": "has a door to", "object": "the corridor",
+      "checkability": "deterministic", "confidence": 0.7,
+      "rationale": "The rooms of the pattern open off the corridor, never off each other or the open office.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {"kinds": ["private_office", "conference", "restroom", "pantry", "focus_room"], "to": "hall"}
+    },
+    {
+      "id": "OP-010", "name": "private-office-door-to-corridor", "classification": "exploratory",
+      "category": "adjacency", "subject": "a private office", "predicate": "has a door to", "object": "the corridor",
+      "checkability": "deterministic", "confidence": 0.7,
+      "rationale": "A private office is reached by a door, not an open link, from the corridor.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {"kinds": ["private_office"], "to": "hall"}
+    },
+    {
+      "id": "OP-011", "name": "open-office-at-the-corridor-end", "classification": "exploratory",
+      "category": "adjacency", "subject": "the open office", "predicate": "joins", "object": "the corridor, not the lobby, and no side room opens off it",
+      "checkability": "deterministic", "confidence": 0.6,
+      "rationale": "The open office is the far end of the corridor; the lobby is the near one.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {"kinds": ["open_office"], "to": "hall", "not": ["lobby", "private_office", "conference", "restroom", "pantry", "focus_room"]}
+    },
+    {
+      "id": "OP-012", "name": "all-reached-from-entry", "classification": "exploratory",
+      "category": "access", "subject": "every space", "predicate": "is reached from the entry", "object": "by doors and open links",
+      "checkability": "deterministic", "confidence": 0.8,
+      "rationale": "A space nobody can reach is no plan.",
+      "exceptions": [], "provenance": "generated/office-variations-20261112/generate.py", "check": {}
+    }
+  ]
+}
