@@ -10,6 +10,8 @@ mod layout;
 mod links;
 mod plan;
 #[cfg(test)]
+mod file_tests;
+#[cfg(test)]
 mod tests;
 
 use serde_json::{Value, json};

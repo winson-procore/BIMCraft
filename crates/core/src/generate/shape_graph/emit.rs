@@ -143,7 +143,7 @@ fn orient(fam: &Family, rooms: &[Room], laid: &Laid, d: &mut Drawn) -> Result<()
     let kind = |i: usize| fam.types[rooms[i].ty].kind.as_str();
     let room_at = |p: [f64; 2]| laid.rects.iter().find(|r| holds(r, p)).map(|r| r.0);
     for door in &mut d.doors {
-        if door.op != "swing" {
+        if !matches!(door.op, "swing" | "double-swing") {
             continue;
         }
         let at = [door.at[0] as f64, door.at[1] as f64];
