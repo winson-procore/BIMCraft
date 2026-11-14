@@ -11,8 +11,9 @@ use std::sync::{Mutex, PoisonError};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::program::Archetype;
 use super::shape_graph::{self, family};
-use super::{Refusal, refuse};
+use super::{AreaRequest, MAX_AREA_M2, Refusal, refuse};
 use crate::engine::Session;
 use crate::model::mix;
 
@@ -26,6 +27,8 @@ const MAX_RERUN: i64 = 100_000;
 const MAX_JOBS: i64 = 64;
 const DEFAULT_RERUN: i64 = 50;
 const SALT: u64 = 0x5EED_0F0A_C0DE_1234;
+/// The area of an `area` batch's seed has a salt of its own, so a brief's rooms and areas never move together.
+const AREA_SALT: u64 = 0x5EED_A4EA_0F0A_77B1;
 const HEADER: &str = "seed,file,sha256,generator_version,units,wall_layers,door_layers,window_layers,building,floor,drawing";
 
 #[derive(Deserialize)]
@@ -64,6 +67,8 @@ struct Job {
     archetype: String,
     seed: u64,
     rooms: i64,
+    /// The gross area, whole m2, of a seed of an `area` batch; `rooms` is then unused.
+    area: Option<i64>,
     tol: i64,
     unreviewed: bool,
 }
@@ -85,6 +90,13 @@ enum Outcome {
 pub(super) fn rooms_for(seed: u64, lo: i64, hi: i64) -> i64 {
     let span = (hi - lo + 1).max(1) as u64;
     lo + (mix(seed ^ SALT) % span) as i64
+}
+
+/// The gross area, whole square metres, a seed is asked for: between `lo` and `hi`, by the seed alone. Past deliveries depend on
+/// this never changing.
+pub(super) fn area_for(seed: u64, lo: i64, hi: i64) -> i64 {
+    let span = (hi - lo + 1).max(1) as u64;
+    lo + (mix(seed ^ AREA_SALT) % span) as i64
 }
 
 /// Which `k` of `n` rows the rerun repeats: spread evenly through them, the first and last stretch included.
@@ -128,17 +140,33 @@ fn read_brief(path: &str) -> Result<Vec<Job>, Refusal> {
     let mut total = 0u64;
     for (i, b) in brief.batches.iter().enumerate() {
         let at = |what: &str| bad(format!("batch {i}: {what}"));
-        if family::builtin(&b.archetype).is_none() {
-            return Err(at(&format!(
-                "`archetype` is one of {} for a batch by `rooms`; got {:?}",
-                family::builtin_names(),
-                b.archetype.chars().take(40).collect::<String>()
-            )));
-        }
         match (&b.rooms, &b.area) {
             (Some(_), Some(_)) | (None, None) => return Err(at("give `rooms` or `area`, one of them")),
-            (None, Some(_)) => return Err(at("a batch by `area` arrives in Slice 13: give `rooms`")),
+            (None, Some([lo, hi])) => {
+                if Archetype::parse(&b.archetype).is_none() {
+                    return Err(at(&format!(
+                        "`archetype` is one of {} for a batch by `area`; got {:?}",
+                        Archetype::names(),
+                        b.archetype.chars().take(40).collect::<String>()
+                    )));
+                }
+                if !(lo.is_finite() && hi.is_finite() && *lo > 0.0 && lo <= hi && *hi <= MAX_AREA_M2 && lo.ceil() <= hi.floor()) {
+                    return Err(at(&format!(
+                        "`area` is two square-metre areas, least first, above 0 and at most {MAX_AREA_M2}, with a whole number between them"
+                    )));
+                }
+                if b.rooms_tol.is_some() {
+                    return Err(at("`rooms_tol` belongs to a batch by `rooms`"));
+                }
+            }
             (Some([lo, hi]), None) => {
+                if family::builtin(&b.archetype).is_none() {
+                    return Err(at(&format!(
+                        "`archetype` is one of {} for a batch by `rooms`; got {:?}",
+                        family::builtin_names(),
+                        b.archetype.chars().take(40).collect::<String>()
+                    )));
+                }
                 if *lo < 1 || lo > hi || *hi > max {
                     return Err(at(&format!("`rooms` is two whole numbers, fewest first, from 1 to {max}")));
                 }
@@ -167,11 +195,13 @@ fn read_brief(path: &str) -> Result<Vec<Job>, Refusal> {
     let mut jobs = Vec::with_capacity(total as usize);
     for b in &brief.batches {
         let [lo, hi] = b.rooms.unwrap_or([1, 1]);
+        let [alo, ahi] = b.area.unwrap_or([1.0, 1.0]);
         for seed in b.first_seed..b.first_seed + b.count {
             jobs.push(Job {
                 archetype: b.archetype.clone(),
                 seed,
                 rooms: rooms_for(seed, lo, hi),
+                area: b.area.map(|_| area_for(seed, alo.ceil() as i64, ahi.floor() as i64)),
                 tol: b.rooms_tol.unwrap_or(0),
                 unreviewed: b.unreviewed.is_some(),
             });
@@ -194,11 +224,28 @@ fn valid_version(v: &str) -> bool {
 
 /// One seed: built in memory, run in a scratch session as `run --script` runs it, saved as DWG at `dwg`, read back for its hash.
 fn make_one(job: &Job, writer: &crate::cad::DwgWriter, dir: &Path) -> Result<Outcome, String> {
-    let request =
-        shape_graph::Request { archetype: job.archetype.clone(), seed: job.seed, rooms: job.rooms, tolerance: job.tol, shape: None };
-    let built = match shape_graph::build(&request, job.unreviewed) {
-        Ok(b) => b,
-        Err(Refusal { code, message }) => return Ok(Outcome::Skipped { seed: job.seed, code, message }),
+    let built = match job.area {
+        // A plan by area: the generator's own, drawn to the delivery rules, as `generate --delivery on` makes it.
+        Some(area) => match Archetype::parse(&job.archetype)
+            .ok_or_else(|| Refusal { code: "unknown_archetype", message: job.archetype.clone() })
+            .and_then(|a| super::build_for_delivery(a, job.seed, AreaRequest::m2(area as f64)))
+        {
+            Ok(b) => b,
+            Err(Refusal { code, message }) => return Ok(Outcome::Skipped { seed: job.seed, code, message }),
+        },
+        None => {
+            let request = shape_graph::Request {
+                archetype: job.archetype.clone(),
+                seed: job.seed,
+                rooms: job.rooms,
+                tolerance: job.tol,
+                shape: None,
+            };
+            match shape_graph::build(&request, job.unreviewed) {
+                Ok(b) => b,
+                Err(Refusal { code, message }) => return Ok(Outcome::Skipped { seed: job.seed, code, message }),
+            }
+        }
     };
     let text = |name: &str| built.files.iter().find(|(n, _)| *n == name).map(|(_, t)| t.as_str());
     let script = text("script.bimcraft.txt").ok_or("generation_failed: the plan has no script")?;
@@ -449,7 +496,7 @@ fn write_delivery(
     let total: u64 = rows.iter().map(|r| r.bytes).sum();
     let buildings = rows.iter().map(|r| r.building.as_str()).collect::<BTreeSet<_>>().len();
     let mut sources = serde_json::Map::new();
-    for job in jobs {
+    for job in jobs.iter().filter(|j| j.area.is_none()) {
         if !sources.contains_key(&job.archetype) {
             let fam = shape_graph::builtin_family(&job.archetype)?;
             sources.insert(job.archetype.clone(), json!(fam.sources));

@@ -80,7 +80,11 @@ pub static ALL: &[Command] = &[
          seed), and what the `topology` command reads from the built project is that graph. `rooms` (with `rooms_tol`, `shape`) \
          plans by room count in the shape graph engine, and takes `family_file` (the path of a family JSON file, at most 1 MiB, \
          checked against the rule pack it names: `invalid_family` when it is wrong) in place of `archetype`; the two exclude each \
-         other and `family_file` needs `rooms`. The project is not touched",
+         other and `family_file` needs `rooms`. `delivery: on` (with `area_m2` or `area_sqft`, never `rooms`; `off` is the default) draws \
+         the same plan to the delivery drawing rules: its script carries `cad_profile {name: delivery}`, rooms are numbered 101 \
+         upward in the order of the graph's nodes (each node of topology-graph.json has its `number`), doors and windows have marks D1 \
+         and W1 upward and no dimension is drawn, and the manifest has `delivery: true` and a `building`; the layout is the same. \
+         `invalid_params` for any other value. The project is not touched",
         crate::generate::generate,
     ),
     other(
@@ -91,7 +95,9 @@ pub static ALL: &[Command] = &[
          `<delivery_id>-rerun/` (the same for `rerun` seeds, 50 by default, spread through the delivery and made again). `brief` is \
          the path of a JSON file `{schema_version: 1, batches: [{archetype: house, first_seed, count, rooms: [lo, hi], rooms_tol?, \
          unreviewed?: allow}]}`; each seed's room count is chosen between `lo` and `hi` by the seed, and the plan is what `generate` \
-         then `run` make for it. `rights` is the file of the signed rights statement (copied byte for byte) or `emailed` (no \
+         then `run` make for it. A batch may give `area: [lo, hi]` instead of `rooms` (square metres, any of the seven archetypes, \
+         no `rooms_tol`): each seed's whole-number area is chosen between them by the seed, and the plan is what `generate --delivery \
+         on` then `run` make for it. `rights` is the file of the signed rights statement (copied byte for byte) or `emailed` (no \
          RIGHTS.txt). `jobs` is the number of threads (1 to 64; the bytes written do not depend on it). A seed `generate` refuses \
          is in the reply's `skipped` with its error code, and has no file and no row. The reply holds folder, rerun_folder, \
          generator_version, files, buildings, average_file_bytes, skipped and sources. Refused, writing nothing: invalid_brief, \

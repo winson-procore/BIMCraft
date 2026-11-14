@@ -167,7 +167,8 @@ impl Doc {
                 }
                 continue;
             }
-            let Some(ink) = ink(d, prim, part, base) else { continue };
+            let Some(mut ink) = ink(d, prim, part, base) else { continue };
+            ink.layer = delivered(std::mem::take(&mut ink.layer), delivery);
             ext = ink.grow(ext);
             let (ents, parent) = match owner {
                 Some(o) if blocks.holds(o) => {
@@ -193,8 +194,8 @@ impl Doc {
             let Some(at) = at.filter(|_| height.is_finite() && height > 0.0 && angle.is_finite() && !l.text.trim().is_empty()) else {
                 continue;
             };
-            let name = on(layer(m, l.owner), Part::Text, false);
-            lettering(&mut ents, sh.w.handle(), space, &name, l, (at, height, angle.rem_euclid(360.0)));
+            let name = delivered(on(layer(m, l.owner), Part::Text, false), delivery);
+            lettering(&mut ents, sh.w.handle(), space, &name, l, (at, height, angle.rem_euclid(360.0)), delivery);
             sh.layers.insert(name);
         }
         if delivery && space == MODEL_SPACE {
@@ -583,6 +584,11 @@ fn on(base: &str, part: Part, fill: bool) -> String {
     }
 }
 
+/// The layer `name` is under the delivery profile: gridline letters and numbers go on `A-ANNO-GRID`, not `A-GRID-IDEN`.
+fn delivered(name: String, delivery: bool) -> String {
+    if delivery && name == "A-GRID-IDEN" { "A-ANNO-GRID".to_string() } else { name }
+}
+
 /// A dash pattern of `dash` px, drawn `scale` px to the mm: its name and its dashes and gaps, mm (a gap negative). None
 /// for one that isn't a pattern of finite lengths, which is drawn solid.
 fn linetype(dash: &[f32], scale: f64) -> Option<(String, Vec<f64>)> {
@@ -874,7 +880,7 @@ const CHUNK: usize = 250;
 /// `l` as a TEXT, or as an MTEXT when it has lines or something a TEXT reads as formatting, at `at` mm and turned `angle`
 /// degrees counter-clockwise (`place`: those three), owned by the space `owner`. Its characters outside ASCII go out as they are:
 /// the file is AC1032, whose DXF is UTF-8.
-fn lettering(s: &mut String, h: u64, owner: u64, layer: &str, l: &super::Lettering, place: (P2, f64, f64)) {
+fn lettering(s: &mut String, h: u64, owner: u64, layer: &str, l: &super::Lettering, place: (P2, f64, f64), delivery: bool) {
     use crate::dxf::{Horizontal, Vertical};
     let (at, height, angle) = place;
     let (right, down) = (
@@ -893,8 +899,16 @@ fn lettering(s: &mut String, h: u64, owner: u64, layer: &str, l: &super::Letteri
     let plain = escaped(&l.text, false);
     // Lettering a plan laid out in a typeface goes as an MTEXT with that typeface's run, which is how a reader that drew it
     // the same finds the face; a TEXT has no way to say it.
-    let face: String =
-        l.font.iter().flat_map(|f| f.chars()).filter(|c| !c.is_control() && !"|;\\{}".contains(*c)).collect::<String>().trim().into();
+    // A delivery drawing's lettering is plain: its notes are TEXT, with no typeface run a reader would have to strip.
+    let face: String = l
+        .font
+        .iter()
+        .filter(|_| !delivery)
+        .flat_map(|f| f.chars())
+        .filter(|c| !c.is_control() && !"|;\\{}".contains(*c))
+        .collect::<String>()
+        .trim()
+        .into();
     if face.is_empty() && !l.text.contains(['\n', '\\', '{', '}']) && plain.len() <= CHUNK {
         pair(s, 0, "TEXT");
         entity(s, h, owner, layer, None, None, l.color);

@@ -266,7 +266,11 @@ fn briefs_the_schema_does_not_allow_are_invalid() {
         r#"{"schema_version": 1, "batches": [{"archetype": "barn", "first_seed": 1, "count": 1, "rooms": [8, 12]}]}"#,
         r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1}]}"#,
         r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "rooms": [8, 12], "area": [100, 200]}]}"#,
-        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "area": [100, 200]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "area": [200, 100]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "area": [100.2, 100.8]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "area": [0, 100]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "area": [100, 5001]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "barn", "first_seed": 1, "count": 1, "area": [100, 200]}]}"#,
         r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 18446744073709551615, "count": 5, "rooms": [8, 12]}]}"#,
         r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 0, "rooms": [8, 12]}]}"#,
         r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "rooms": [12, 8]}]}"#,
@@ -317,3 +321,98 @@ fn a_seeds_room_count_depends_on_the_seed_alone_and_stays_pinned() {
 }
 
 const PINNED: [i64; 5] = [5, 19, 5, 17, 16];
+
+#[test]
+fn a_seeds_area_depends_on_the_seed_alone_and_stays_pinned() {
+    use super::deliver::area_for;
+    for seed in 0..500 {
+        let a = area_for(seed, 150, 400);
+        assert!((150..=400).contains(&a));
+        assert_eq!(a, area_for(seed, 150, 400));
+    }
+    assert_eq!(area_for(9, 300, 300), 300);
+    // Its own salt: the areas do not follow the rooms.
+    assert_ne!((1..=20).map(|s| area_for(s, 5, 22)).collect::<Vec<_>>(), (1..=20).map(|s| rooms_for(s, 5, 22)).collect::<Vec<_>>());
+    let first: Vec<i64> = (1..=5).map(|s| area_for(s, 150, 400)).collect();
+    assert_eq!(first, PINNED_AREAS, "past deliveries depend on these never changing");
+}
+
+const PINNED_AREAS: [i64; 5] = [263, 211, 366, 178, 385];
+
+const MIXED: &[u8] = br#"{"schema_version": 1, "batches": [
+    {"archetype": "house", "first_seed": 1, "count": 2, "rooms": [8, 12]},
+    {"archetype": "clinic", "first_seed": 11, "count": 2, "area": [600, 700]},
+    {"archetype": "medical-day", "first_seed": 21, "count": 1, "area": [800, 900]},
+    {"archetype": "house", "first_seed": 31, "count": 2, "area": [12, 12]}]}"#;
+
+#[test]
+fn an_area_batch_delivers_named_files_and_skips_what_its_archetype_refuses() {
+    let d = dir("area");
+    let root = d.join("root");
+    std::fs::create_dir_all(&root).expect("root");
+    let rights = put(&d, "rights.txt", RIGHTS);
+    let brief = put(&d, "brief.json", MIXED);
+    let reply = s_deliver(&d, &brief, &rights, &root);
+    assert_eq!(reply["files"], 5, "{reply}");
+    let folder = root.join(GV).join("sk");
+    for name in ["house_s1", "house_s2", "clinic_s11", "clinic_s12", "medical-day_s21"] {
+        assert!(folder.join("dwg").join(format!("{name}.dwg")).exists(), "{name}");
+    }
+    let skipped = reply["skipped"].as_array().expect("skipped");
+    assert_eq!(skipped.iter().map(|s| s["seed"].as_u64().unwrap()).collect::<Vec<_>>(), [31, 32]);
+    let want = super::build_for_delivery(super::program::Archetype::House, 31, super::AreaRequest::m2(12.0)).err().expect("refused").code;
+    assert!(skipped.iter().all(|s| s["error"] == want), "{skipped:?} {want}");
+    // The sources are the house family's alone: the area batches have none.
+    let sources = reply["sources"].as_object().expect("sources");
+    assert_eq!(sources.keys().collect::<Vec<_>>(), ["house"]);
+    let csv = std::fs::read_to_string(folder.join("manifest.csv")).expect("csv");
+    assert_eq!(csv.lines().count(), 6);
+    assert!(csv.lines().skip(1).filter(|l| l.contains("clinic_s1")).all(|l| l.contains(",clinic-")), "{csv}");
+}
+
+#[test]
+fn an_area_seeds_file_is_what_its_delivery_script_saves() {
+    use super::program::Archetype;
+    let d = dir("area-bytes");
+    let root = d.join("root");
+    std::fs::create_dir_all(&root).expect("root");
+    let rights = put(&d, "rights.txt", RIGHTS);
+    let brief = put(
+        &d,
+        "brief.json",
+        br#"{"schema_version": 1, "batches": [{"archetype": "hospital", "first_seed": 3, "count": 1, "area": [1800, 2000]}]}"#,
+    );
+    s_deliver(&d, &brief, &rights, &root);
+    let got = std::fs::read(root.join(GV).join("sk").join("dwg").join("hospital_s3.dwg")).expect("dwg");
+    let area = super::deliver::area_for(3, 1800, 2000);
+    let built = super::build_for_delivery(Archetype::Hospital, 3, super::AreaRequest::m2(area as f64)).expect("built");
+    let script = built.files.iter().find(|(n, _)| *n == "script.bimcraft.txt").expect("script").1.clone();
+    let at = d.join("again.dwg");
+    crate::ids::keeping_reproducible(|| {
+        let mut s = session();
+        s.script(&script).expect("script");
+        s.execute("save", &json!({"path": at.display().to_string()})).expect("save");
+    });
+    assert_eq!(got, std::fs::read(&at).expect("again"));
+}
+
+#[test]
+fn a_batch_with_both_rooms_and_area_or_neither_is_invalid() {
+    let d = dir("both");
+    let root = d.join("root");
+    std::fs::create_dir_all(&root).expect("root");
+    let rights = put(&d, "rights.txt", RIGHTS);
+    let mut s = session();
+    for (i, text) in [
+        r#"{"schema_version": 1, "batches": [{"archetype": "clinic", "first_seed": 1, "count": 1, "rooms": [8, 12], "area": [600, 700]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "clinic", "first_seed": 1, "count": 1}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "clinic", "first_seed": 1, "count": 1, "rooms": [8, 12]}]}"#,
+    ]
+    .iter()
+    .enumerate()
+    {
+        let brief = put(&d, &format!("b{i}.json"), text.as_bytes());
+        refused(&mut s, &params(&d, &brief, "b", Some(&rights), &root), "invalid_brief");
+    }
+    assert_eq!(std::fs::read_dir(&root).expect("ls").count(), 0);
+}

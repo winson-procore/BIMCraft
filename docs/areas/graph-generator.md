@@ -292,6 +292,19 @@ the tag lines need, the second is the script as written. A plan with no leader i
 Every `--rooms` script has one `cad_profile {"name":"delivery"}` line, straight after `drawing_property`: its DXF and DWG keep the
 delivery drawing rules ([CAD export](cad-import.md#export)). The other generators' scripts have none and export as before.
 
+### Delivery rules for the existing generators
+
+`generate --archetype A --area M2 --delivery on` (also `--area-sqft`; `off` is the default, and with `--rooms` it is `invalid_params`) draws the same
+plan, walls, doors, windows and rooms as without it, to the delivery drawing rules (`generate/delivery.rs`, run after the generator's own build and
+checks, so the default files keep their bytes). `delivery::apply` rewrites the script (one `cad_profile` line after `drawing_property`; no
+`dimension`; each room numbered `101` upward in the order of the graph's nodes; doors and windows marked `D1`, `W1`…; a door of a type by `operation`
+alone becomes a door of the family that draws that operation, Single, Double or Sliding, so its swing is one quarter-circle ARC, two, or none), puts each
+node's `number` in `topology-graph.json`, and gives `manifest.json` `delivery: true` and a `building`. The graph's `entry` is the room the
+saved model's entry is (the corridor generators name the lobby, while their main door opens into the corridor). In the DXF, gridline letters go on
+`A-ANNO-GRID` (as TEXT) and a block keeps both its attributes with an empty `TYPE`, so the entities are those of the plain export; the
+plain notes are TEXT without a typeface run. `deliver` takes batches by `area: [lo, hi]` (square metres): a seed's whole-number area is
+`lo + mix(seed ^ AREA_SALT) % (hi - lo + 1)`, pinned by a test, and its plan is what `generate --delivery on` writes.
+
 ## Delivery folder
 
 `bimcraft-cli deliver --brief BRIEF.json --delivery-id ID --rights (FILE | emailed) --out ROOT [--rerun N] [--jobs J]` (`generate/deliver.rs`)
@@ -303,7 +316,7 @@ and prints one JSON summary (`folder`, `rerun_folder`, `generator_version`, `fil
   with `invalid_params`. Commit before the release build you deliver from, or the version says `.dirty`.
 - **A seed** is built in memory (`shape_graph::build`), its script run in a fresh `Session` and saved as DWG, so its bytes are what `generate` then `run` write.
   A batch's `rooms: [lo, hi]` gives each seed `lo + mix(seed ^ SALT) % (hi - lo + 1)` rooms: the seed alone, pinned by a test, because past deliveries
-  depend on it. A seed `build` refuses is in `skipped` with the refusal's code and has no row and no file. Batches by `area` come in Slice 13.
+  depend on it. A seed `build` refuses is in `skipped` with the refusal's code and has no row and no file. A batch by `area` makes the seed's plan with `build_for_delivery`; `sources` lists only the families of batches by `rooms`.
 - **`building`** is `<family>-` and 12 hex digits of the SHA-256 of the script's `type`, `family`, `wall`, `door` (without `mark`), `room_separator` and
   `room` lines, each kind sorted: the same layout is the same building however the script numbered its doors, and `generate`'s `manifest.json` carries it.
 - **Threads.** `--jobs` plain threads pull seeds from an atomic counter (the reproducible-GUID state is thread-local, so no rayon here); results go by position

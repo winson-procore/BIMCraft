@@ -303,19 +303,62 @@ fn the_profile_does_not_change_the_png() {
 }
 
 #[test]
-fn with_the_profile_an_attribute_is_only_a_mark() {
+fn with_the_profile_an_attribute_says_only_a_mark() {
     let mut s = three_rooms(true);
     let (ents, blocks) = parse(&plan_dxf(&mut s, "attribs"));
     let atts: Vec<&Ent> = ents.iter().filter(|e| e.kind == "ATTRIB").collect();
-    assert_eq!(atts.len(), 1);
+    // The same two attributes as without the profile, so the drawing holds the same entities; the type's is empty.
+    assert_eq!(atts.len(), 2);
     assert_eq!((atts[0].get("2"), atts[0].get("1")), (Some("MARK"), Some("D1")));
+    assert_eq!((atts[1].get("2"), atts[1].get("1")), (Some("TYPE"), Some("")));
     for b in blocks.values() {
-        assert!(b.iter().filter(|e| e.kind == "ATTDEF").all(|e| e.get("2") == Some("MARK")));
+        assert!(b.iter().filter(|e| e.kind == "ATTDEF").all(|e| ["MARK", "TYPE"].contains(&e.get("2").unwrap_or(""))));
     }
-    // As before without it: a MARK and a TYPE.
+    // As before without it: a MARK and a TYPE, the type saying what it is.
     let mut s = three_rooms(false);
     let (ents, _) = parse(&plan_dxf(&mut s, "attribs-off"));
-    assert_eq!(ents.iter().filter(|e| e.kind == "ATTRIB").count(), 2);
+    let off: Vec<&Ent> = ents.iter().filter(|e| e.kind == "ATTRIB").collect();
+    assert_eq!(off.len(), 2);
+    assert_ne!(off[1].get("1"), Some(""));
+}
+
+/// The three-room plan's box with two gridlines named 1 and A.
+fn gridded(profile: bool) -> Session {
+    let mut s = Session::new();
+    let mut script = HEAD.to_string();
+    script.push_str(
+        r#"grid {"start":[1000,-1500],"end":[1000,5500],"name":"1"}
+grid {"start":[-1500,1000],"end":[9500,1000],"name":"A"}
+room {"name":"Hall","number":"101","point":[2000,2000]}
+"#,
+    );
+    if profile {
+        script.push_str("cad_profile {\"name\":\"delivery\"}\n");
+    }
+    s.script(&script).unwrap();
+    s
+}
+
+#[test]
+fn with_the_profile_gridline_names_are_text_on_the_annotation_layer() {
+    let strings = |ents: &[Ent], layer: &str| -> Vec<String> {
+        let mut v: Vec<String> = ents
+            .iter()
+            .filter(|e| e.layer() == layer && ["TEXT", "MTEXT", "ATTRIB"].contains(&e.kind.as_str()))
+            .filter_map(|e| e.get("1").map(str::to_string))
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    };
+    let (on, _) = parse(&plan_dxf(&mut gridded(true), "grid-on"));
+    assert_eq!(strings(&on, "A-ANNO-GRID"), ["1", "A"]);
+    assert!(on.iter().all(|e| e.layer() != "A-GRID-IDEN"));
+    assert!(on.iter().any(|e| e.layer() == "A-GRID" && e.kind != "TEXT"));
+    assert!(on.iter().filter(|e| e.layer() == "A-ANNO-GRID").all(|e| e.kind == "TEXT"));
+    let (off, _) = parse(&plan_dxf(&mut gridded(false), "grid-off"));
+    assert_eq!(strings(&off, "A-GRID-IDEN"), ["1", "A"]);
+    assert!(off.iter().all(|e| e.layer() != "A-ANNO-GRID"));
 }
 
 #[test]

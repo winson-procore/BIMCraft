@@ -19,7 +19,7 @@ const USAGE: &str = "USAGE:
       commands and scripts (one `ID {json}` per line), save. --save writes by extension:
       .bimcraft (the project), .ifc (IFC4), .glb (the 3D view's scene as glTF), .svg or .png (the lowest level's plan).
       --highrise builds an original 20-storey performance sample (about 10,000 elements).
-  bimcraft-cli generate --archetype office|clinic|hospital|house|studio-office|office-pattern|medical-day --seed N (--area M2 | --area-sqft SQFT) --out DIR
+  bimcraft-cli generate --archetype office|clinic|hospital|house|studio-office|office-pattern|medical-day --seed N (--area M2 | --area-sqft SQFT) [--delivery on|off] --out DIR
                                  write a generated plan's run directory: program, topology and building graphs, a script for
                                  `run --script`, a report and a manifest. The same brief gives the same files; a brief that
                                  can't be met (an area too small) exits non-zero with a JSON error (`error`, a code, and `message`) on stderr, and writes nothing
@@ -194,7 +194,7 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
     let (mut archetype, mut seed, mut area, mut area_sqft, mut out) = (None, None, None, None, None);
     // The shape graph engine's options: `--rooms` selects it, and the core refuses the rest without it (as JSON).
     let (mut rooms, mut rooms_tol, mut shape, mut interior, mut bumps) = (None, None, None, None, None);
-    let mut family_file = None;
+    let (mut family_file, mut delivery) = (None, None);
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         let value = rest.next().ok_or_else(|| format!("{arg} needs a value\n\n{USAGE}"))?;
@@ -210,6 +210,7 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
             "--interior" => &mut interior,
             "--bumps" => &mut bumps,
             "--family-file" => &mut family_file,
+            "--delivery" => &mut delivery,
             other => return Err(format!("unknown option `{other}` for generate\n\n{USAGE}")),
         };
         if slot.replace(value).is_some() {
@@ -248,8 +249,14 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
         }
     }
     // The core refuses both, or neither, as typed JSON.
-    for (key, value) in [("archetype", archetype), ("family_file", family_file), ("shape", shape), ("interior", interior), ("bumps", bumps)]
-    {
+    for (key, value) in [
+        ("archetype", archetype),
+        ("family_file", family_file),
+        ("shape", shape),
+        ("interior", interior),
+        ("bumps", bumps),
+        ("delivery", delivery),
+    ] {
         if let Some(v) = value {
             p[key] = json!(v);
         }
@@ -639,6 +646,29 @@ mod tests {
             assert!(e.contains(says), "{all:?}: {e}");
         }
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn generate_takes_delivery_and_the_core_refuses_what_it_does_not_know() {
+        let dir = std::env::temp_dir().join(format!("bimcraft-cli-delivery-{}", std::process::id()));
+        let at = dir.to_string_lossy().into_owned();
+        let base = ["generate", "--archetype", "clinic", "--seed", "3", "--area", "650", "--delivery"];
+        for (value, extra) in [("maybe", vec![]), ("on", vec!["--rooms", "12"])] {
+            let mut all = base.to_vec();
+            all.push(value);
+            all.extend(extra);
+            all.extend(["--out", &at]);
+            let e = cli_out(&all).unwrap_err();
+            let refusal: Value = serde_json::from_str(&e).unwrap_or_else(|_| panic!("not JSON: {e}"));
+            assert_eq!(refusal["error"], "invalid_params", "{e}");
+        }
+        assert!(!dir.exists());
+        let mut all = base.to_vec();
+        all.extend(["on", "--out", &at]);
+        cli_out(&all).unwrap();
+        let script = std::fs::read_to_string(dir.join("script.bimcraft.txt")).unwrap();
+        assert!(script.contains("cad_profile {\"name\":\"delivery\"}"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
