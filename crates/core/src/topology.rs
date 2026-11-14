@@ -238,6 +238,7 @@ pub fn topology(s: &mut crate::engine::Session, p: &Value) -> Result<Value, Stri
 struct Exterior {
     room: String,
     door: Id,
+    named_entry: bool,
     swing: bool,
     width: f64,
     json: Value,
@@ -294,7 +295,10 @@ fn door_edges(m: &Model, spaces: &Spaces, diagnostics: &mut Vec<Value>) -> DoorE
                 exterior.push(Exterior {
                     room: spaces.list[a].id.clone(),
                     door: id,
-                    swing: operation == Operation::Swing,
+                    named_entry: [o.type_name.as_str(), o.family.as_deref().unwrap_or_default()]
+                        .iter()
+                        .any(|n| n.to_lowercase().contains("entry")),
+                    swing: matches!(operation, Operation::Swing | Operation::DoubleSwing),
                     width: dims.width,
                     json: edge.clone(),
                 });
@@ -311,9 +315,13 @@ fn door_edges(m: &Model, spaces: &Spaces, diagnostics: &mut Vec<Value>) -> DoorE
     (edges, exterior, access)
 }
 
-/// The entry: the room an exterior door opens into. Of several, a swing door first, then the widest, then the lowest id.
+/// The entry: the room an exterior door opens into. Of several, a door whose type or family is named an entry first (a "Main Entry"
+/// says what it is for, where a service exit may be the wider), then a swing door (single or double), then the widest, then the
+/// lowest id.
 fn entry_of(exterior: &[Exterior]) -> Value {
-    let best = exterior.iter().min_by(|a, b| b.swing.cmp(&a.swing).then(b.width.total_cmp(&a.width)).then(a.door.cmp(&b.door)));
+    let best = exterior.iter().min_by(|a, b| {
+        b.named_entry.cmp(&a.named_entry).then(b.swing.cmp(&a.swing)).then(b.width.total_cmp(&a.width)).then(a.door.cmp(&b.door))
+    });
     best.map_or(Value::Null, |e| json!({"room": e.room, "door_id": e.door}))
 }
 

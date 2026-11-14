@@ -218,5 +218,11 @@ fn the_delivery_script_runs_and_extracts_to_the_generated_graph() {
             entry,
             "{name}"
         );
+        // The entry is where the main door opens, never a service exit that a tie-break happened to pick.
+        let door = got["entry"]["door_id"].clone();
+        if let Some(d) = got["exterior_doors"].as_array().and_then(|ds| ds.iter().find(|d| d["door_id"] == door)) {
+            let ty = d["type"].as_str().unwrap_or_default();
+            assert!(!ty.contains("Service"), "{name}: the entry door is {ty}");
+        }
     }
 }

@@ -71,6 +71,30 @@ fn exterior_door_marks_the_entry() {
 }
 
 #[test]
+fn a_double_swing_door_is_a_swing_door_for_the_entry() {
+    // A wide double-swing main entry into A beats a narrower single swing service exit into B.
+    let s = house(
+        "type {\"category\": \"door\", \"name\": \"Main 1400\", \"width\": 1400, \"height\": 2100, \"operation\": \"double-swing\"}\n\
+         door {\"at\": [0, 2000], \"type\": \"Main 1400\"}\n\
+         door {\"at\": [8000, 2000], \"type\": \"Single 900 x 2100\"}",
+    );
+    let g = extract(&s.model);
+    assert_eq!(g["entry"]["room"], "A", "{g}");
+}
+
+#[test]
+fn a_door_named_an_entry_beats_a_wider_service_exit() {
+    let s = house(
+        "type {\"category\": \"door\", \"name\": \"Main Entry 1000\", \"width\": 1000, \"height\": 2100, \"operation\": \"swing\"}\n\
+         type {\"category\": \"door\", \"name\": \"Service Exit 1200\", \"width\": 1200, \"height\": 2100, \"operation\": \"swing\"}\n\
+         door {\"at\": [0, 2000], \"type\": \"Main Entry 1000\"}\n\
+         door {\"at\": [8000, 2000], \"type\": \"Service Exit 1200\"}",
+    );
+    let g = extract(&s.model);
+    assert_eq!(g["entry"]["room"], "A", "{g}");
+}
+
+#[test]
 fn several_exterior_doors_pick_a_swing_door_then_the_widest_then_the_lowest_id() {
     // A wide sliding door into B, a narrow swing door into A: swing wins.
     let s = house(

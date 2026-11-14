@@ -165,8 +165,10 @@ fn rewrite_script(script: &str, node_index: &BTreeMap<String, usize>, seed: u64,
     Ok(out)
 }
 
-/// A corridor generator's graph names its lobby as the entry, while its drawing has the main door open into the corridor and a
-/// service exit. The delivery graph names the room the saved model's entry is: what a receiver reading the drawing finds.
+/// A corridor generator's graph names its lobby as the entry, while its drawing puts the main entry door on the corridor (the
+/// lobby is a room off it). The delivery graph must say what the drawing says, so its entry becomes the room the saved model's entry
+/// is. This is not a rewrite to whatever comes out: the extractor's entry is the room the widest swing (or double-swing) exterior
+/// door opens into, which the tests check is the main entry door, never a service exit.
 fn set_entry_as_drawn(topology: &mut Value, script: &str, ids: &[String]) -> Result<(), Refusal> {
     let extracted = crate::ids::keeping_reproducible(|| {
         let mut scratch = Session::new();
