@@ -2617,6 +2617,28 @@ impl ProjectParameter {
     }
 }
 
+/// The rules a plan's DXF and DWG export keeps beyond the plain drawing (the `cad_profile` command).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CadProfile {
+    /// The delivery drawing rules: closed room outlines on `A-AREA-BNDY`, door swings as `ARC`s, only a `MARK` attribute.
+    Delivery,
+}
+
+impl CadProfile {
+    pub const ALL: [CadProfile; 1] = [CadProfile::Delivery];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            CadProfile::Delivery => "delivery",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<CadProfile> {
+        CadProfile::ALL.into_iter().find(|p| p.name() == name)
+    }
+}
+
 /// Where a project measures its rooms' areas and perimeters (Revit's Area and Volume Computations).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -2756,6 +2778,9 @@ pub struct Model {
     /// Custom) carry of it, such as `building_type`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub drawing_properties: BTreeMap<String, String>,
+    /// The rules its plans' DXF and DWG keep, if it names a profile (the `cad_profile` command).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cad_profile: Option<CadProfile>,
     pub next_id: Id,
     pub types: Shared<Types>,
     /// What layers are made of, by name.
@@ -2912,6 +2937,7 @@ impl Model {
             language,
             room_area: RoomArea::default(),
             drawing_properties: BTreeMap::new(),
+            cad_profile: None,
             next_id: FIRST_ID,
             types: Types::default().into(),
             materials: BTreeMap::new().into(),
@@ -7268,6 +7294,7 @@ impl Model {
             language,
             room_area,
             drawing_properties,
+            cad_profile,
             next_id: _,
             types,
             materials,
@@ -7308,6 +7335,7 @@ impl Model {
             && *units == o.units
             && *language == o.language
             && *drawing_properties == o.drawing_properties
+            && *cad_profile == o.cad_profile
             && *room_area == o.room_area
             && *types == o.types
             && *materials == o.materials

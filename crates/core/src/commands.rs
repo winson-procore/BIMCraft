@@ -22,12 +22,12 @@ use crate::library::Kind as LibKind;
 use crate::lines::{DetailLine, LineStyle};
 use crate::massing;
 use crate::model::{
-    CEILING_HEIGHT, CadImport, Ceiling, CeilingType, Column, ColumnType, Component, DEFAULT_HEIGHT, DimKind, Dimension, Dimension3D,
-    Element, End, Extrusion, Face, Facing, Floor, FloorType, Grid, Guid, Id, Key, Landing, Layer, Level, Line, Location, MAX_COORD,
-    MAX_POINTS, MAX_SLOPE, MAX_TEXT, Mass, Model, Note, Opening, OpeningType, Orient, PARAMETER_CATEGORIES, ParameterKind, Pattern,
-    Perspective, PlanView, PointCloud, ProjectParameter, RAMP_SLOPE, RAMP_WIDTH, RISER, Railing, RailingType, Ramp, Rebar, Ref3, Reference,
-    Roof, RoofType, Room, RoomArea, RoomSeparator, STAIR_WIDTH, Schedule, Section, SectionBox, Shaft, Sheet, Side, Spot, Stair, TOL, TREAD,
-    Tag, Unbound, View3D, Viewport, Wall, WallType, heading, paper,
+    CEILING_HEIGHT, CadImport, CadProfile, Ceiling, CeilingType, Column, ColumnType, Component, DEFAULT_HEIGHT, DimKind, Dimension,
+    Dimension3D, Element, End, Extrusion, Face, Facing, Floor, FloorType, Grid, Guid, Id, Key, Landing, Layer, Level, Line, Location,
+    MAX_COORD, MAX_POINTS, MAX_SLOPE, MAX_TEXT, Mass, Model, Note, Opening, OpeningType, Orient, PARAMETER_CATEGORIES, ParameterKind,
+    Pattern, Perspective, PlanView, PointCloud, ProjectParameter, RAMP_SLOPE, RAMP_WIDTH, RISER, Railing, RailingType, Ramp, Rebar, Ref3,
+    Reference, Roof, RoofType, Room, RoomArea, RoomSeparator, STAIR_WIDTH, Schedule, Section, SectionBox, Shaft, Sheet, Side, Spot, Stair,
+    TOL, TREAD, Tag, Unbound, View3D, Viewport, Wall, WallType, heading, paper,
 };
 use crate::paint;
 use crate::phasing;
@@ -1608,6 +1608,17 @@ pub static ALL: &[Command] = &[
          .dwg in its drawing properties (AutoCAD's DWGPROPS > Custom; not in a 2000 DWG, which has none). At most 64. \
          Returns `properties`, every one by name",
         drawing_property,
+    ),
+    edit(
+        "cad_profile",
+        "CAD Profile",
+        &[],
+        "{name?: delivery|none} the rules the project's plans keep when saved as .dxf or .dwg. `delivery`: every room has one \
+         closed outline on A-AREA-BNDY (room separation lines are not drawn), a door's swing is an ARC (a polyline of chords \
+         without the profile), and a door or window block carries only its MARK. `none` clears it; a project starts with none \
+         and exports as always. Sections, elevations and sheets are not changed. With no `name`, nothing changes. Returns \
+         `profile`",
+        cad_profile,
     ),
     edit(
         "georeference",
@@ -3220,7 +3231,7 @@ fn save(s: &mut Session, p: &Value) -> R {
             return Ok(with_notes(reply, &notes));
         }
         let level = level_param(c, &s.model, p, "view")?;
-        let notes = write_drawing(&render::plan(&seen, level, 1600, 1000), &seen, &path, s.dwg_writer.as_ref(), version, 0)
+        let notes = write_drawing(&render::plan(&seen, level, 1600, 1000), &seen, &path, s.dwg_writer.as_ref(), version, 0, true)
             .map_err(|e| bad(c, e))?;
         return Ok(with_notes(json!({"path": path, "format": format}), &notes));
     }
@@ -3275,6 +3286,7 @@ fn write_drawing(
     dwg: Option<&crate::cad::DwgWriter>,
     version: DwgVersion,
     beyond: usize,
+    plan: bool,
 ) -> Result<Vec<String>, String> {
     let mut notes = Vec::new();
     let format = ext(path);
@@ -3293,7 +3305,7 @@ fn write_drawing(
                     format.to_ascii_uppercase()
                 ));
             }
-            let text = render::dxf(d, m);
+            let text = if plan { render::dxf(d, m) } else { render::dxf_plain(d, m) };
             match (format.as_str(), dwg) {
                 ("dxf", _) => text.into_bytes(),
                 (_, Some(write)) => write(&text, version).map_err(|e| format!("{}: {e}", path.display()))?,
@@ -3342,7 +3354,7 @@ fn write_cut(
     version: DwgVersion,
 ) -> Result<((u32, u32), Vec<String>), String> {
     let (d, beyond) = render::section_drawn(m, id, render::section_fit(m, id, 1600, 1000))?;
-    let notes = [d.notes.clone(), write_drawing(&d, m, path, dwg, version, beyond)?].concat();
+    let notes = [d.notes.clone(), write_drawing(&d, m, path, dwg, version, beyond, false)?].concat();
     Ok(((d.view.width, d.view.height), notes))
 }
 
@@ -3617,7 +3629,7 @@ fn render_view(s: &mut Session, p: &Value) -> R {
     match string(c, p, "path")? {
         Some(path) => {
             let path = PathBuf::from(path);
-            let notes = [d.notes.clone(), write_drawing(&d, m, &path, s.dwg_writer.as_ref(), DwgVersion::default(), 0)?].concat();
+            let notes = [d.notes.clone(), write_drawing(&d, m, &path, s.dwg_writer.as_ref(), DwgVersion::default(), 0, true)?].concat();
             Ok(with_notes(json!({"path": path, "width": w, "height": h, "view": level_name(m, level), "kind": kind}), &notes))
         }
         None => Ok(with_notes(
@@ -12685,6 +12697,24 @@ fn drawing_property(s: &mut Session, p: &Value) -> R {
         }
     }
     Ok(json!({"properties": s.model.drawing_properties}))
+}
+
+fn cad_profile(s: &mut Session, p: &Value) -> R {
+    let c = "cad_profile";
+    only(c, p, &["name"])?;
+    if let Some(name) = string(c, p, "name")? {
+        let want = match name.as_str() {
+            "none" => None,
+            n => Some(CadProfile::parse(n).ok_or_else(|| {
+                let shown: String = n.chars().take(40).collect();
+                bad(c, format!("`name` is delivery or none, not `{shown}`"))
+            })?),
+        };
+        if want != s.model.cad_profile {
+            s.model_mut().cad_profile = want;
+        }
+    }
+    Ok(json!({"profile": s.model.cad_profile.map_or("none", CadProfile::name)}))
 }
 
 fn georeference(s: &mut Session, p: &Value) -> R {

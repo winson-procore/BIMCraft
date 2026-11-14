@@ -65,6 +65,13 @@ impl Frame {
         let shape = match &ink.shape {
             Shape::Line { pts, closed, weight } => Shape::Line { pts: each(pts), closed: *closed, weight: *weight },
             Shape::Fill { rings } => Shape::Fill { rings: rings.iter().map(|r| each(r)).collect() },
+            Shape::Arc { centre, radius, from, to, weight } => Shape::Arc {
+                centre: self.local(*centre),
+                radius: *radius,
+                from: (from - self.angle).rem_euclid(360.0),
+                to: (to - self.angle).rem_euclid(360.0),
+                weight: *weight,
+            },
         };
         Ink { layer: ink.layer.clone(), ltype: ink.ltype.clone(), color: ink.color, shape }
     }
@@ -126,6 +133,13 @@ pub(super) struct Blocks {
     defs: Vec<Def>,
     /// The elements whose strokes a block holds.
     held: BTreeSet<Id>,
+    /// Whether the delivery profile applies: a block says only its `MARK`.
+    delivery: bool,
+}
+
+/// The attributes a block says: its `MARK` and `TYPE`, or under the delivery profile its `MARK`.
+fn tags(delivery: bool) -> &'static [&'static str] {
+    if delivery { &["MARK"] } else { &["MARK", "TYPE"] }
 }
 
 /// Whether two ways of drawing are one, to within [`SAME`].
@@ -141,6 +155,10 @@ fn same(a: &[Ink], b: &[Ink]) -> bool {
                         c == d && w == v && near(p, q)
                     }
                     (Shape::Fill { rings: p }, Shape::Fill { rings: q }) => p.len() == q.len() && p.iter().zip(q).all(|(p, q)| near(p, q)),
+                    (
+                        Shape::Arc { centre: c, radius: r, from: f, to: t, weight: w },
+                        Shape::Arc { centre: c2, radius: r2, from: f2, to: t2, weight: w2 },
+                    ) => w == w2 && c.dist(*c2) <= SAME && (r - r2).abs() <= SAME && (f - f2).abs() <= SAME && (t - t2).abs() <= SAME,
                     _ => false,
                 }
         })
@@ -150,14 +168,24 @@ impl Blocks {
     /// The blocks and inserts of the doors, windows and components `clip` (the drawing's strokes, see [`clipped`]) draws, moved
     /// by `shift`, in `space`. Empty for a view that cannot place text, which keeps every stroke as drawn. Handles and names come
     /// from `sh`, which the file's other drawings draw on too; what a block draws goes on its layers and in its line types.
-    pub fn of(d: &Drawing, m: &Model, texts: bool, clip: &[(usize, Cow<'_, Prim>)], sh: &mut Shared, space: u64, shift: P2) -> Blocks {
-        let mut out = Blocks::default();
+    pub fn of(
+        d: &Drawing,
+        m: &Model,
+        (texts, delivery): (bool, bool),
+        clip: &[(usize, Cow<'_, Prim>)],
+        sh: &mut Shared,
+        space: u64,
+        shift: P2,
+    ) -> Blocks {
+        let mut out = Blocks { delivery, ..Blocks::default() };
         if !texts {
             return out;
         }
         let Shared { w, layers, ltypes, names } = sh;
         let mut frames: BTreeMap<Id, Option<Frame>> = BTreeMap::new();
         let mut drawn: BTreeMap<Id, Vec<Ink>> = BTreeMap::new();
+        // Under the delivery profile, the chords of an opening's swing are the arc they stand for.
+        let mut swings: BTreeMap<Id, Vec<(P2, Vec<P2>)>> = BTreeMap::new();
         for (i, prim) in clip {
             let Some(owner) = d.owners.get(*i).copied().flatten() else { continue };
             let part = d.parts.get(*i).copied().unwrap_or_default();
@@ -167,6 +195,13 @@ impl Blocks {
             }
             let Some(frame) = *frames.entry(owner).or_insert_with(|| Frame::of(m, owner, shift)) else { continue };
             let Some(ink) = ink(d, prim.as_ref(), part, layer(m, Some(owner))) else { continue };
+            let ink = match delivery {
+                true => {
+                    let arcs = swings.entry(owner).or_insert_with(|| super::delivery::swings(m, owner));
+                    super::delivery::as_arc(&ink, arcs, shift).unwrap_or(ink)
+                }
+                false => ink,
+            };
             drawn.entry(owner).or_default().push(frame.ink(&ink));
         }
         let mut variants: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
@@ -216,7 +251,7 @@ impl Blocks {
             let label = kind.label();
             let label = if label.is_empty() { def.name.clone() } else { label };
             let mut text = String::new();
-            insert(&mut text, w, space, def, frame, [&kind.mark, &label]);
+            insert(&mut text, w, space, def, frame, &[kind.mark.as_str(), label.as_str()][..tags(delivery).len()], tags(delivery));
             out.inserts.insert(owner, text);
             out.held.insert(owner);
             inserts += 1;
@@ -268,7 +303,7 @@ impl Blocks {
             pair(s, 3, &b.name);
             pair(s, 1, "");
             s.push_str(&b.body);
-            for (tag, h) in ["MARK", "TYPE"].into_iter().zip(b.attdefs) {
+            for (tag, h) in tags(self.delivery).iter().zip(b.attdefs) {
                 pair(s, 0, "ATTDEF");
                 hex(s, 5, h);
                 hex(s, 330, b.record);
@@ -280,8 +315,8 @@ impl Blocks {
                 pair(s, 1, "");
                 pair(s, 100, "AcDbAttributeDefinition");
                 pair(s, 280, 0);
-                pair(s, 3, tag);
-                pair(s, 2, tag);
+                pair(s, 3, *tag);
+                pair(s, 2, *tag);
                 // Invisible.
                 pair(s, 70, 1);
             }
@@ -296,7 +331,7 @@ impl Blocks {
 }
 
 /// `def`'s `INSERT` at `frame` with its `MARK` and `TYPE` (`values`), then the `SEQEND` that closes them.
-fn insert(s: &mut String, w: &mut Out, space: u64, def: &Def, frame: &Frame, values: [&str; 2]) {
+fn insert(s: &mut String, w: &mut Out, space: u64, def: &Def, frame: &Frame, values: &[&str], tags: &[&str]) {
     let layer = &def.layer;
     pair(s, 0, "INSERT");
     owned(s, w.handle(), space);
@@ -309,7 +344,7 @@ fn insert(s: &mut String, w: &mut Out, space: u64, def: &Def, frame: &Frame, val
         pair(s, code, 1);
     }
     pair(s, 50, num(frame.angle));
-    for (tag, value) in ["MARK", "TYPE"].into_iter().zip(values) {
+    for (tag, value) in tags.iter().zip(values) {
         let value: String = escaped(value, false).chars().take(200).collect();
         pair(s, 0, "ATTRIB");
         owned(s, w.handle(), space);
@@ -320,7 +355,7 @@ fn insert(s: &mut String, w: &mut Out, space: u64, def: &Def, frame: &Frame, val
         pair(s, 1, value);
         pair(s, 50, num(frame.angle));
         pair(s, 100, "AcDbAttribute");
-        pair(s, 2, tag);
+        pair(s, 2, *tag);
         // Invisible: the plan's own lettering is the TEXT beside.
         pair(s, 70, 1);
     }

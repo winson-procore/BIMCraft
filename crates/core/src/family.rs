@@ -305,8 +305,21 @@ pub struct Label {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Mark {
     Line(Vec<P2>),
-    Dot { centre: P2, radius: f64 },
-    Label { at: P2, height: f64, text: String, align: Align },
+    /// An `arc` symbol: its centre and the chords it is drawn as, which a CAD file may write as the arc they stand for.
+    Arc {
+        centre: P2,
+        pts: Vec<P2>,
+    },
+    Dot {
+        centre: P2,
+        radius: f64,
+    },
+    Label {
+        at: P2,
+        height: f64,
+        text: String,
+        align: Align,
+    },
 }
 
 impl Mark {
@@ -314,6 +327,7 @@ impl Mark {
     pub fn map(&self, f: impl Fn(P2) -> P2) -> Mark {
         match self {
             Mark::Line(pts) => Mark::Line(pts.iter().map(|p| f(*p)).collect()),
+            Mark::Arc { centre, pts } => Mark::Arc { centre: f(*centre), pts: pts.iter().map(|p| f(*p)).collect() },
             Mark::Dot { centre, radius } => Mark::Dot { centre: f(*centre), radius: *radius },
             Mark::Label { at, height, text, align } => Mark::Label { at: f(*at), height: *height, text: text.clone(), align: *align },
         }
@@ -1422,6 +1436,7 @@ impl Family {
             for [a, b] in &sym.line {
                 pts.push(P2(n(a)?, n(b)?));
             }
+            let mut arc_centre = None;
             if let Some(c) = &sym.arc {
                 let (centre, r, from, to) = (P2(n(&c.centre[0])?, n(&c.centre[1])?), n(&c.radius)?, n(&c.from)?, n(&c.to)?);
                 if r <= 0.0 || (to - from).abs() > 360.0 || to == from {
@@ -1434,8 +1449,12 @@ impl Family {
                     let (s, c) = (from + (to - from) * k as f64 / steps as f64).to_radians().sin_cos();
                     P2(centre.0 + r * c, centre.1 + r * s)
                 }));
+                arc_centre = Some(centre);
             }
-            out.push(Mark::Line(pts));
+            out.push(match arc_centre {
+                Some(centre) => Mark::Arc { centre, pts },
+                None => Mark::Line(pts),
+            });
         }
         Ok(out)
     }

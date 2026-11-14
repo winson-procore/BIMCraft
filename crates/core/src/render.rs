@@ -37,7 +37,7 @@ use crate::{font, massing, sheet, stairs};
 mod dimensions;
 use dimensions::dimension;
 pub mod dxf;
-pub use dxf::dxf;
+pub use dxf::{dxf, dxf_plain};
 mod regions;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1267,7 +1267,7 @@ fn plan_shows_among(m: &Model, key: Guid, among: bool) -> Vec<P2> {
                 extent.extend(components.outlines(c));
                 for mark in m.component_marks(c) {
                     match mark {
-                        crate::family::Mark::Line(pts) => extent.extend(pts),
+                        crate::family::Mark::Line(pts) | crate::family::Mark::Arc { pts, .. } => extent.extend(pts),
                         crate::family::Mark::Dot { centre, .. } => extent.push(centre),
                         crate::family::Mark::Label { at, .. } => extent.push(at),
                     }
@@ -3227,7 +3227,7 @@ fn marks(d: &mut Drawing, marks: &[crate::family::Mark]) {
     use crate::family::Mark;
     for mark in marks {
         match mark {
-            Mark::Line(pts) => d.line(pts, BY_CATEGORY, INK, false),
+            Mark::Line(pts) | Mark::Arc { pts, .. } => d.line(pts, BY_CATEGORY, INK, false),
             Mark::Label { at, height, text, align } => {
                 for line in crate::family::lettering(text, *at, *height, *align) {
                     d.line(&line, BY_CATEGORY, INK, false);
