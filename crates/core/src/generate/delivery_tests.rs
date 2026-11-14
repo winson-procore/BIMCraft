@@ -99,6 +99,16 @@ fn the_delivery_script_numbers_rooms_and_names_the_profile() {
             assert_eq!(ids[at + 1], "cad_profile", "{name}");
             assert_eq!(lines[at + 1].1, json!({"name": "delivery"}));
             assert!(!ids.contains(&"dimension"), "{name}");
+            // The seed is the project's, so one script saves the same project every time.
+            assert_eq!(lines[0].1["seed"], json!(seed), "{name}");
+            // Every plan carries the note that says its gross area and seed, as the corridor generators' do.
+            let notes: Vec<&str> = lines
+                .iter()
+                .filter(|(i, _)| i == "text")
+                .filter_map(|(_, p)| p["text"].as_str())
+                .filter(|t| t.contains(" m2 gross, seed "))
+                .collect();
+            assert_eq!(notes.len(), 1, "{name}: {notes:?}");
             let topology = doc(&b, "topology-graph.json");
             let nodes = topology["nodes"].as_array().unwrap();
             let numbers: Vec<&str> = lines.iter().filter(|(i, _)| i == "room").map(|(_, p)| p["number"].as_str().unwrap()).collect();

@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use crate::engine::Session;
 
+use super::program::Archetype;
 use super::{Built, MANIFEST, Refusal, fnv1a64, pretty, refuse, shape_graph};
 
 /// The most rooms a delivery plan numbers: `101` to `999`.
@@ -62,12 +63,13 @@ fn door_types_of(script: &str) -> BTreeMap<String, (&'static str, i64, i64)> {
 }
 
 /// The delivery script of `script`: the profile after the drawing property, no dimensions, rooms numbered by their node.
-fn rewrite_script(script: &str, node_index: &BTreeMap<String, usize>) -> Result<String, Refusal> {
+fn rewrite_script(script: &str, node_index: &BTreeMap<String, usize>, seed: u64, note_m2: Option<f64>) -> Result<String, Refusal> {
     let mut out = String::with_capacity(script.len() + 64);
     let mut profile_done = false;
     let (mut doors, mut windows) = (0usize, 0usize);
     let door_types = door_types_of(script);
     let mut families_done = false;
+    let mut corner: Option<[i64; 2]> = None;
     for line in script.lines() {
         if line.starts_with('#') || line.trim().is_empty() {
             out.push_str(line);
@@ -77,6 +79,16 @@ fn rewrite_script(script: &str, node_index: &BTreeMap<String, usize>) -> Result<
         let (id, params) = line.split_once(' ').unwrap_or((line, "{}"));
         match id {
             "dimension" => continue,
+            // The seed makes the project's GUIDs the seed's, so one script saves the same model every time.
+            "new" => {
+                let mut p: Value = serde_json::from_str(params)
+                    .map_err(|e| refuse("generation_failed", format!("the `new` line of the script is not JSON: {e}")))?;
+                if p.get("seed").is_none() {
+                    p["seed"] = json!(seed);
+                }
+                out.push_str(&format!("new {p}\n"));
+                continue;
+            }
             "cad_profile" => return Err(refuse("generation_failed", "the plan's script already names a CAD profile")),
             "room" => {
                 let mut p: Value = serde_json::from_str(params)
@@ -120,7 +132,18 @@ fn rewrite_script(script: &str, node_index: &BTreeMap<String, usize>) -> Result<
                 out.push_str(&format!("{id} {p}\n"));
                 continue;
             }
-            _ => {}
+            _ => {
+                if id == "wall"
+                    && let Ok(p) = serde_json::from_str::<Value>(params)
+                {
+                    for pt in p["points"].as_array().into_iter().flatten() {
+                        if let (Some(x), Some(y)) = (pt[0].as_i64(), pt[1].as_i64()) {
+                            let c = corner.get_or_insert([x, y]);
+                            *c = [c[0].min(x), c[1].min(y)];
+                        }
+                    }
+                }
+            }
         }
         out.push_str(line);
         out.push('\n');
@@ -132,15 +155,25 @@ fn rewrite_script(script: &str, node_index: &BTreeMap<String, usize>) -> Result<
     if !profile_done {
         return Err(refuse("generation_failed", "the plan's script has no `drawing_property` line to put the delivery profile after"));
     }
+    // A plan with no note (the medical-day archetype's) gets the first one, which says its gross area as the others do: a reader
+    // who wants the brief's area finds it there.
+    if let (Some(m2), Some([x, y])) = (note_m2, corner) {
+        let text = format!("Medical day of {} m2 gross, seed {seed}", m2.round());
+        out.push_str(&format!("text {}\n", json!({"text": text, "at": [x, y - 2400]})));
+    }
     Ok(out)
 }
 
 /// A corridor generator's graph names its lobby as the entry, while its drawing has the main door open into the corridor and a
 /// service exit. The delivery graph names the room the saved model's entry is: what a receiver reading the drawing finds.
 fn set_entry_as_drawn(topology: &mut Value, script: &str, ids: &[String]) -> Result<(), Refusal> {
-    let mut scratch = Session::new();
-    scratch.script(script).map_err(|e| refuse("generation_failed", format!("the delivery script does not run: {e}")))?;
-    let extracted = crate::topology::extract(&scratch.model);
+    let extracted = crate::ids::keeping_reproducible(|| {
+        let mut scratch = Session::new();
+        scratch
+            .script(script)
+            .map(|_| crate::topology::extract(&scratch.model))
+            .map_err(|e| refuse("generation_failed", format!("the delivery script does not run: {e}")))
+    })?;
     let Some(number) = extracted["entry"]["room"].as_str() else { return Ok(()) };
     let Some(id) = number.parse::<usize>().ok().and_then(|n| n.checked_sub(101)).and_then(|i| ids.get(i)) else { return Ok(()) };
     match &mut topology["entry"] {
@@ -164,7 +197,8 @@ pub(crate) fn apply(mut built: Built) -> Result<Built, Refusal> {
         return Err(refuse("generation_failed", format!("a delivery plan numbers its rooms 101 to 999, and this one has {}", ids.len())));
     }
     let node_index: BTreeMap<String, usize> = ids.iter().enumerate().map(|(i, id)| (id.clone(), i)).collect();
-    let script = rewrite_script(text_of(&built, "script.bimcraft.txt")?, &node_index)?;
+    let note = (built.archetype == Archetype::MedicalDay).then_some(built.gross_m2);
+    let script = rewrite_script(text_of(&built, "script.bimcraft.txt")?, &node_index, built.seed, note)?;
     if let Some(nodes) = topology["nodes"].as_array_mut() {
         for (i, n) in nodes.iter_mut().enumerate() {
             n["number"] = json!(number_of(i));
