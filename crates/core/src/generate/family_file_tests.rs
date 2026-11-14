@@ -43,7 +43,8 @@ fn files(out: &Path) -> Vec<(String, String)> {
 #[test]
 fn a_house_by_file_is_the_house_by_name_byte_for_byte() {
     let fam = put("house", "house.json", HOUSE_FAMILY);
-    for (seed, rooms, tol, shape) in [(1u64, 9i64, 0i64, Some("court")), (2, 12, 0, None), (5, 14, 2, None), (7, 8, 0, Some("narrow_bar"))] {
+    for (seed, rooms, tol, shape) in [(1u64, 9i64, 0i64, Some("court")), (2, 12, 0, None), (5, 14, 2, None), (7, 8, 0, Some("narrow_bar"))]
+    {
         let (a, b) = (dir(&format!("house-a{seed}")), dir(&format!("house-b{seed}")));
         let mut p = json!({"seed": seed, "rooms": rooms, "rooms_tol": tol});
         if let Some(s) = shape {

@@ -5,12 +5,12 @@
 
 mod emit;
 pub(crate) mod family;
+#[cfg(test)]
+mod file_tests;
 mod fit;
 mod layout;
 mod links;
 mod plan;
-#[cfg(test)]
-mod file_tests;
 #[cfg(test)]
 mod tests;
 

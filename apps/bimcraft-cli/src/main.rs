@@ -23,10 +23,11 @@ const USAGE: &str = "USAGE:
                                  write a generated plan's run directory: program, topology and building graphs, a script for
                                  `run --script`, a report and a manifest. The same brief gives the same files; a brief that
                                  can't be met (an area too small) exits non-zero with a JSON error (`error`, a code, and `message`) on stderr, and writes nothing
-  bimcraft-cli generate --archetype house --seed N --rooms R [--rooms-tol T] [--shape ID] [--interior aligned] [--bumps off] --out DIR
+  bimcraft-cli generate (--archetype house | --family-file FILE) --seed N --rooms R [--rooms-tol T] [--shape ID] [--interior aligned] [--bumps off] --out DIR
                                  the shape graph engine: R rooms (between R-T and R+T) laid out in one of nine outlines (bar, narrow_bar,
                                  l_shape, corner_notch, stepped, t_shape, side_nub, opposite_wings, court; --shape pins one) by the
-                                 family file of the archetype (crates/core/data/shape-families). The area is a result, not an input;
+                                 family file of the archetype (crates/core/data/shape-families), or the family file given with
+                                 --family-file (checked like a built-in one: invalid_family if wrong). The area is a result, not an input;
                                  --rooms with --area is refused, as is an option of this form without --rooms. Same six files
   bimcraft-cli topology --model FILE.bimcraft --out FILE.json
                                  read a saved project and write its 2D topology graph from geometry alone: rooms as nodes, door,
@@ -184,6 +185,7 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
     let (mut archetype, mut seed, mut area, mut area_sqft, mut out) = (None, None, None, None, None);
     // The shape graph engine's options: `--rooms` selects it, and the core refuses the rest without it (as JSON).
     let (mut rooms, mut rooms_tol, mut shape, mut interior, mut bumps) = (None, None, None, None, None);
+    let mut family_file = None;
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         let value = rest.next().ok_or_else(|| format!("{arg} needs a value\n\n{USAGE}"))?;
@@ -198,6 +200,7 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
             "--shape" => &mut shape,
             "--interior" => &mut interior,
             "--bumps" => &mut bumps,
+            "--family-file" => &mut family_file,
             other => return Err(format!("unknown option `{other}` for generate\n\n{USAGE}")),
         };
         if slot.replace(value).is_some() {
@@ -221,7 +224,6 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
         None => None,
     };
     let mut p = json!({
-        "archetype": need(archetype, "--archetype")?,
         "seed": seed.parse::<u64>().map_err(|_| format!("--seed is a whole number from 0, got `{seed}`"))?,
         "path": need(out, "--out")?,
     });
@@ -236,7 +238,9 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
             p[key] = json!(v.parse::<i64>().map_err(|_| format!("{flag} is a whole number, got `{v}`"))?);
         }
     }
-    for (key, value) in [("shape", shape), ("interior", interior), ("bumps", bumps)] {
+    // The core refuses both, or neither, as typed JSON.
+    for (key, value) in [("archetype", archetype), ("family_file", family_file), ("shape", shape), ("interior", interior), ("bumps", bumps)]
+    {
         if let Some(v) = value {
             p[key] = json!(v);
         }
@@ -574,6 +578,29 @@ mod tests {
             all.extend(args);
             let e = cli_out(&all).unwrap_err();
             assert!(e.contains(says), "{all:?}: {e}");
+        }
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn generate_takes_a_family_file_or_an_archetype_and_the_core_says_which() {
+        let dir = std::env::temp_dir().join(format!("bimcraft-cli-family-file-{}", std::process::id()));
+        let at = dir.to_string_lossy().into_owned();
+        let fam = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/core/data/shape-families/house.json");
+        let f = fam.to_string_lossy().into_owned();
+        let out = cli_out(&["generate", "--family-file", &f, "--seed", "1", "--rooms", "9", "--out", &at]).unwrap();
+        let reply: Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(reply["archetype"], "house");
+        std::fs::remove_dir_all(&dir).unwrap();
+        for args in [
+            vec!["--archetype", "house", "--family-file", &f, "--seed", "1", "--rooms", "9", "--out", &at],
+            vec!["--seed", "1", "--rooms", "9", "--out", &at],
+        ] {
+            let mut all = vec!["generate"];
+            all.extend(args);
+            let e = cli_out(&all).unwrap_err();
+            let refusal: Value = serde_json::from_str(&e).unwrap();
+            assert_eq!(refusal["error"], "invalid_params", "{e}");
         }
         assert!(!dir.exists());
     }

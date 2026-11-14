@@ -3,6 +3,8 @@
 //! made. Everything is whole millimetres and integer seeds, so the same brief gives the same bytes on any machine, and a brief
 //! that can't be met writes nothing. Detail: `docs/areas/graph-generator.md`.
 
+#[cfg(test)]
+mod family_file_tests;
 pub(crate) mod graph;
 pub(crate) mod house;
 mod layout;
@@ -19,8 +21,6 @@ pub(crate) mod report;
 mod script;
 pub(crate) mod shape_graph;
 pub(crate) mod studio;
-#[cfg(test)]
-mod family_file_tests;
 #[cfg(test)]
 mod tests;
 
@@ -295,7 +295,10 @@ fn run(p: &Value) -> Result<Value, Refusal> {
         )
     })?;
     if given.archetype.is_some() == given.family_file.is_some() {
-        return Err(refuse("invalid_params", "`generate` takes `archetype` (a built-in family) or `family_file` (a family file), one of them"));
+        return Err(refuse(
+            "invalid_params",
+            "`generate` takes `archetype` (a built-in family) or `family_file` (a family file), one of them",
+        ));
     }
     if given.family_file.is_some() && given.rooms.is_none() {
         return Err(refuse("invalid_params", "`family_file` belongs to the plan by `rooms`; give `rooms` too"));
@@ -380,13 +383,7 @@ fn run_shaped(given: &Params, rooms: i64) -> Result<Value, Refusal> {
         (None, Some(file)) => read_family_file(file)?,
         (None, None) => return Err(refuse("invalid_params", "`generate` takes `archetype` or `family_file`")),
     };
-    let request = shape_graph::Request {
-        archetype: fam.name.clone(),
-        seed: given.seed,
-        rooms,
-        tolerance: tol,
-        shape: given.shape.clone(),
-    };
+    let request = shape_graph::Request { archetype: fam.name.clone(), seed: given.seed, rooms, tolerance: tol, shape: given.shape.clone() };
     let built = shape_graph::build_family(&fam, &request, false)?;
     written(&given.path, &fam.name, &built)
 }
