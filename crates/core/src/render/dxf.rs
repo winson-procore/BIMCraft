@@ -144,7 +144,7 @@ impl Doc {
         let mut dims = dims::Dims::of(d, m, texts, sh, &mut ext, space);
         let clip = clipped(d);
         // A door, window or piece of furniture is an INSERT of a block that all of a kind share; what it draws is the block's.
-        let mut blocks = blocks::Blocks::of(d, m, texts, &clip, sh, space, shift, delivery);
+        let mut blocks = blocks::Blocks::of(d, m, (texts, delivery), &clip, sh, space, shift);
         for (i, prim) in &clip {
             let (i, prim) = (*i, prim.as_ref());
             let owner = d.owners.get(i).copied().flatten();

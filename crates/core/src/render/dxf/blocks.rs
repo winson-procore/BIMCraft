@@ -171,12 +171,11 @@ impl Blocks {
     pub fn of(
         d: &Drawing,
         m: &Model,
-        texts: bool,
+        (texts, delivery): (bool, bool),
         clip: &[(usize, Cow<'_, Prim>)],
         sh: &mut Shared,
         space: u64,
         shift: P2,
-        delivery: bool,
     ) -> Blocks {
         let mut out = Blocks { delivery, ..Blocks::default() };
         if !texts {
