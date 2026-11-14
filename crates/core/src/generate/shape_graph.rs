@@ -11,6 +11,7 @@ mod fit;
 mod layout;
 mod links;
 mod plan;
+mod tags;
 #[cfg(test)]
 mod tests;
 

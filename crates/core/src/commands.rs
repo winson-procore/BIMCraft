@@ -498,7 +498,7 @@ pub static ALL: &[Command] = &[
         "room",
         ui_msg!("Room"),
         &["RM"],
-        "{point: [x,y], level?, name?, number?, top_level?, limit_offset?, base_offset?, frozen?} bounded by the walls and the \
+        "{point: [x,y], level?, name?, number?, tag?: [x,y], top_level?, limit_offset?, base_offset?, frozen?} bounded by the walls and the \
          room separation lines around the point (walls the level's `computation_height` cuts; separation lines whatever their \
          height). Placed where nothing encloses it, or in a space another room has (two rooms can't share one; the first \
          keeps it), it is placed unbounded, a 1000 mm square, and the reply has a `warning`. Its height is Revit's: from \
@@ -508,7 +508,9 @@ pub static ALL: &[Command] = &[
          times that height. \
          `frozen` (a yes or no; also `modify {id, frozen}`) keeps the boundary the room has now: it keeps its size whatever \
          the walls do, and the walls are never searched for it again, which saves time in a project of many rooms. Unfrozen, \
-         it follows the walls again. Only an enclosed room can be frozen",
+         it follows the walls again. Only an enclosed room can be frozen. `tag` [x, y] (mm) is where the room's three lines \
+         of lettering (name, number, area) are written when they do not fit in it: they stand there, centred, and one straight \
+         leader runs from the nearest edge of that tag to `point`. Without it they are written at `point`",
         room,
     )
     .menu("Architecture > Room"),
@@ -7841,6 +7843,7 @@ fn room(s: &mut Session, p: &Value) -> R {
     };
     let mut r = Room::new(level, point, name, number.clone());
     r.frozen = flag(c, p, "frozen")?;
+    r.tag = point_opt(c, p, "tag")?;
     r.base_offset = num(c, p, "base_offset")?.unwrap_or(0.0);
     let limit_offset = num(c, p, "limit_offset")?;
     // Unless told, up to 300 mm under the level above; with none above, not bounded, 2500 mm tall.
@@ -11320,6 +11323,7 @@ pub(crate) fn transform(c: &str, m: &Model, mut e: Element, id: Id, mo: &Motion,
         // A frozen room's boundary goes with it.
         Element::Room(r) => {
             r.point = f(r.point);
+            r.tag = r.tag.map(f);
             if let Some(k) = &mut r.kept {
                 k.map(f);
             }
