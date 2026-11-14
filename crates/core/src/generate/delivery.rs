@@ -156,10 +156,11 @@ fn rewrite_script(script: &str, node_index: &BTreeMap<String, usize>, seed: u64,
         return Err(refuse("generation_failed", "the plan's script has no `drawing_property` line to put the delivery profile after"));
     }
     // A plan with no note (the medical-day archetype's) gets the first one, which says its gross area as the others do: a reader
-    // who wants the brief's area finds it there.
+    // who wants the brief's area finds it there. It stands inside the plan's box, in its lower left corner, because a note below the
+    // plan would move the drawing's origin, and the layout must stay where it is.
     if let (Some(m2), Some([x, y])) = (note_m2, corner) {
         let text = format!("Medical day of {} m2 gross, seed {seed}", m2.round());
-        out.push_str(&format!("text {}\n", json!({"text": text, "at": [x, y - 2400]})));
+        out.push_str(&format!("text {}\n", json!({"text": text, "at": [x + 300, y + 300]})));
     }
     Ok(out)
 }
