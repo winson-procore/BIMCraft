@@ -604,6 +604,13 @@ element has no model pattern, or the lines aren't parallel or have no length), s
 sets it with `modify`. `pattern_origin` and `pattern_angle` are in the `modify`, `filled_region` and `floor` command docs, and
 `elements` shows them for a region and a floor even at their defaults.
 
+## Room tags
+
+A room's tag is its name, number and area, centred at its `point`. A room with a `tag` ([x, y], from `room`; moved, turned and mirrored with
+the room) has the three lines centred there instead, and one straight stroke owned by the room from the point of the tag box's edge nearest
+the room's point to that point: no arrowhead. In a DXF the stroke is an open LWPOLYLINE of two points on `A-AREA-IDEN` beside the three TEXTs.
+`render::room_tag_height`, `room_tag_box` and `room_tag_leader` say where they stand; the plan's extent holds the tag.
+
 ## Linked models
 
 A `Link` element (`link.rs`; commands `link` and `reload`) is another project shown in this one as a reference. The file holds its name, its

@@ -205,18 +205,10 @@ pub fn room_tag_box(anchor: P2, h: f64, lines: &[String; 3]) -> [f64; 4] {
     [cx - w / 2.0, cy - bh / 2.0, cx + w / 2.0, cy + bh / 2.0]
 }
 
-/// A room tag's leader: from the middle of the edge of `tag` nearest `point` to `point`.
+/// A room tag's leader: from the point of `tag`'s edge nearest `point` to `point` (the point itself where it is on the edge of the
+/// box, or in it). Straight to the nearest edge, so which edge a reader takes for the nearest is the one it starts on.
 pub fn room_tag_leader(tag: [f64; 4], point: P2) -> (P2, P2) {
-    let (cx, cy) = ((tag[0] + tag[2]) / 2.0, (tag[1] + tag[3]) / 2.0);
-    // How far out of the box the point lies each way, in halves of the box: the larger says which edge is nearest.
-    let (hw, hh) = (((tag[2] - tag[0]) / 2.0).max(1e-9), ((tag[3] - tag[1]) / 2.0).max(1e-9));
-    let (dx, dy) = ((point.0 - cx) / hw, (point.1 - cy) / hh);
-    let start = if dx.abs() >= dy.abs() {
-        P2(if dx > 0.0 { tag[2] } else { tag[0] }, cy)
-    } else {
-        P2(cx, if dy > 0.0 { tag[3] } else { tag[1] })
-    };
-    (start, point)
+    (P2(point.0.clamp(tag[0], tag[2]), point.1.clamp(tag[1], tag[3])), point)
 }
 
 /// Model millimetres (y up) to image pixels (y down). In a section or elevation, the first

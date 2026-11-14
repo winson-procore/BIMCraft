@@ -132,7 +132,8 @@ fn a_tag_away_from_its_room_is_three_texts_and_one_leader_into_the_room() {
     let (a, b) = (st[0], st[1]);
     let (start, end) = if (a.0 - 2000.0).abs() < 1.0 { (b, a) } else { (a, b) };
     assert!((end.0 - 2000.0).abs() < 1.0 && (end.1 - 1500.0).abs() < 1.0, "{end:?}");
-    assert!((start.0 - bx[0]).abs() < 1.0 && (start.1 - (bx[1] + bx[3]) / 2.0).abs() < 1.0, "{start:?} {bx:?}");
+    // On the box's west edge (the room is west of it), level with the room's point where the edge reaches that far.
+    assert!((start.0 - bx[0]).abs() < 1.0 && (start.1 - 1500.0).abs() < 1.0 && bx[1] < 1500.0 && bx[3] > 1500.0, "{start:?} {bx:?}");
 }
 
 #[test]

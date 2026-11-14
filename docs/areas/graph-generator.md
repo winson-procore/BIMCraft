@@ -278,6 +278,17 @@ Two things a script of this engine does that others don't: its `new` carries a `
 seed's, so a script saves the same file again; and its wall material has no solid cut pattern, because that lays paper over the wall lines
 and a plan's DXF then has no `A-WALL` entities. Slice 1 draws `open_full`, `single`, `double`, `sliding` and `bifold` only.
 
+**Room tags that do not fit** (Slice 14; `shape_graph/tags.rs`). A room's tag (name, number, area: `render::room_tag_box`, 0.6 H a character
+wide and 4.5 H high, H the name's height, 260 mm at 1 : 100) is drawn in the room when it fits the room's cell shrunk by 150 mm on every
+side. The cell is the largest rectangle of the room's outline (as the topology extractor reads it back from the scratch project) out to the wall
+and separation centre lines, found as the done check finds it. A room that does not fit gets `tag: [x, y]` on its `room` command: the
+three lines stand there, outside the plan, 1,000 mm or more clear of its outline on the side nearest the room, and one straight leader
+(`render::room_tag_leader`) runs from the tag's nearest edge to the room's `point`, which the generator then sets to the centre of the
+cell. Tags go in room-number order, each in the first place that overlaps no tag, whose leader crosses no tag and no leader, tried on the
+rows 1,100 mm, then 1,100 + box + 300 mm, ... from the nearest side and sliding along it; if one has no place the other order is tried, and then
+the attempt is given up (`Trouble::Plan`). `emit::verify` runs the script twice when any room has a tag: the first run measures the areas
+the tag lines need, the second is the script as written. A plan with no leader is byte for byte what it was.
+
 ## Not yet
 
 No stairs, shafts, structure or MEP; one storey; no datacenters or airports;
