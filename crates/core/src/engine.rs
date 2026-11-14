@@ -146,6 +146,8 @@ pub fn catalog() -> Value {
 
 impl Session {
     pub fn new() -> Session {
+        // A session starts random: only a `new` with a `seed` makes the thread's GUIDs the seed's.
+        crate::ids::reproducible(None);
         Session {
             model: Arc::new(Model::new("Project")),
             path: None,

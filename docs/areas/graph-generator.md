@@ -248,6 +248,27 @@ the same open links, no exterior door, null entry, no diagnostics); both pass th
 refused as `unsatisfiable_area`, and a brief no draw fits as `unplaceable_graph`. Windows, grids, dimensions, symbols and a title
 block are later slices.
 
+## Shape graph engine
+
+`generate --archetype house --seed N --rooms R [--rooms-tol T] [--shape ID] [--interior aligned] [--bumps off]` (spec: `specs/shape-graph-generator.md`,
+Slice 1) is a second engine beside the `--area` ones. `--rooms` selects it; it has no area input (`--rooms` with an area is refused as
+`invalid_params`, and so is any of its options without `--rooms`). The engine's code holds no room kind: what rooms a family has, their
+counts, areas, sides, links and entry are a family file (`crates/core/data/shape-families/<archetype>.json`, compiled in, read strictly by
+`shape_graph/family.rs` with the rooms' order kept, and refused as `invalid_family` when it widens the graph rule pack it names). The nine
+outlines are `shapes.json` (corners, the depth levels of each side's pieces, raise ranges, the proportion each is recognised by).
+
+`shape_graph/` is a port of the reference layout in `done/fixtures/shape-graph/reference_layout.py`: `plan.rs` (room program, parent graph,
+clusters and groups), `fit.rs` (fitting a cluster in a cell, `share`, the attempt's random numbers: attempt `k` draws from the seed and `k`),
+`layout.rs` (the profile along a spine, depths, lengths, rectangles, mirror and turn), `links.rs` (shared walls, links, the outside door,
+`verify`: no overlap, one loop with the shape's corner count, every room inside its limits and reached), `emit.rs` (walls, doors, separators,
+the script, the scratch run read back by the topology extractor, the graph and the pack's rules on both graphs). With no shape pinned the seed
+orders the nine shapes and each gets 80 attempts; 400 attempts at most, then `unplaceable_shape` or `unplaceable_graph`. Three read-backs that
+disagree with the plan also end it. Swing doors take their side and jamb from `house/swing.rs`'s rules by room kind, read from the family.
+
+Two things a script of this engine does that others don't: its `new` carries a `seed`, which makes the project's uid and every GUID the
+seed's, so a script saves the same file again; and its wall material has no solid cut pattern, because that lays paper over the wall lines
+and a plan's DXF then has no `A-WALL` entities. Slice 1 draws `open_full`, `single`, `double`, `sliding` and `bifold` only.
+
 ## Not yet
 
 No stairs, shafts, structure or MEP; one storey; no datacenters or airports;

@@ -23,6 +23,11 @@ const USAGE: &str = "USAGE:
                                  write a generated plan's run directory: program, topology and building graphs, a script for
                                  `run --script`, a report and a manifest. The same brief gives the same files; a brief that
                                  can't be met (an area too small) exits non-zero with a JSON error (`error`, a code, and `message`) on stderr, and writes nothing
+  bimcraft-cli generate --archetype house --seed N --rooms R [--rooms-tol T] [--shape ID] [--interior aligned] [--bumps off] --out DIR
+                                 the shape graph engine: R rooms (between R-T and R+T) laid out in one of nine outlines (bar, narrow_bar,
+                                 l_shape, corner_notch, stepped, t_shape, side_nub, opposite_wings, court; --shape pins one) by the
+                                 family file of the archetype (crates/core/data/shape-families). The area is a result, not an input;
+                                 --rooms with --area is refused, as is an option of this form without --rooms. Same six files
   bimcraft-cli topology --model FILE.bimcraft --out FILE.json
                                  read a saved project and write its 2D topology graph from geometry alone: rooms as nodes, door,
                                  open and adjacent edges, the entry, the footprint and typed diagnostics (a room no walls enclose).
@@ -177,6 +182,8 @@ fn typed_refusal(e: String) -> String {
 /// What follows `generate`, as the command's params: all four options, each once.
 fn generate_params(args: &[String]) -> Result<Value, String> {
     let (mut archetype, mut seed, mut area, mut area_sqft, mut out) = (None, None, None, None, None);
+    // The shape graph engine's options: `--rooms` selects it, and the core refuses the rest without it (as JSON).
+    let (mut rooms, mut rooms_tol, mut shape, mut interior, mut bumps) = (None, None, None, None, None);
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         let value = rest.next().ok_or_else(|| format!("{arg} needs a value\n\n{USAGE}"))?;
@@ -186,6 +193,11 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
             "--area" => &mut area,
             "--area-sqft" => &mut area_sqft,
             "--out" => &mut out,
+            "--rooms" => &mut rooms,
+            "--rooms-tol" => &mut rooms_tol,
+            "--shape" => &mut shape,
+            "--interior" => &mut interior,
+            "--bumps" => &mut bumps,
             other => return Err(format!("unknown option `{other}` for generate\n\n{USAGE}")),
         };
         if slot.replace(value).is_some() {
@@ -197,8 +209,8 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
     if area.is_some() && area_sqft.is_some() {
         return Err(format!("generate needs only one of --area or --area-sqft, not both\n\n{USAGE}"));
     }
-    if area.is_none() && area_sqft.is_none() {
-        return Err(format!("generate needs one of --area or --area-sqft\n\n{USAGE}"));
+    if area.is_none() && area_sqft.is_none() && rooms.is_none() {
+        return Err(format!("generate needs one of --area, --area-sqft or --rooms\n\n{USAGE}"));
     }
     let area_m2 = match area {
         Some(area) => Some(area.parse::<f64>().map_err(|_| format!("--area is a number of square metres, got `{area}`"))?),
@@ -218,6 +230,16 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
     }
     if let Some(area) = sqft {
         p["area_sqft"] = json!(area);
+    }
+    for (key, flag, value) in [("rooms", "--rooms", rooms), ("rooms_tol", "--rooms-tol", rooms_tol)] {
+        if let Some(v) = value {
+            p[key] = json!(v.parse::<i64>().map_err(|_| format!("{flag} is a whole number, got `{v}`"))?);
+        }
+    }
+    for (key, value) in [("shape", shape), ("interior", interior), ("bumps", bumps)] {
+        if let Some(v) = value {
+            p[key] = json!(v);
+        }
     }
     Ok(p)
 }

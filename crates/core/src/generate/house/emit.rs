@@ -73,7 +73,7 @@ pub(crate) fn longest(boundary: &[[i64; 2]], vertical: bool) -> Option<([i64; 2]
 /// The family of a folding door: a built-in has none, so it is defined here, with its jambs and its two leaves folded in plan.
 pub const FOLDING_FAMILY: &str = "Folding Door";
 
-fn folding_family(types: serde_json::Map<String, Value>) -> Value {
+pub(crate) fn folding_family(types: serde_json::Map<String, Value>) -> Value {
     let jamb = |lo: &str, hi: &str| {
         json!({
             "plane": "xy",
