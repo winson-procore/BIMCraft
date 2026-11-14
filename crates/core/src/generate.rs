@@ -378,14 +378,27 @@ fn run_shaped(given: &Params, rooms: i64) -> Result<Value, Refusal> {
     if given.bumps.as_deref().is_some_and(|b| b != "off") {
         return Err(refuse("invalid_params", "`bumps` is `off`: bumps come in a later slice"));
     }
-    let fam = match (&given.archetype, &given.family_file) {
-        (Some(name), _) => shape_graph::builtin_family(name)?,
-        (None, Some(file)) => read_family_file(file)?,
-        (None, None) => return Err(refuse("invalid_params", "`generate` takes `archetype` or `family_file`")),
+    let mut request = shape_graph::Request {
+        archetype: given.archetype.clone().unwrap_or_default(),
+        seed: given.seed,
+        rooms,
+        tolerance: tol,
+        shape: given.shape.clone(),
     };
-    let request = shape_graph::Request { archetype: fam.name.clone(), seed: given.seed, rooms, tolerance: tol, shape: given.shape.clone() };
-    let built = shape_graph::build_family(&fam, &request, false)?;
-    written(&given.path, &fam.name, &built)
+    match (&given.archetype, &given.family_file) {
+        (Some(name), _) => {
+            let built = shape_graph::build(&request, false)?;
+            written(&given.path, name, &built)
+        }
+        (None, Some(file)) => {
+            // Read before anything is made; only the family's name, never the file's path, reaches the files.
+            let fam = read_family_file(file)?;
+            request.archetype = fam.name.clone();
+            let built = shape_graph::build_family(&fam, &request, false)?;
+            written(&given.path, &fam.name, &built)
+        }
+        (None, None) => Err(refuse("invalid_params", "`generate` takes `archetype` or `family_file`")),
+    }
 }
 
 /// The most a family file may hold, bytes.
