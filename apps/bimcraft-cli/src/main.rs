@@ -249,8 +249,14 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
         }
     }
     // The core refuses both, or neither, as typed JSON.
-    for (key, value) in [("archetype", archetype), ("family_file", family_file), ("shape", shape), ("interior", interior), ("bumps", bumps), ("delivery", delivery)]
-    {
+    for (key, value) in [
+        ("archetype", archetype),
+        ("family_file", family_file),
+        ("shape", shape),
+        ("interior", interior),
+        ("bumps", bumps),
+        ("delivery", delivery),
+    ] {
         if let Some(v) = value {
             p[key] = json!(v);
         }

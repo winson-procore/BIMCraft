@@ -185,7 +185,9 @@ fn the_delivery_script_runs_and_extracts_to_the_generated_graph() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .filter(|e| ["door", "open"].contains(&e["kind"].as_str().unwrap_or("")) && e["to"] != "exterior" && e["from"] != "exterior")
+                .filter(|e| {
+                    ["door", "open"].contains(&e["kind"].as_str().unwrap_or("")) && e["to"] != "exterior" && e["from"] != "exterior"
+                })
                 .map(|e| {
                     let name = |k: &str| {
                         let s = e[k].as_str().unwrap_or("");
@@ -201,6 +203,10 @@ fn the_delivery_script_runs_and_extracts_to_the_generated_graph() {
         };
         assert_eq!(links(&got["edges"], None), links(&want["edges"], Some(&number_of)), "{name}");
         let entry = want["entry"]["room"].as_str().or_else(|| want["entry"].as_str()).map(|e| number_of[e].clone());
-        assert_eq!(got["entry"]["room"].as_str().map(str::to_string).or_else(|| got["entry"].as_str().map(str::to_string)), entry, "{name}");
+        assert_eq!(
+            got["entry"]["room"].as_str().map(str::to_string).or_else(|| got["entry"].as_str().map(str::to_string)),
+            entry,
+            "{name}"
+        );
     }
 }

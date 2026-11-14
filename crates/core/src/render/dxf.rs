@@ -900,7 +900,15 @@ fn lettering(s: &mut String, h: u64, owner: u64, layer: &str, l: &super::Letteri
     // Lettering a plan laid out in a typeface goes as an MTEXT with that typeface's run, which is how a reader that drew it
     // the same finds the face; a TEXT has no way to say it.
     // A delivery drawing's lettering is plain: its notes are TEXT, with no typeface run a reader would have to strip.
-    let face: String = l.font.iter().filter(|_| !delivery).flat_map(|f| f.chars()).filter(|c| !c.is_control() && !"|;\\{}".contains(*c)).collect::<String>().trim().into();
+    let face: String = l
+        .font
+        .iter()
+        .filter(|_| !delivery)
+        .flat_map(|f| f.chars())
+        .filter(|c| !c.is_control() && !"|;\\{}".contains(*c))
+        .collect::<String>()
+        .trim()
+        .into();
     if face.is_empty() && !l.text.contains(['\n', '\\', '{', '}']) && plain.len() <= CHUNK {
         pair(s, 0, "TEXT");
         entity(s, h, owner, layer, None, None, l.color);

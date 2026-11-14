@@ -161,10 +161,7 @@ pub(crate) fn apply(mut built: Built) -> Result<Built, Refusal> {
         .map(|nodes| nodes.iter().map(|n| n["id"].as_str().unwrap_or_default().to_string()).collect())
         .unwrap_or_default();
     if ids.len() > MAX_NUMBERED {
-        return Err(refuse(
-            "generation_failed",
-            format!("a delivery plan numbers its rooms 101 to 999, and this one has {}", ids.len()),
-        ));
+        return Err(refuse("generation_failed", format!("a delivery plan numbers its rooms 101 to 999, and this one has {}", ids.len())));
     }
     let node_index: BTreeMap<String, usize> = ids.iter().enumerate().map(|(i, id)| (id.clone(), i)).collect();
     let script = rewrite_script(text_of(&built, "script.bimcraft.txt")?, &node_index)?;

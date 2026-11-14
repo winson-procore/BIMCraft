@@ -339,7 +339,10 @@ fn run(p: &Value) -> Result<Value, Refusal> {
         }
     };
     if given.delivery.is_some() && given.rooms.is_some() {
-        return Err(refuse("invalid_params", "`delivery` belongs to the plan by an area (`area_m2` or `area_sqft`); leave it out with `rooms`"));
+        return Err(refuse(
+            "invalid_params",
+            "`delivery` belongs to the plan by an area (`area_m2` or `area_sqft`); leave it out with `rooms`",
+        ));
     }
     if let Some(rooms) = given.rooms {
         return run_shaped(&given, rooms);

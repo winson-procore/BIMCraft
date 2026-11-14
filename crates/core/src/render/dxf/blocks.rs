@@ -133,8 +133,6 @@ pub(super) struct Blocks {
     defs: Vec<Def>,
     /// The elements whose strokes a block holds.
     held: BTreeSet<Id>,
-    /// Whether the delivery profile applies: a block says only its `MARK`.
-    delivery: bool,
 }
 
 /// The attributes a block carries: its `MARK` and `TYPE`. Under the delivery profile the `TYPE` is empty, so a block says only its
@@ -176,7 +174,7 @@ impl Blocks {
         space: u64,
         shift: P2,
     ) -> Blocks {
-        let mut out = Blocks { delivery, ..Blocks::default() };
+        let mut out = Blocks::default();
         if !texts {
             return out;
         }
