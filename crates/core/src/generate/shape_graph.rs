@@ -59,10 +59,10 @@ pub(crate) fn building_id(family: &str, lines: &[(&'static str, Value)]) -> Stri
             continue;
         }
         let mut params = params.clone();
-        if *id == "door" {
-            if let Some(o) = params.as_object_mut() {
-                o.remove("mark");
-            }
+        if *id == "door"
+            && let Some(o) = params.as_object_mut()
+        {
+            o.remove("mark");
         }
         kept.push(format!("{id} {params}"));
     }

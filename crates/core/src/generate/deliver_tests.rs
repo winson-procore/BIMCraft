@@ -250,8 +250,7 @@ fn a_batch_no_family_can_meet_is_skipped_with_its_code() {
 }
 
 fn s_deliver(d: &Path, brief: &str, rights: &str, root: &Path) -> Value {
-    let id = if brief.contains("brief.json") { "sk" } else { "sk" };
-    session().execute("deliver", &params(d, brief, id, Some(rights), root)).expect("deliver")
+    session().execute("deliver", &params(d, brief, "sk", Some(rights), root)).expect("deliver")
 }
 
 #[test]

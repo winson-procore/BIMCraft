@@ -1943,6 +1943,14 @@ fn hostile_params_never_panic_or_break_the_model() {
         json!({"path": "/nonexistent/run", "family_file": "/dev/null", "seed": 1, "rooms": 12}),
         json!({"path": "/nonexistent/run", "archetype": "house", "family_file": "/dev/null", "seed": 1, "rooms": 12}),
         json!({"path": "/nonexistent/run", "family_file": 5, "seed": 1, "rooms": 12}),
+        // `deliver`: a brief or rights file that is missing, endless or empty, or ids and counts that are hostile: it never starts.
+        json!({"path": "/nonexistent/root", "brief": "/nonexistent/b.json", "delivery_id": "d", "rights": "emailed"}),
+        json!({"path": "/nonexistent/root", "brief": "/dev/zero", "delivery_id": "d", "rights": "emailed"}),
+        json!({"path": "/nonexistent/root", "brief": "/dev/null", "delivery_id": "d", "rights": "/dev/null"}),
+        json!({"path": "/nonexistent/root", "brief": "/dev/null", "delivery_id": "../x", "rights": "emailed"}),
+        json!({"path": "/nonexistent/root", "brief": "/dev/null", "delivery_id": "", "rerun": 1e300, "jobs": -5}),
+        json!({"path": "/nonexistent/root", "brief": "/dev/null", "delivery_id": "d", "rights": "/dev/zero", "jobs": 1e300}),
+        json!({"path": "/nonexistent/root", "brief": 5, "delivery_id": 7, "rights": [], "rerun": "x"}),
         // `rule_pack`: a directory that can never be made, so the sweep writes nothing.
         json!({"path": "/nonexistent/library"}),
         json!({"path": "/nonexistent/library", "archetype": "office"}),

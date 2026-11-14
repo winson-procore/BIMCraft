@@ -194,13 +194,8 @@ fn valid_version(v: &str) -> bool {
 
 /// One seed: built in memory, run in a scratch session as `run --script` runs it, saved as DWG at `dwg`, read back for its hash.
 fn make_one(job: &Job, writer: &crate::cad::DwgWriter, dir: &Path) -> Result<Outcome, String> {
-    let request = shape_graph::Request {
-        archetype: job.archetype.clone(),
-        seed: job.seed,
-        rooms: job.rooms,
-        tolerance: job.tol,
-        shape: None,
-    };
+    let request =
+        shape_graph::Request { archetype: job.archetype.clone(), seed: job.seed, rooms: job.rooms, tolerance: job.tol, shape: None };
     let built = match shape_graph::build(&request, job.unreviewed) {
         Ok(b) => b,
         Err(Refusal { code, message }) => return Ok(Outcome::Skipped { seed: job.seed, code, message }),
@@ -215,9 +210,7 @@ fn make_one(job: &Job, writer: &crate::cad::DwgWriter, dir: &Path) -> Result<Out
         let mut scratch = Session::new();
         scratch.dwg_writer = Some(writer.clone());
         scratch.script(script).map_err(|e| format!("generation_failed: the plan's script does not run: {e}"))?;
-        scratch
-            .execute("save", &json!({"path": at.display().to_string()}))
-            .map_err(|e| format!("output_unwritable: {e}"))?;
+        scratch.execute("save", &json!({"path": at.display().to_string()})).map_err(|e| format!("output_unwritable: {e}"))?;
         Ok(())
     })?;
     let bytes = std::fs::read(&at).map_err(|e| format!("output_unwritable: {}: {e}", at.display()))?;
@@ -320,9 +313,7 @@ fn run(s: &Session, p: &Value) -> Result<Value, Refusal> {
         return Err(params_error(format!("`path` is the root folder to write under: not empty, at most {MAX_PATH} bytes")));
     }
     if !valid_id(&given.delivery_id) {
-        return Err(params_error(
-            "`delivery_id` is up to 100 letters, digits, `.`, `_` and `-`, and does not start with `.`",
-        ));
+        return Err(params_error("`delivery_id` is up to 100 letters, digits, `.`, `_` and `-`, and does not start with `.`"));
     }
     let rerun = given.rerun.unwrap_or(DEFAULT_RERUN);
     if !(1..=MAX_RERUN).contains(&rerun) {
@@ -337,7 +328,8 @@ fn run(s: &Session, p: &Value) -> Result<Value, Refusal> {
         None => return Err(refuse("missing_rights", "give `rights`: the path of the signed rights statement, or `emailed`")),
         Some("emailed") => None,
         Some(file) => {
-            let missing = |why: &str| refuse("missing_rights", format!("`rights` {file:?} {why}: give the signed statement's file, or `emailed`"));
+            let missing =
+                |why: &str| refuse("missing_rights", format!("`rights` {file:?} {why}: give the signed statement's file, or `emailed`"));
             if file.is_empty() || file.len() > MAX_PATH || file.contains('\0') {
                 return Err(missing("is not a file path"));
             }
@@ -352,9 +344,11 @@ fn run(s: &Session, p: &Value) -> Result<Value, Refusal> {
         }
     };
     let jobs = read_brief(&given.brief)?;
-    let gv = s.generator_version.as_deref().filter(|v| valid_version(v)).ok_or_else(|| {
-        params_error("this build has no generator version (`bimcraft-<release>+<commit>`), so it can't deliver")
-    })?;
+    let gv = s
+        .generator_version
+        .as_deref()
+        .filter(|v| valid_version(v))
+        .ok_or_else(|| params_error("this build has no generator version (`bimcraft-<release>+<commit>`), so it can't deliver"))?;
     let writer = s.dwg_writer.clone().ok_or_else(|| params_error("this build can't write DWG, so it can't deliver"))?;
     let version_dir = Path::new(&given.path).join(gv);
     let (dfold, rfold) = (version_dir.join(&given.delivery_id), version_dir.join(format!("{}-rerun", given.delivery_id)));
@@ -379,9 +373,10 @@ fn io(path: &Path, e: std::io::Error) -> Refusal {
 
 fn from_message(e: String) -> Refusal {
     match e.split_once(": ") {
-        Some((code, message)) if ["generation_failed", "output_unwritable"].contains(&code) => {
-            Refusal { code: if code == "generation_failed" { "generation_failed" } else { "output_unwritable" }, message: message.to_string() }
-        }
+        Some((code, message)) if ["generation_failed", "output_unwritable"].contains(&code) => Refusal {
+            code: if code == "generation_failed" { "generation_failed" } else { "output_unwritable" },
+            message: message.to_string(),
+        },
         _ => refuse("generation_failed", e),
     }
 }
@@ -415,7 +410,10 @@ fn write_delivery(
         }
     }
     if rows.is_empty() {
-        return Err(refuse("empty_delivery", "every seed of the brief was skipped, so there is nothing to deliver (see the summary's `skipped` in the first error)"));
+        return Err(refuse(
+            "empty_delivery",
+            "every seed of the brief was skipped, so there is nothing to deliver (see the summary's `skipped` in the first error)",
+        ));
     }
     // The rerun: a spread of the delivered seeds, made again from the brief.
     let by_seed: BTreeMap<u64, &Job> = jobs.iter().map(|j| (j.seed, j)).collect();
