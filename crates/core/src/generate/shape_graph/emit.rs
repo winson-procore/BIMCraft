@@ -262,6 +262,8 @@ pub fn compile(fam: &Family, rooms: &[Room], laid: &Laid, d: &Drawn, seed: u64, 
         ("new", json!({"name": title, "seed": seed})),
         ("room_area", json!({"at": "finish"})),
         ("drawing_property", json!({"name": "building_type", "value": fam.building_type})),
+        // From here on the plan's DXF and DWG keep the delivery drawing rules.
+        ("cad_profile", json!({"name": "delivery"})),
         ("material", json!({"name": "Plan Poche", "color": "#2f2f2f"})),
     ];
     for (name, thickness) in [(EXTERIOR, 250), (INTERIOR, 130)] {

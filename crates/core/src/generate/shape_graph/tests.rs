@@ -164,6 +164,21 @@ fn the_script_runs_and_the_extracted_graph_has_the_generated_rooms() {
 }
 
 #[test]
+fn every_rooms_script_names_the_delivery_profile_once_after_the_building_type() {
+    for (seed, rooms) in [(5, 10), (6, 18)] {
+        let built = build(&request(seed, rooms, 0, None), false).expect("a plan");
+        let script = built.files.iter().find(|(n, _)| *n == "script.bimcraft.txt").map(|(_, t)| t.clone()).unwrap_or_default();
+        let lines: Vec<&str> = script.lines().collect();
+        assert_eq!(lines.iter().filter(|l| l.starts_with("cad_profile ")).count(), 1);
+        let at = lines.iter().position(|l| l.starts_with("drawing_property ")).expect("the building type");
+        assert_eq!(lines[at + 1], r#"cad_profile {"name":"delivery"}"#);
+        let mut s = Session::new();
+        s.script(&script).expect("runs");
+        assert_eq!(s.model.cad_profile, Some(crate::model::CadProfile::Delivery));
+    }
+}
+
+#[test]
 fn the_same_arguments_write_the_same_bytes() {
     let a = build(&request(9, 14, 2, None), false).expect("a plan");
     let b = build(&request(9, 14, 2, None), false).expect("a plan");

@@ -289,6 +289,9 @@ rows 1,100 mm, then 1,100 + box + 300 mm, ... from the nearest side and sliding 
 the attempt is given up (`Trouble::Plan`). `emit::verify` runs the script twice when any room has a tag: the first run measures the areas
 the tag lines need, the second is the script as written. A plan with no leader is byte for byte what it was.
 
+Every `--rooms` script has one `cad_profile {"name":"delivery"}` line, straight after `drawing_property`: its DXF and DWG keep the
+delivery drawing rules ([CAD export](cad-import.md#export)). The other generators' scripts have none and export as before.
+
 ## Not yet
 
 No stairs, shafts, structure or MEP; one storey; no datacenters or airports;
