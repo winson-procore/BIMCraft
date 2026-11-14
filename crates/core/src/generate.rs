@@ -6,6 +6,9 @@
 pub(crate) mod deliver;
 #[cfg(test)]
 mod deliver_tests;
+pub(crate) mod delivery;
+#[cfg(test)]
+mod delivery_tests;
 #[cfg(test)]
 mod family_file_tests;
 pub(crate) mod graph;
@@ -115,17 +118,19 @@ struct Params {
     shape: Option<String>,
     interior: Option<String>,
     bumps: Option<String>,
+    /// `on` draws the plan to the delivery drawing rules; `--area` plans only.
+    delivery: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct AreaRequest {
+pub(crate) struct AreaRequest {
     value: f64,
     unit: &'static str,
     m2: f64,
 }
 
 impl AreaRequest {
-    fn m2(value: f64) -> AreaRequest {
+    pub(crate) fn m2(value: f64) -> AreaRequest {
         AreaRequest { value, unit: "m2", m2: value }
     }
 
@@ -183,6 +188,11 @@ fn least_area(archetype: Archetype, seed: u64) -> Option<f64> {
 /// The files for a brief, or why there are none. Touches no file.
 pub fn build(archetype: Archetype, seed: u64, area_m2: f64) -> Result<Built, Refusal> {
     build_with_area(archetype, seed, AreaRequest::m2(area_m2))
+}
+
+/// The files for a brief drawn to the delivery rules: the plan `build` makes, through [`delivery::apply`].
+pub(crate) fn build_for_delivery(archetype: Archetype, seed: u64, area: AreaRequest) -> Result<Built, Refusal> {
+    delivery::apply(build_with_area(archetype, seed, area)?)
 }
 
 fn build_with_area(archetype: Archetype, seed: u64, area: AreaRequest) -> Result<Built, Refusal> {
@@ -318,6 +328,19 @@ fn run(p: &Value) -> Result<Value, Refusal> {
     if given.path.trim().is_empty() || given.path.len() > MAX_PATH || given.path.contains('\0') {
         return Err(refuse("invalid_params", format!("`path` is the run directory to write: not empty, at most {MAX_PATH} bytes")));
     }
+    let delivery = match given.delivery.as_deref() {
+        None | Some("off") => false,
+        Some("on") => true,
+        Some(other) => {
+            return Err(refuse(
+                "invalid_params",
+                format!("`delivery` is `on` or `off`; got {:?}", other.chars().take(40).collect::<String>()),
+            ));
+        }
+    };
+    if given.delivery.is_some() && given.rooms.is_some() {
+        return Err(refuse("invalid_params", "`delivery` belongs to the plan by an area (`area_m2` or `area_sqft`); leave it out with `rooms`"));
+    }
     if let Some(rooms) = given.rooms {
         return run_shaped(&given, rooms);
     }
@@ -341,7 +364,7 @@ fn run(p: &Value) -> Result<Value, Refusal> {
         (None, Some(sqft)) => AreaRequest::sqft(sqft),
         (None, None) => return Err(refuse("invalid_params", "`generate` needs one of `area_m2` or `area_sqft`")),
     };
-    let built = build_with_area(archetype, given.seed, area)?;
+    let built = if delivery { build_for_delivery(archetype, given.seed, area)? } else { build_with_area(archetype, given.seed, area)? };
     written(&given.path, archetype.name(), &built)
 }
 

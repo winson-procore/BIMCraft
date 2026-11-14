@@ -52,14 +52,15 @@ pub struct Request {
 /// The `building` of a plan: the family's name and the first 12 hex digits of a hash of its layout (types, families, walls,
 /// doors without their marks, separators and rooms), each in sorted order. The title, the seed and the drawing's settings are
 /// not in it, so two scripts that draw the same layout have the same building.
-pub(crate) fn building_id(family: &str, lines: &[(&'static str, Value)]) -> String {
+pub(crate) fn building_id<S: AsRef<str>>(family: &str, lines: &[(S, Value)]) -> String {
     let mut kept: Vec<String> = Vec::new();
     for (id, params) in lines {
-        if !matches!(*id, "type" | "family" | "wall" | "door" | "room_separator" | "room") {
+        let id = id.as_ref();
+        if !matches!(id, "type" | "family" | "wall" | "door" | "room_separator" | "room") {
             continue;
         }
         let mut params = params.clone();
-        if *id == "door"
+        if id == "door"
             && let Some(o) = params.as_object_mut()
         {
             o.remove("mark");
