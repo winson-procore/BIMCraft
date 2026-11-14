@@ -66,18 +66,23 @@ fn attempt(fam: &Family, shape: &Shape, requested: &Request, k: u64) -> Result<(
 
 /// The files for a call, or why there are none. Touches no file.
 pub fn build(req: &Request, allow_unreviewed: bool) -> Result<Built, Refusal> {
-    let text = family::builtin(&req.archetype).ok_or_else(|| {
+    let fam = builtin_family(&req.archetype)?;
+    build_family(&fam, req, allow_unreviewed)
+}
+
+/// A built-in family by name.
+pub fn builtin_family(name: &str) -> Result<Family, Refusal> {
+    let text = family::builtin(name).ok_or_else(|| {
         refuse(
             "unknown_archetype",
             format!(
                 "`archetype` is one of {} for a plan by `--rooms`; got {:?}",
                 family::builtin_names(),
-                req.archetype.chars().take(40).collect::<String>()
+                name.chars().take(40).collect::<String>()
             ),
         )
     })?;
-    let fam = Family::parse(text).map_err(|e| refuse("invalid_family", e))?;
-    build_family(&fam, req, allow_unreviewed)
+    Family::parse(text).map_err(|e| refuse("invalid_family", e))
 }
 
 pub fn build_family(fam: &Family, req: &Request, allow_unreviewed: bool) -> Result<Built, Refusal> {
