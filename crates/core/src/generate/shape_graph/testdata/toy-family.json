@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "family": "workshop",
+  "pack_id": null,
+  "building_type": "office",
+  "review": {
+    "status": "reviewed",
+    "note": "An invented family with kinds no built-in family has. It exists to show the generator is driven by the family file: see specs/shape-graph-generator.md, Slice 2."
+  },
+  "entry": {
+    "rooms": ["foyer"],
+    "doors": [1, 1],
+    "types": ["single", "double"]
+  },
+  "rooms": {
+    "foyer": {
+      "kind": "foyer",
+      "role": "public",
+      "place": "entry_end",
+      "count": [1, 1],
+      "area_m2": [10.0, 30.0],
+      "max_side_ratio": 2.5,
+      "min_side_mm": 2400,
+      "max_links": 3
+    },
+    "lane": {
+      "kind": "lane",
+      "role": "circulation",
+      "place": "spine",
+      "count": [1, 2],
+      "area_m2": [6.0, 70.0],
+      "max_side_ratio": null,
+      "min_side_mm": 1500,
+      "max_links": 16
+    },
+    "bench_room": {
+      "kind": "bench_room",
+      "role": "work",
+      "place": "off_spine",
+      "count": [2, 9],
+      "area_m2": [9.0, 28.0],
+      "max_side_ratio": 2.2,
+      "min_side_mm": 2400,
+      "max_links": 3
+    },
+    "tool_store": {
+      "kind": "tool_store",
+      "role": "support",
+      "place": "beside_parent",
+      "count": [0, 4],
+      "per": {"room": "bench_room", "count": [0, 1]},
+      "area_m2": [2.0, 7.0],
+      "max_side_ratio": 3.0,
+      "min_side_mm": 1200,
+      "max_links": 1
+    },
+    "wash": {
+      "kind": "wash",
+      "role": "service",
+      "place": "off_spine",
+      "count": [1, 2],
+      "area_m2": [3.0, 9.0],
+      "max_side_ratio": 2.5,
+      "min_side_mm": 1500,
+      "max_links": 1
+    },
+    "assembly": {
+      "kind": "assembly",
+      "role": "shared",
+      "place": "spine_end",
+      "count": [1, 1],
+      "area_m2": [30.0, 90.0],
+      "max_side_ratio": 2.5,
+      "min_side_mm": 4500,
+      "max_links": 2
+    }
+  },
+  "links": [
+    {"from": "foyer", "to": "lane", "use": "parent", "types": ["single", "double"]},
+    {"from": "lane", "to": "lane", "use": "parent", "types": ["open_full"]},
+    {"from": "lane", "to": "bench_room", "use": "parent", "types": ["single"]},
+    {"from": "bench_room", "to": "tool_store", "use": "parent", "types": ["single", "sliding", "bifold"]},
+    {"from": "lane", "to": "wash", "use": "parent", "types": ["single"]},
+    {"from": "lane", "to": "assembly", "use": "parent", "types": ["double", "open_full"]},
+    {"from": "bench_room", "to": "bench_room", "use": "extra", "chance": 0.2, "types": ["single"]}
+  ]
+}

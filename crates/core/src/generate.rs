@@ -3,6 +3,8 @@
 //! made. Everything is whole millimetres and integer seeds, so the same brief gives the same bytes on any machine, and a brief
 //! that can't be met writes nothing. Detail: `docs/areas/graph-generator.md`.
 
+#[cfg(test)]
+mod family_file_tests;
 pub(crate) mod graph;
 pub(crate) mod house;
 mod layout;
@@ -98,7 +100,9 @@ fn refuse(code: &'static str, message: impl Into<String>) -> Refusal {
 #[serde(deny_unknown_fields)]
 struct Params {
     path: String,
-    archetype: String,
+    archetype: Option<String>,
+    /// A family file in place of a built-in family; it needs `rooms`.
+    family_file: Option<String>,
     seed: u64,
     area_m2: Option<f64>,
     area_sqft: Option<f64>,
@@ -290,18 +294,33 @@ fn run(p: &Value) -> Result<Value, Refusal> {
             ),
         )
     })?;
-    let archetype = Archetype::parse(&given.archetype).ok_or_else(|| {
-        refuse(
-            "unknown_archetype",
-            format!("`archetype` is one of {}; got {:?}", Archetype::names(), given.archetype.chars().take(40).collect::<String>()),
-        )
-    })?;
+    if given.archetype.is_some() == given.family_file.is_some() {
+        return Err(refuse(
+            "invalid_params",
+            "`generate` takes `archetype` (a built-in family) or `family_file` (a family file), one of them",
+        ));
+    }
+    if given.family_file.is_some() && given.rooms.is_none() {
+        return Err(refuse("invalid_params", "`family_file` belongs to the plan by `rooms`; give `rooms` too"));
+    }
+    let archetype = match &given.archetype {
+        Some(name) => Some(Archetype::parse(name).ok_or_else(|| {
+            refuse(
+                "unknown_archetype",
+                format!("`archetype` is one of {}; got {:?}", Archetype::names(), name.chars().take(40).collect::<String>()),
+            )
+        })?),
+        None => None,
+    };
     if given.path.trim().is_empty() || given.path.len() > MAX_PATH || given.path.contains('\0') {
         return Err(refuse("invalid_params", format!("`path` is the run directory to write: not empty, at most {MAX_PATH} bytes")));
     }
     if let Some(rooms) = given.rooms {
         return run_shaped(&given, rooms);
     }
+    let Some(archetype) = archetype else {
+        return Err(refuse("invalid_params", "`generate` takes `archetype` or `family_file`"));
+    };
     if let Some(option) = [
         ("rooms_tol", given.rooms_tol.is_some()),
         ("shape", given.shape.is_some()),
@@ -359,8 +378,45 @@ fn run_shaped(given: &Params, rooms: i64) -> Result<Value, Refusal> {
     if given.bumps.as_deref().is_some_and(|b| b != "off") {
         return Err(refuse("invalid_params", "`bumps` is `off`: bumps come in a later slice"));
     }
-    let request =
-        shape_graph::Request { archetype: given.archetype.clone(), seed: given.seed, rooms, tolerance: tol, shape: given.shape.clone() };
-    let built = shape_graph::build(&request, false)?;
-    written(&given.path, &given.archetype, &built)
+    let mut request = shape_graph::Request {
+        archetype: given.archetype.clone().unwrap_or_default(),
+        seed: given.seed,
+        rooms,
+        tolerance: tol,
+        shape: given.shape.clone(),
+    };
+    match (&given.archetype, &given.family_file) {
+        (Some(name), _) => {
+            let built = shape_graph::build(&request, false)?;
+            written(&given.path, name, &built)
+        }
+        (None, Some(file)) => {
+            // Read before anything is made; only the family's name, never the file's path, reaches the files.
+            let fam = read_family_file(file)?;
+            request.archetype = fam.name.clone();
+            let built = shape_graph::build_family(&fam, &request, false)?;
+            written(&given.path, &fam.name, &built)
+        }
+        (None, None) => Err(refuse("invalid_params", "`generate` takes `archetype` or `family_file`")),
+    }
+}
+
+/// The most a family file may hold, bytes.
+const MAX_FAMILY_FILE: u64 = 1 << 20;
+
+/// A family from a file: read at most a cap (a device that never ends is cut off), then parsed strictly.
+fn read_family_file(file: &str) -> Result<shape_graph::family::Family, Refusal> {
+    use std::io::Read;
+    if file.trim().is_empty() || file.len() > MAX_PATH || file.contains('\0') {
+        return Err(refuse("invalid_params", format!("`family_file` is the path of a family file: not empty, at most {MAX_PATH} bytes")));
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(file)
+        .and_then(|f| f.take(MAX_FAMILY_FILE + 1).read_to_end(&mut bytes))
+        .map_err(|e| refuse("invalid_params", format!("`family_file` {file:?} can't be read: {e}")))?;
+    if bytes.len() as u64 > MAX_FAMILY_FILE {
+        return Err(refuse("invalid_family", format!("a family file is at most {MAX_FAMILY_FILE} bytes")));
+    }
+    let text = String::from_utf8(bytes).map_err(|_| refuse("invalid_family", "a family file is UTF-8 text (JSON)"))?;
+    shape_graph::family::Family::parse(&text).map_err(|e| refuse("invalid_family", e))
 }

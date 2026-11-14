@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "family": "workshop-bad-range",
+  "pack_id": null,
+  "building_type": "office",
+  "review": {
+    "status": "reviewed",
+    "note": "Invalid on purpose: the foyer's area range has its minimum above its maximum. The generator must refuse it with invalid_family and write nothing."
+  },
+  "entry": {
+    "rooms": ["foyer"],
+    "doors": [1, 1],
+    "types": ["single"]
+  },
+  "rooms": {
+    "foyer": {
+      "kind": "foyer",
+      "role": "public",
+      "place": "entry_end",
+      "count": [1, 1],
+      "area_m2": [30.0, 10.0],
+      "max_side_ratio": 2.5,
+      "min_side_mm": 2400,
+      "max_links": 3
+    },
+    "lane": {
+      "kind": "lane",
+      "role": "circulation",
+      "place": "spine",
+      "count": [1, 1],
+      "area_m2": [6.0, 70.0],
+      "max_side_ratio": null,
+      "min_side_mm": 1500,
+      "max_links": 16
+    },
+    "bench_room": {
+      "kind": "bench_room",
+      "role": "work",
+      "place": "off_spine",
+      "count": [2, 9],
+      "area_m2": [9.0, 28.0],
+      "max_side_ratio": 2.2,
+      "min_side_mm": 2400,
+      "max_links": 3
+    }
+  },
+  "links": [
+    {"from": "foyer", "to": "lane", "use": "parent", "types": ["single"]},
+    {"from": "lane", "to": "bench_room", "use": "parent", "types": ["single"]}
+  ]
+}

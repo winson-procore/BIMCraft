@@ -257,6 +257,15 @@ counts, areas, sides, links and entry are a family file (`crates/core/data/shape
 `shape_graph/family.rs` with the rooms' order kept, and refused as `invalid_family` when it widens the graph rule pack it names). The nine
 outlines are `shapes.json` (corners, the depth levels of each side's pieces, raise ranges, the proportion each is recognised by).
 
+`--family-file FILE` (Slice 2; `family_file` in the command's params) reads the family from a file in place of `--archetype`: the two
+exclude each other (`invalid_params`, as is neither) and `family_file` needs `--rooms`. The file is read up to 1 MiB (never trusting its
+size: `/dev/zero` is cut off), parsed by `Family::parse` like a built-in family and checked against the pack it names (`invalid_family`);
+a family with `pack_id: null` has no rule checks. An unreadable path is `invalid_params`. Every refusal comes before anything is written, and
+the file's path reaches none of the six files: only the family's name does (`manifest.family`, `report.archetype`). A family file for
+`house` gives the same six files, byte for byte, as `--archetype house`. Slice 2 found one engine bug the house never hit: `emit::orient`
+skipped `double-swing` doors, so a generated double door lacked the `opens_into` and `hinge` the extractor reports; it now sets them.
+Not yet generalised: `swing::rule_for` still keys its swing rules on house room kinds (a later slice).
+
 `shape_graph/` is a port of the reference layout in `done/fixtures/shape-graph/reference_layout.py`: `plan.rs` (room program, parent graph,
 clusters and groups), `fit.rs` (fitting a cluster in a cell, `share`, the attempt's random numbers: attempt `k` draws from the seed and `k`),
 `layout.rs` (the profile along a spine, depths, lengths, rectangles, mirror and turn), `links.rs` (shared walls, links, the outside door,

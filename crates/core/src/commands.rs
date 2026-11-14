@@ -77,7 +77,10 @@ pub static ALL: &[Command] = &[
          program: `unsatisfiable_area`, with the least that fits; a house no shell fits: `unplaceable_graph`) or can't be written \
          writes no file; the error starts with its code. A `house` is graph first: a graph of rooms is sampled from the house rule pack by \
          the seed, then placed in a shell (bar, l_shape, corner_notch, narrow, t_shape, side_nub or stepped, turned and mirrored by the \
-         seed), and what the `topology` command reads from the built project is that graph. The project is not touched",
+         seed), and what the `topology` command reads from the built project is that graph. `rooms` (with `rooms_tol`, `shape`) \
+         plans by room count in the shape graph engine, and takes `family_file` (the path of a family JSON file, at most 1 MiB, \
+         checked against the rule pack it names: `invalid_family` when it is wrong) in place of `archetype`; the two exclude each \
+         other and `family_file` needs `rooms`. The project is not touched",
         crate::generate::generate,
     ),
     other(
