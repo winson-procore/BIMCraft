@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "note": "The nine outlines every family shares. `levels` are the depth levels of each side's pieces along the bar (0 is the base depth, 1 and 2 are raised); `raise` is a raised piece's extra depth as a share of the bar's base depth; `proportion` is the table the outline is recognised by. No room kinds here.",
+  "shapes": [
+    {"id": "bar", "corners": 4, "levels": {"a": [0], "b": [0]}, "proportion": {"measure": "ratio", "range": [1.2, 2.2]}},
+    {"id": "narrow_bar", "corners": 4, "levels": {"a": [0], "b": [0]}, "proportion": {"measure": "ratio", "range": [2.6, 4.0]}},
+    {"id": "l_shape", "corners": 6, "levels": {"a": [0, 1], "b": [0, 0]}, "raise": [0.45, 1.3], "proportion": {"measure": "cut", "range": [0.20, 0.45]}},
+    {"id": "corner_notch", "corners": 6, "levels": {"a": [0, 1], "b": [0, 0]}, "raise": [0.18, 0.7], "proportion": {"measure": "cut", "range": [0.04, 0.15]}},
+    {"id": "stepped", "corners": 8, "levels": {"a": [0, 1, 2], "b": [0, 0, 0]}, "raise": [0.25, 0.7], "proportion": {"measure": "cut", "range": [0.15, 0.40]}},
+    {"id": "t_shape", "corners": 8, "levels": {"a": [0, 1, 0], "b": [0, 0, 0]}, "raise": [0.36, 1.3], "proportion": {"measure": "stem", "range": [0.35, 0.60]}},
+    {"id": "side_nub", "corners": 8, "levels": {"a": [0, 1, 0], "b": [0, 0, 0]}, "raise": [0.08, 0.32], "proportion": {"measure": "stem", "range": [0.12, 0.28]}},
+    {"id": "opposite_wings", "corners": 8, "levels": {"a": [1, 0], "b": [0, 1]}, "raise": [0.25, 0.9], "proportion": {"measure": "wings", "range": [0.08, 0.25]}},
+    {"id": "court", "corners": 8, "levels": {"a": [1, 0, 1], "b": [0, 0, 0]}, "raise": [0.45, 1.3], "proportion": {"measure": "court", "range": [0.10, 0.30]}}
+  ]
+}

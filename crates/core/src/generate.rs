@@ -17,6 +17,7 @@ pub(crate) mod pattern;
 pub(crate) mod program;
 pub(crate) mod report;
 mod script;
+pub(crate) mod shape_graph;
 pub(crate) mod studio;
 #[cfg(test)]
 mod tests;
@@ -101,6 +102,12 @@ struct Params {
     seed: u64,
     area_m2: Option<f64>,
     area_sqft: Option<f64>,
+    /// The shape graph engine's options (`--rooms` selects it).
+    rooms: Option<i64>,
+    rooms_tol: Option<i64>,
+    shape: Option<String>,
+    interior: Option<String>,
+    bumps: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -292,6 +299,20 @@ fn run(p: &Value) -> Result<Value, Refusal> {
     if given.path.trim().is_empty() || given.path.len() > MAX_PATH || given.path.contains('\0') {
         return Err(refuse("invalid_params", format!("`path` is the run directory to write: not empty, at most {MAX_PATH} bytes")));
     }
+    if let Some(rooms) = given.rooms {
+        return run_shaped(&given, rooms);
+    }
+    if let Some(option) = [
+        ("rooms_tol", given.rooms_tol.is_some()),
+        ("shape", given.shape.is_some()),
+        ("interior", given.interior.is_some()),
+        ("bumps", given.bumps.is_some()),
+    ]
+    .iter()
+    .find(|(_, set)| *set)
+    {
+        return Err(refuse("invalid_params", format!("`{}` belongs to the plan by `rooms`; give `rooms` too, or leave it out", option.0)));
+    }
     let area = match (given.area_m2, given.area_sqft) {
         (Some(_), Some(_)) => return Err(refuse("invalid_params", "`area_m2` and `area_sqft` are mutually exclusive; give one")),
         (Some(m2), None) => AreaRequest::m2(m2),
@@ -299,12 +320,17 @@ fn run(p: &Value) -> Result<Value, Refusal> {
         (None, None) => return Err(refuse("invalid_params", "`generate` needs one of `area_m2` or `area_sqft`")),
     };
     let built = build_with_area(archetype, given.seed, area)?;
-    let dir = PathBuf::from(&given.path);
+    written(&given.path, archetype.name(), &built)
+}
+
+/// Writes a built plan's files and says what was written.
+fn written(path: &str, archetype: &str, built: &Built) -> Result<Value, Refusal> {
+    let dir = PathBuf::from(path);
     write(&dir, &built.files)?;
     let count = |s: Status| built.checks.iter().filter(|c| c.status == s).count();
     Ok(json!({
         "path": dir,
-        "archetype": archetype.name(),
+        "archetype": archetype,
         "seed": built.seed,
         "gross_area_m2": built.gross_m2,
         "rooms": built.rooms,
@@ -312,4 +338,29 @@ fn run(p: &Value) -> Result<Value, Refusal> {
         "checks": {"pass": count(Status::Pass), "warn": count(Status::Warn), "fail": count(Status::Fail)},
         "files": built.files.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
     }))
+}
+
+/// A plan by `rooms`: the shape graph engine. Everything but the options is checked before anything is made or written.
+fn run_shaped(given: &Params, rooms: i64) -> Result<Value, Refusal> {
+    if given.area_m2.is_some() || given.area_sqft.is_some() {
+        return Err(refuse(
+            "invalid_params",
+            "`rooms` and an area are mutually exclusive: this engine has no area input, the area is a result",
+        ));
+    }
+    let tol = given.rooms_tol.unwrap_or(0);
+    let max = shape_graph::MAX_ROOMS;
+    if !(1..=max).contains(&rooms) || !(0..=max).contains(&tol) {
+        return Err(refuse("invalid_params", format!("`rooms` is from 1 to {max} and `rooms_tol` from 0 to {max}; got {rooms} and {tol}")));
+    }
+    if given.interior.as_deref().is_some_and(|i| i != "aligned") {
+        return Err(refuse("invalid_params", "`interior` is `aligned`: jogged and mixed interiors come in a later slice"));
+    }
+    if given.bumps.as_deref().is_some_and(|b| b != "off") {
+        return Err(refuse("invalid_params", "`bumps` is `off`: bumps come in a later slice"));
+    }
+    let request =
+        shape_graph::Request { archetype: given.archetype.clone(), seed: given.seed, rooms, tolerance: tol, shape: given.shape.clone() };
+    let built = shape_graph::build(&request, false)?;
+    written(&given.path, &given.archetype, &built)
 }

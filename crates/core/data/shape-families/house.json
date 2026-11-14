@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "family": "house",
+  "pack_id": "house",
+  "building_type": "residential",
+  "review": {
+    "status": "reviewed",
+    "note": "Narrows crates/core/data/graph-rules/house.json. One storey, so no stair. The reference layout (reference_layout.py) was measured on this file."
+  },
+  "sources": [
+    "BIMCraft/crates/core/data/graph-rules/house.json",
+    "done/fixtures/houses"
+  ],
+  "entry": {"rooms": ["living"], "doors": [1, 1], "types": ["single"]},
+  "rooms": {
+    "living": {
+      "kind": "living", "name": "Living", "role": "shared", "place": "entry_end",
+      "count": [1, 1], "area_m2": [12.0, 45.0], "max_side_ratio": 2.2, "min_side_mm": 3000, "max_links": 8
+    },
+    "kitchen": {
+      "kind": "kitchen", "name": "Kitchen", "role": "shared", "place": "beside_parent",
+      "count": [1, 1], "area_m2": [8.0, 30.0], "max_side_ratio": 2.5, "min_side_mm": 2400, "max_links": 5
+    },
+    "dining": {
+      "kind": "dining", "name": "Dining", "role": "shared", "place": "beside_parent",
+      "count": [0, 1], "area_m2": [6.0, 25.0], "max_side_ratio": 2.5, "min_side_mm": 2400, "max_links": 4
+    },
+    "hall": {
+      "kind": "hall", "name": "Hall", "role": "circulation", "place": "spine",
+      "count": [1, 2], "area_m2": [1.5, 16.0], "max_side_ratio": null, "min_side_mm": 1000, "max_links": 14
+    },
+    "bedroom": {
+      "kind": "bedroom", "name": "Bedroom", "role": "private", "place": "off_spine", "weight": 3,
+      "count": [1, 6], "area_m2": [7.0, 25.0], "max_side_ratio": 1.8, "min_side_mm": 2400, "max_links": 4
+    },
+    "bath": {
+      "kind": "bath", "name": "Bath", "role": "private", "place": "off_spine", "weight": 2,
+      "count": [1, 4], "area_m2": [2.5, 10.0], "max_side_ratio": 3.0, "min_side_mm": 1500, "max_links": 2
+    },
+    "closet": {
+      "kind": "closet", "name": "Closet", "role": "support", "place": "beside_parent", "weight": 2,
+      "count": [0, 8], "per": {"room": "bedroom", "count": [0, 2]},
+      "area_m2": [0.5, 6.0], "max_side_ratio": 6.0, "min_side_mm": 600, "max_links": 1
+    },
+    "laundry": {
+      "kind": "laundry", "name": "Laundry", "role": "service", "place": "off_spine",
+      "count": [0, 1], "area_m2": [1.5, 8.0], "max_side_ratio": 3.2, "min_side_mm": 1200, "max_links": 1
+    },
+    "utility": {
+      "kind": "utility", "name": "Utility", "role": "service", "place": "off_spine",
+      "count": [0, 1], "area_m2": [1.5, 8.0], "max_side_ratio": 3.2, "min_side_mm": 1200, "max_links": 1
+    },
+    "library": {
+      "kind": "library", "name": "Library", "role": "shared", "place": "off_spine",
+      "count": [0, 1], "area_m2": [4.0, 20.0], "max_side_ratio": 2.2, "min_side_mm": 2000, "max_links": 2
+    },
+    "porch": {
+      "kind": "porch", "name": "Porch", "role": "public", "place": "beside_parent",
+      "count": [0, 2], "area_m2": [3.0, 25.0], "max_side_ratio": 4.0, "min_side_mm": 1500, "max_links": 1
+    },
+    "deck": {
+      "kind": "deck", "name": "Deck", "role": "public", "place": "beside_parent",
+      "count": [0, 1], "area_m2": [6.0, 30.0], "max_side_ratio": 4.0, "min_side_mm": 2000, "max_links": 1
+    },
+    "garage": {
+      "kind": "garage", "name": "Garage", "role": "service", "place": "off_spine",
+      "count": [0, 1], "area_m2": [15.0, 45.0], "max_side_ratio": 2.2, "min_side_mm": 3000, "max_links": 1
+    }
+  },
+  "links": [
+    {"from": "living", "to": "hall", "use": "parent", "types": ["open_full", "single"]},
+    {"from": "hall", "to": "hall", "use": "parent", "types": ["open_full"]},
+    {"from": "living", "to": "kitchen", "use": "parent", "types": ["open_full", "single"]},
+    {"from": "living", "to": "dining", "use": "parent", "types": ["open_full"]},
+    {"from": "kitchen", "to": "dining", "use": "parent", "types": ["open_full"]},
+    {"from": "hall", "to": "bedroom", "use": "parent", "types": ["single"]},
+    {"from": "hall", "to": "bath", "use": "parent", "weight": 2, "types": ["single"]},
+    {"from": "bedroom", "to": "bath", "use": "parent", "types": ["single"]},
+    {"from": "bedroom", "to": "closet", "use": "parent", "types": ["sliding", "bifold", "single"]},
+    {"from": "hall", "to": "laundry", "use": "parent", "types": ["sliding", "single", "bifold"]},
+    {"from": "hall", "to": "utility", "use": "parent", "types": ["sliding", "single"]},
+    {"from": "hall", "to": "library", "use": "parent", "types": ["single", "open_full"]},
+    {"from": "hall", "to": "garage", "use": "parent", "types": ["single"]},
+    {"from": "living", "to": "porch", "use": "parent", "types": ["sliding", "single"]},
+    {"from": "kitchen", "to": "porch", "use": "parent", "types": ["sliding", "single"]},
+    {"from": "living", "to": "deck", "use": "parent", "types": ["sliding"]},
+    {"from": "dining", "to": "deck", "use": "parent", "types": ["sliding"]},
+    {"from": "kitchen", "to": "dining", "use": "extra", "chance": 0.6, "types": ["open_full"]}
+  ]
+}

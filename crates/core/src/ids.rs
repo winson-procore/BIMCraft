@@ -35,10 +35,45 @@ pub use revisions::{Revision, RevisionSnapshot};
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Guid(u128);
 
+thread_local! {
+    /// A reproducible project's seed and how many GUIDs it has made: while set, this thread's new GUIDs and project uids are
+    /// the seed's, the same in every run (`new` with a `seed`: for a generated project that must be the same bytes again).
+    static REPRODUCIBLE: std::cell::Cell<Option<(u64, u64)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Makes this thread's new GUIDs and uids the seed's, in order (or random again, with none).
+pub fn reproducible(seed: Option<u64>) {
+    REPRODUCIBLE.with(|r| r.set(seed.map(|s| (s, 0))));
+}
+
+/// Runs `f` and puts this thread's reproducible state back as it was, for work in a scratch project that must not leave its seed
+/// to the caller's project.
+pub fn keeping_reproducible<T>(f: impl FnOnce() -> T) -> T {
+    let was = REPRODUCIBLE.with(std::cell::Cell::get);
+    let out = f();
+    REPRODUCIBLE.with(|r| r.set(was));
+    out
+}
+
+/// The seed a reproducible project makes its uid from.
+pub(crate) fn reproducible_seed() -> Option<u64> {
+    REPRODUCIBLE.with(|r| r.get().map(|(seed, _)| seed))
+}
+
 impl Guid {
-    /// A new GUID, from the system's random numbers (and, should they fail, the clock, the process and a count, mixed).
+    /// A new GUID, from the system's random numbers (and, should they fail, the clock, the process and a count, mixed); in a
+    /// reproducible project, the next of the seed's ([`reproducible`]).
     #[allow(clippy::new_without_default)]
     pub fn new() -> Guid {
+        if let Some((seed, n)) = REPRODUCIBLE.with(|r| {
+            let at = r.get();
+            if let Some((seed, n)) = at {
+                r.set(Some((seed, n + 1)));
+            }
+            at
+        }) {
+            return Guid::seeded(seed, n);
+        }
         let mut b = [0u8; 16];
         if getrandom::fill(&mut b).is_err() {
             static COUNT: AtomicU64 = AtomicU64::new(0);

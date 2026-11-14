@@ -7678,6 +7678,9 @@ pub fn mix(mut z: u64) -> u64 {
 }
 
 fn fresh_uid() -> u64 {
+    if let Some(seed) = crate::ids::reproducible_seed() {
+        return mix(seed ^ 0x5EED_0000_0000_0001);
+    }
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64);
     mix(nanos ^ u64::from(std::process::id()).rotate_left(32))
 }

@@ -55,8 +55,9 @@ pub static ALL: &[Command] = &[
     other(
         "new",
         "New",
-        "{name?, language?: en|pt|es|sv|cs|fr|nl} an empty project with Level 1 (0) and Level 2 (3000), named in its language (Nível 1, \
-         Nível 2 in Portuguese; Nivel 1, Nivel 2 in Spanish; Nivå 1, Nivå 2 in Swedish; Niveau 1, Niveau 2 in Dutch)",
+        "{name?, language?: en|pt|es|sv|cs|fr|nl, seed?} an empty project with Level 1 (0) and Level 2 (3000), named in its language (Nível 1, \
+         Nível 2 in Portuguese; Nivel 1, Nivel 2 in Spanish; Nivå 1, Nivå 2 in Swedish; Niveau 1, Niveau 2 in Dutch). With a `seed` (a whole \
+         number from 0) the project's uid and the GUID of everything it makes come from the seed, in order, so the same script saves the same file",
         new,
     ),
     other(
@@ -2841,6 +2842,13 @@ fn new(s: &mut Session, p: &Value) -> R {
         None => Language::English,
     };
     let name = string(c, p, "name")?.unwrap_or_else(|| language.word("Project").into());
+    // A seed makes the project's uid and every GUID it makes the seed's, so one script saves the same project again.
+    let seed = match num(c, p, "seed")? {
+        None => None,
+        Some(n) if n.fract() == 0.0 && (0.0..=9.0e15).contains(&n) => Some(n as u64),
+        Some(_) => return Err(bad(c, "`seed` is a whole number from 0")),
+    };
+    crate::ids::reproducible(seed);
     s.reset(Model::new_in(&name, language), None);
     Ok(json!({"name": name, "language": language.code()}))
 }
