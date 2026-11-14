@@ -137,10 +137,9 @@ pub(super) struct Blocks {
     delivery: bool,
 }
 
-/// The attributes a block says: its `MARK` and `TYPE`, or under the delivery profile its `MARK`.
-fn tags(delivery: bool) -> &'static [&'static str] {
-    if delivery { &["MARK"] } else { &["MARK", "TYPE"] }
-}
+/// The attributes a block carries: its `MARK` and `TYPE`. Under the delivery profile the `TYPE` is empty, so a block says only its
+/// mark but keeps the entities it has without the profile.
+const TAGS: [&str; 2] = ["MARK", "TYPE"];
 
 /// Whether two ways of drawing are one, to within [`SAME`].
 fn same(a: &[Ink], b: &[Ink]) -> bool {
@@ -251,7 +250,7 @@ impl Blocks {
             let label = kind.label();
             let label = if label.is_empty() { def.name.clone() } else { label };
             let mut text = String::new();
-            insert(&mut text, w, space, def, frame, &[kind.mark.as_str(), label.as_str()][..tags(delivery).len()], tags(delivery));
+            insert(&mut text, w, space, def, frame, &[kind.mark.as_str(), if delivery { "" } else { label.as_str() }], &TAGS);
             out.inserts.insert(owner, text);
             out.held.insert(owner);
             inserts += 1;
@@ -303,7 +302,7 @@ impl Blocks {
             pair(s, 3, &b.name);
             pair(s, 1, "");
             s.push_str(&b.body);
-            for (tag, h) in tags(self.delivery).iter().zip(b.attdefs) {
+            for (tag, h) in TAGS.iter().zip(b.attdefs) {
                 pair(s, 0, "ATTDEF");
                 hex(s, 5, h);
                 hex(s, 330, b.record);
