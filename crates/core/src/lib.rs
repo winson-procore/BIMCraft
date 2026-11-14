@@ -124,6 +124,7 @@ pub mod selection;
 #[cfg(test)]
 mod shape_tests;
 pub mod shared;
+pub mod sha256;
 pub mod sheet;
 pub mod skeleton;
 pub mod sketch;

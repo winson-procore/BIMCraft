@@ -3,6 +3,8 @@
 //! nine outlines, scaled to hold them, mirrored and turned by the seed. Its code holds no room kind of any family: the kinds, the
 //! counts, the sizes and the links come from `data/shape-families/<family>.json`. Detail: `docs/areas/graph-generator.md`.
 
+#[cfg(test)]
+mod building_tests;
 mod emit;
 pub(crate) mod family;
 #[cfg(test)]
@@ -45,6 +47,28 @@ pub struct Request {
     pub rooms: i64,
     pub tolerance: i64,
     pub shape: Option<String>,
+}
+
+/// The `building` of a plan: the family's name and the first 12 hex digits of a hash of its layout (types, families, walls,
+/// doors without their marks, separators and rooms), each in sorted order. The title, the seed and the drawing's settings are
+/// not in it, so two scripts that draw the same layout have the same building.
+pub(crate) fn building_id(family: &str, lines: &[(&'static str, Value)]) -> String {
+    let mut kept: Vec<String> = Vec::new();
+    for (id, params) in lines {
+        if !matches!(*id, "type" | "family" | "wall" | "door" | "room_separator" | "room") {
+            continue;
+        }
+        let mut params = params.clone();
+        if *id == "door" {
+            if let Some(o) = params.as_object_mut() {
+                o.remove("mark");
+            }
+        }
+        kept.push(format!("{id} {params}"));
+    }
+    kept.sort();
+    let digest = crate::sha256::hex(kept.join("\n").as_bytes());
+    format!("{family}-{}", &digest[..12])
 }
 
 /// One attempt: the plan laid out, or why not.
@@ -212,6 +236,7 @@ fn finish(fam: &Family, req: &Request, shape: &str, rooms: &[plan::Room], laid: 
         "engine": "shape-graph",
         "generator_version": GENERATOR_VERSION,
         "family": fam.name,
+        "building": building_id(&fam.name, &done.script.lines),
         "seed": req.seed,
         "rooms": {"requested": req.rooms, "tolerance": req.tolerance, "actual": rooms.len()},
         "shape": shape,
