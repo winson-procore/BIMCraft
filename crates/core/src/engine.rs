@@ -111,6 +111,9 @@ pub struct Session {
     pub dwg: Option<crate::cad::DwgReader>,
     /// What writes a plan as DWG, when the app has one (`cad::DwgWriter`); none says to save it as DXF.
     pub dwg_writer: Option<crate::cad::DwgWriter>,
+    /// The build this session runs in, `bimcraft-<release>+<commit>[.dirty]`, which the app fills in; `deliver` names its folder by
+    /// it and refuses without it.
+    pub generator_version: Option<String>,
     /// Whether the session may only read its project, and if so what would let it edit, which each refusal ends with: an agent's,
     /// when the user lets agents only read (the window's File > Settings > Agents, `bimcraft-cli mcp --read-only`). Then a command
     /// that would replace the project, undo or redo, or write over its own file is refused before it runs, and one that changed the
@@ -160,6 +163,7 @@ impl Session {
             resets: 0,
             dwg: None,
             dwg_writer: None,
+            generator_version: None,
             read_only: None,
             verified: None,
         }

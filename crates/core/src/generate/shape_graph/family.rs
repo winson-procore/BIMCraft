@@ -206,7 +206,6 @@ struct FamilyFile {
     review: Review,
     /// The traces and scripts the file was written from: a person reads them before signing a delivery's rights statement.
     #[serde(default)]
-    #[allow(dead_code)]
     sources: Option<Vec<String>>,
     entry: Option<EntryFile>,
     rooms: Ordered,
@@ -256,6 +255,8 @@ pub struct Family {
     pub pack_id: Option<String>,
     pub building_type: String,
     pub review: Review,
+    /// The traces and scripts the file was written from, as the file lists them (a delivery's summary names them).
+    pub sources: Vec<String>,
     pub entry: Option<Entry>,
     pub types: Vec<Ty>,
     pub links: Vec<Lk>,
@@ -414,6 +415,7 @@ impl Family {
             pack_id: file.pack_id,
             building_type: file.building_type,
             review: file.review,
+            sources: file.sources.unwrap_or_default(),
             entry,
             types,
             links,
