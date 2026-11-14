@@ -109,6 +109,8 @@ mod room_bounds_tests;
 mod room_freeze_tests;
 #[cfg(test)]
 mod room_height_tests;
+#[cfg(test)]
+mod room_tag_tests;
 pub mod rooms;
 pub mod rulepack;
 pub mod runs;

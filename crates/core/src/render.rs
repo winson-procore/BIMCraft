@@ -185,6 +185,40 @@ impl Prim {
     }
 }
 
+/// The height of a room's name, px, as a plan lays it out (the number and the area are 10 px).
+const ROOM_TAG_NAME_PX: f32 = 13.0;
+
+/// The height (mm) of a room tag's tallest line, its name, in a view at scale 1 : `n`: 13 px of annotation, which is
+/// 13 n / [`sheet::DENSITY`] mm of the model whatever the zoom.
+pub fn room_tag_height(n: f64) -> f64 {
+    f64::from(ROOM_TAG_NAME_PX) * n / sheet::DENSITY
+}
+
+/// The box (x0, y0, x1, y1; mm, y up) of a room tag drawn at `anchor` with its name `h` mm tall: as wide as its longest line
+/// of characters 0.6 `h` each, 4.5 `h` high, centred on the middle of the three lines' boxes (the number is at the anchor,
+/// the name 16 px over it and the area 14 px under).
+pub fn room_tag_box(anchor: P2, h: f64, lines: &[String; 3]) -> [f64; 4] {
+    let chars = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as f64;
+    let (w, bh) = (0.6 * h * chars, 4.5 * h);
+    // The union of the lines' boxes spans from 22.5 px over the anchor to 19 px under it: its middle is 1.75 px up.
+    let (cx, cy) = (anchor.0, anchor.1 + h * 1.75 / f64::from(ROOM_TAG_NAME_PX));
+    [cx - w / 2.0, cy - bh / 2.0, cx + w / 2.0, cy + bh / 2.0]
+}
+
+/// A room tag's leader: from the middle of the edge of `tag` nearest `point` to `point`.
+pub fn room_tag_leader(tag: [f64; 4], point: P2) -> (P2, P2) {
+    let (cx, cy) = ((tag[0] + tag[2]) / 2.0, (tag[1] + tag[3]) / 2.0);
+    // How far out of the box the point lies each way, in halves of the box: the larger says which edge is nearest.
+    let (hw, hh) = (((tag[2] - tag[0]) / 2.0).max(1e-9), ((tag[3] - tag[1]) / 2.0).max(1e-9));
+    let (dx, dy) = ((point.0 - cx) / hw, (point.1 - cy) / hh);
+    let start = if dx.abs() >= dy.abs() {
+        P2(if dx > 0.0 { tag[2] } else { tag[0] }, cy)
+    } else {
+        P2(cx, if dy > 0.0 { tag[3] } else { tag[1] })
+    };
+    (start, point)
+}
+
 /// Model millimetres (y up) to image pixels (y down). In a section or elevation, the first
 /// coordinate runs along its line from its start, the second up.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1235,7 +1269,7 @@ fn plan_shows_among(m: &Model, key: Guid, among: bool) -> Vec<P2> {
             {
                 extent.extend(boundary)
             }
-            Element::Room(r) if r.level == level => extent.push(r.point),
+            Element::Room(r) if r.level == level => extent.extend([Some(r.point), r.tag].into_iter().flatten()),
             Element::Mass(ms) if m.mass_cut_by(ms, r.cut) => extent.extend(m.mass_outline(ms, r.cut)),
             Element::Component(c) if c.level == level => {
                 extent.extend(components.outlines(c));
@@ -3036,12 +3070,19 @@ fn draw_plan_among(m: &Model, key: Guid, view: View, up: bool, k: f32, n: f64, t
                         }
                     }
                 }
-                let (x, y) = d.view.px(r.point);
+                // Its tag, at its point, or where it was put with a leader from it to the point.
+                let (x, y) = d.view.px(r.tag.unwrap_or(r.point));
                 let from = d.prims.len();
-                d.text(&r.name, (x, y - 16.0), 13.0, INK);
+                d.text(&r.name, (x, y - 16.0), ROOM_TAG_NAME_PX, INK);
                 d.text(&r.number, (x, y), 10.0, INK);
                 d.text(&area, (x, y + 14.0), 10.0, INK);
                 d.grow(from, (x, y));
+                if let Some(tag) = r.tag {
+                    let h = f64::from(d.px(ROOM_TAG_NAME_PX)) / d.view.scale;
+                    let lines = [r.name.clone(), r.number.clone(), area.clone()];
+                    let (start, end) = room_tag_leader(room_tag_box(tag, h, &lines), r.point);
+                    d.stroke(vec![d.view.px(start), d.view.px(end)], BY_CATEGORY, INK, None, false);
+                }
             }
             // A shaft the plane cuts: its outline, and a cross.
             Element::Shaft(sh) => {

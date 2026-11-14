@@ -867,6 +867,10 @@ pub struct Room {
     /// What a frozen room keeps, given it after the command that froze it (`Model::keep_rooms`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kept: Option<Kept>,
+    /// Where its tag (name, number, area) is written when it is not at `point`, a room too small for its tag: the tag stands
+    /// there, with one leader to `point`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<P2>,
 }
 
 impl Room {
@@ -885,6 +889,7 @@ impl Room {
             limit_offset: ROOM_LIMIT_OFFSET,
             frozen: false,
             kept: None,
+            tag: None,
         }
     }
 }
@@ -6585,6 +6590,9 @@ impl Model {
             Element::Room(r) => {
                 level_ok(r.level)?;
                 point(&who, r.point)?;
+                if let Some(t) = r.tag {
+                    point(&format!("{who} tag"), t)?;
+                }
                 text(&who, "name", &r.name)?;
                 text(&who, "number", &r.number)?;
                 kept(&who, r)?;
