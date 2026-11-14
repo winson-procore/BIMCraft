@@ -17,7 +17,7 @@ use std::fmt::Write;
 use super::{Drawing, PAPER, Part, Prim, Rgb, boxes_meet};
 use crate::family::Category;
 use crate::geom::{self, P2};
-use crate::model::{Element, Id, Model};
+use crate::model::{CadProfile, Element, Id, Model};
 use crate::sheet;
 use crate::walls;
 
@@ -54,9 +54,18 @@ const PAPER_SPACE: u64 = 0x1B;
 const MODEL_SPACE: u64 = 0x1F;
 const FIRST: u64 = 0x30;
 
-/// The plan `d` of `m` as a DXF file's text.
+/// The plan `d` of `m` as a DXF file's text, keeping the rules of the project's CAD profile ([`delivery`]) if it names one.
 pub fn dxf(d: &Drawing, m: &Model) -> String {
-    let mut doc = Doc::default();
+    write(d, m, m.cad_profile == Some(CadProfile::Delivery))
+}
+
+/// A drawing `d` of `m` (a section, an elevation) as a DXF file's text: as drawn, whatever profile the project names.
+pub fn dxf_plain(d: &Drawing, m: &Model) -> String {
+    write(d, m, false)
+}
+
+fn write(d: &Drawing, m: &Model, delivery: bool) -> String {
+    let mut doc = Doc { delivery, ..Doc::default() };
     doc.add(d, m, MODEL_SPACE, P2(0.0, 0.0));
     doc.finish(m)
 }
@@ -105,6 +114,8 @@ struct Doc {
     dims: Vec<dims::Dims>,
     blocks: Vec<blocks::Blocks>,
     title: Option<sheets::TitleBlock>,
+    /// Whether the delivery drawing rules apply ([`delivery`]).
+    delivery: bool,
 }
 
 /// `d` moved `by` mm: what its pixels come back to, and its dimensions' points.
@@ -122,6 +133,7 @@ impl Doc {
     /// `d`'s entities, in the space whose block record is `space` (model or paper). `shift` is how far [`translate`] has moved
     /// the drawing, which what stands in the model by its own coordinates (a door, a window) must follow.
     fn add(&mut self, d: &Drawing, m: &Model, space: u64, shift: P2) {
+        let delivery = self.delivery;
         let mut ext = if space == PAPER_SPACE { self.paper_ext } else { self.ext };
         let mut ents = String::new();
         let sh = &mut self.shared;
@@ -132,10 +144,14 @@ impl Doc {
         let mut dims = dims::Dims::of(d, m, texts, sh, &mut ext, space);
         let clip = clipped(d);
         // A door, window or piece of furniture is an INSERT of a block that all of a kind share; what it draws is the block's.
-        let mut blocks = blocks::Blocks::of(d, m, texts, &clip, sh, space, shift);
+        let mut blocks = blocks::Blocks::of(d, m, texts, &clip, sh, space, shift, delivery);
         for (i, prim) in &clip {
             let (i, prim) = (*i, prim.as_ref());
             let owner = d.owners.get(i).copied().flatten();
+            // A room separation line is not drawn: the outlines of the rooms it parts are its edge.
+            if delivery && matches!(owner.and_then(|o| m.elements.get(o)), Some(Element::RoomSeparator(_))) {
+                continue;
+            }
             let part = d.parts.get(i).copied().unwrap_or_default();
             let base = layer(m, owner);
             if texts && part == Part::Text {
@@ -181,6 +197,9 @@ impl Doc {
             lettering(&mut ents, sh.w.handle(), space, &name, l, (at, height, angle.rem_euclid(360.0)));
             sh.layers.insert(name);
         }
+        if delivery && space == MODEL_SPACE {
+            ext = delivery::outlines(d, m, shift, sh, &mut ents, ext);
+        }
         ents.push_str(&std::mem::take(&mut dims.entities));
         ents.push_str(&blocks.rest());
         self.ents.push_str(&ents);
@@ -195,7 +214,7 @@ impl Doc {
 
     /// The file's text.
     fn finish(self, m: &Model) -> String {
-        let Doc { shared, ext, paper_ext, ents, dims, blocks, title } = self;
+        let Doc { shared, ext, paper_ext, ents, dims, blocks, title, delivery: _ } = self;
         let Shared { mut w, layers, ltypes, .. } = shared;
         let mut tables = String::new();
         table(&mut tables, &mut w, "VPORT", VPORTS, |_, _, _| 0);
@@ -620,6 +639,8 @@ enum Shape {
     Line { pts: Vec<P2>, closed: bool, weight: i32 },
     /// A solid `HATCH`, its first ring the outermost.
     Fill { rings: Vec<Vec<P2>> },
+    /// An `ARC` of this weight, counter-clockwise from `from` to `to` degrees (the delivery profile's door swings).
+    Arc { centre: P2, radius: f64, from: f64, to: f64, weight: i32 },
 }
 
 /// `prim`, of `part` of what is on layer `base`, as an entity; none for a picture or one that has nothing to draw.
@@ -648,6 +669,10 @@ impl Ink {
         match &self.shape {
             Shape::Line { pts, .. } => grow(ext, pts),
             Shape::Fill { rings } => rings.iter().fold(ext, |ext, ring| grow(ext, ring)),
+            Shape::Arc { centre, radius, from, to, .. } => {
+                let at = |a: f64| P2(centre.0 + radius * a.to_radians().cos(), centre.1 + radius * a.to_radians().sin());
+                grow(ext, &[*centre, at(*from), at(*to)])
+            }
         }
     }
 }
@@ -664,6 +689,16 @@ fn put(s: &mut String, h: u64, parent: u64, ink: &Ink) {
             for p in pts {
                 point2(s, 10, *p);
             }
+        }
+        Shape::Arc { centre, radius, from, to, weight } => {
+            pair(s, 0, "ARC");
+            entity(s, h, parent, &ink.layer, ink.ltype.as_ref().map(|l| l.0.as_str()), Some(*weight), ink.color);
+            pair(s, 100, "AcDbCircle");
+            point3(s, 10, *centre);
+            pair(s, 40, num(*radius));
+            pair(s, 100, "AcDbArc");
+            pair(s, 50, num(*from));
+            pair(s, 51, num(*to));
         }
         Shape::Fill { rings } => {
             pair(s, 0, "HATCH");
@@ -936,6 +971,7 @@ fn escaped(text: &str, multi: bool) -> String {
 mod blocks;
 #[cfg(test)]
 mod blocks_tests;
+mod delivery;
 mod dims;
 #[cfg(test)]
 mod dims_tests;

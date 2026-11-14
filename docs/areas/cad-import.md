@@ -152,6 +152,15 @@ DWG the session's `DwgWriter` turns that text into the file.
   section is from AutoCAD 2004 on, so a 2000 DWG is written without them and the reply's `notes` say so. Every script the
   generator writes sets `building_type` this way, as `Archetype::building_type` says: `office` (office, studio-office and office-pattern),
   `clinic`, `hospital` (hospital and medical-day), `residential` (house). `import_cad` does not read them back.
+- **The delivery profile.** `cad_profile {"name": "delivery"}` (`Model::cad_profile`, `none` clears it; a project without it saves
+  and exports exactly as before) keeps the delivery drawing rules in a plan's DXF and DWG (`render/dxf/delivery.rs`; only plans: a
+  section, an elevation or a sheet is written as always, through `render::dxf_plain`). (1) Each room the plan letters or draws gets
+  one closed `LWPOLYLINE` on `A-AREA-BNDY`, the outer loop of `Rooms::region`, so its area is the tag's; room separation lines are
+  not drawn (the outlines of the rooms they part meet along them). (2) A door's swing is an `ARC` in its block, not the 24 chords
+  the picture draws (`Mark::Arc` keeps the arc's centre with those chords; the exporter finds the stroke by its points, so the
+  picture and the PNG are unchanged), counter-clockwise whatever the door's flips; its leaf is the polyline from the arc's centre.
+  (3) A block's attributes are only its `MARK`; the `TYPE` one is left out. The shape graph engine's scripts carry the line.
+  Tests: `delivery_tests.rs`.
 
 Tests: `render::dxf::tests` reads the sample house's plan back with `dxf::read_text` (layers, entities per layer, mm, extents,
 dashes, weights); `render::dxf::dims_tests` reads the DIMENSION, DIMSTYLE and block records as a plain group-code walk; `render::dxf::blocks_tests` does the same for the blocks, inserts and attributes; `plan_export_tests.rs` drives `save` with a fake writer; `render::dxf::sheets_tests` saves the sample's sheets and reads their paper space, viewports, model space and title block back; `crates/dwg`'s tests round-trip the plan, and a saved sheet, through
