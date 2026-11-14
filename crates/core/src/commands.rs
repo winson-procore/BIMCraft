@@ -84,6 +84,22 @@ pub static ALL: &[Command] = &[
         crate::generate::generate,
     ),
     other(
+        "deliver",
+        "Deliver Folder",
+        "{brief, delivery_id, rights, path, rerun?, jobs?} write a delivery folder under the root `path`: \
+         `<generator_version>/<delivery_id>/` (manifest.csv, RIGHTS.txt, dwg/<archetype>_s<seed>.dwg for each seed) and \
+         `<delivery_id>-rerun/` (the same for `rerun` seeds, 50 by default, spread through the delivery and made again). `brief` is \
+         the path of a JSON file `{schema_version: 1, batches: [{archetype: house, first_seed, count, rooms: [lo, hi], rooms_tol?, \
+         unreviewed?: allow}]}`; each seed's room count is chosen between `lo` and `hi` by the seed, and the plan is what `generate` \
+         then `run` make for it. `rights` is the file of the signed rights statement (copied byte for byte) or `emailed` (no \
+         RIGHTS.txt). `jobs` is the number of threads (1 to 64; the bytes written do not depend on it). A seed `generate` refuses \
+         is in the reply's `skipped` with its error code, and has no file and no row. The reply holds folder, rerun_folder, \
+         generator_version, files, buildings, average_file_bytes, skipped and sources. Refused, writing nothing: invalid_brief, \
+         missing_rights, delivery_exists (the delivery or its rerun folder is there: a fix is a new id). Needs a build that has a \
+         generator version and writes DWG (the CLI). A big brief can run for minutes",
+        crate::generate::deliver::deliver,
+    ),
+    other(
         "rule_pack",
         "Rule Pack Seed Library",
         "{path} write the frontier-model rule pack seed library to the directory `path`: rule-pack-manifest.json, \

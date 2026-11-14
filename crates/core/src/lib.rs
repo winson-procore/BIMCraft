@@ -121,6 +121,7 @@ pub mod schedule;
 #[cfg(test)]
 mod section_box_tests;
 pub mod selection;
+pub mod sha256;
 #[cfg(test)]
 mod shape_tests;
 pub mod shared;

@@ -292,7 +292,28 @@ the tag lines need, the second is the script as written. A plan with no leader i
 Every `--rooms` script has one `cad_profile {"name":"delivery"}` line, straight after `drawing_property`: its DXF and DWG keep the
 delivery drawing rules ([CAD export](cad-import.md#export)). The other generators' scripts have none and export as before.
 
+## Delivery folder
+
+`bimcraft-cli deliver --brief BRIEF.json --delivery-id ID --rights (FILE | emailed) --out ROOT [--rerun N] [--jobs J]` (`generate/deliver.rs`)
+writes `ROOT/<generator_version>/ID/` and `ID-rerun/`, each with `manifest.csv`, `RIGHTS.txt` (none with `emailed`) and `dwg/<archetype>_s<seed>.dwg`,
+and prints one JSON summary (`folder`, `rerun_folder`, `generator_version`, `files`, `buildings`, `average_file_bytes`, `skipped`, `sources`).
+
+- **Version.** `Session::generator_version` is `bimcraft-<release>+<commit>[.dirty]`, put into the CLI by `apps/bimcraft-cli/build.rs` (`git rev-parse`,
+  `git status --porcelain --untracked-files=no`; `BIMCRAFT_COMMIT` for a build with no `.git`). Without it, or without a DWG writer, `deliver` refuses
+  with `invalid_params`. Commit before the release build you deliver from, or the version says `.dirty`.
+- **A seed** is built in memory (`shape_graph::build`), its script run in a fresh `Session` and saved as DWG, so its bytes are what `generate` then `run` write.
+  A batch's `rooms: [lo, hi]` gives each seed `lo + mix(seed ^ SALT) % (hi - lo + 1)` rooms: the seed alone, pinned by a test, because past deliveries
+  depend on it. A seed `build` refuses is in `skipped` with the refusal's code and has no row and no file. Batches by `area` come in Slice 13.
+- **`building`** is `<family>-` and 12 hex digits of the SHA-256 of the script's `type`, `family`, `wall`, `door` (without `mark`), `room_separator` and
+  `room` lines, each kind sorted: the same layout is the same building however the script numbered its doors, and `generate`'s `manifest.json` carries it.
+- **Threads.** `--jobs` plain threads pull seeds from an atomic counter (the reproducible-GUID state is thread-local, so no rayon here); results go by position
+  and the manifest is written when every seed is done, so the tree does not depend on J. DWGs stream to their files.
+- **The rerun** repeats `k = min(N, rows)` seeds, index `i` being row `floor((2i+1)·rows/2k)`, made again from the brief; a different byte is `nondeterministic`.
+- **Refusals** (`invalid_brief`, `missing_rights`, `delivery_exists`, `invalid_params`) are all checked before anything is created, and a failure later removes
+  what the run made. The command can run for minutes, also through MCP.
+- Not done by `deliver`: writing `RIGHTS.txt`, uploading, telling the receiver the counts.
+
 ## Not yet
 
 No stairs, shafts, structure or MEP; one storey; no datacenters or airports;
-no batch runs, and the rules are still hard-coded: the seed rule packs of [rule packs](rule-packs.md) are written but not read. `report.json` says so in `capability_notes`.
+no batch runs beyond `deliver`'s, and the rules are still hard-coded: the seed rule packs of [rule packs](rule-packs.md) are written but not read. `report.json` says so in `capability_notes`.

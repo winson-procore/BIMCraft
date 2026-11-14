@@ -23,6 +23,9 @@ const USAGE: &str = "USAGE:
                                  write a generated plan's run directory: program, topology and building graphs, a script for
                                  `run --script`, a report and a manifest. The same brief gives the same files; a brief that
                                  can't be met (an area too small) exits non-zero with a JSON error (`error`, a code, and `message`) on stderr, and writes nothing
+  bimcraft-cli deliver --brief BRIEF.json --delivery-id ID --rights (FILE | emailed) --out ROOT [--rerun N] [--jobs J]
+                                 write ROOT/<generator_version>/ID/ (manifest.csv, RIGHTS.txt, dwg/) for the brief's seeds, and
+                                 ID-rerun/ for N seeds (50) spread through them, made again; J threads. Never overwrites
   bimcraft-cli generate (--archetype house | --family-file FILE) --seed N --rooms R [--rooms-tol T] [--shape ID] [--interior aligned] [--bumps off] --out DIR
                                  the shape graph engine: R rooms (between R-T and R+T) laid out in one of nine outlines (bar, narrow_bar,
                                  l_shape, corner_notch, stepped, t_shape, side_nub, opposite_wings, court; --shape pins one) by the
@@ -74,6 +77,8 @@ fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
     let mut s = Session::new();
     s.dwg = dwg_reader();
     s.dwg_writer = dwg_writer();
+    // Fixed when the CLI was built; empty when git and `BIMCRAFT_COMMIT` knew no commit, and `deliver` then refuses.
+    s.generator_version = Some(env!("BIMCRAFT_GENERATOR_VERSION").to_string()).filter(|v| !v.is_empty());
     match args {
         [cmd, rest @ ..] if cmd == "run" => {
             let mut rest = rest.iter();
@@ -101,6 +106,10 @@ fn cli(args: &[String], out: &mut impl Write) -> Result<(), String> {
         [cmd, rest @ ..] if cmd == "generate" => {
             let params = generate_params(rest)?;
             print(out, &s.execute("generate", &params).map_err(typed_refusal)?)
+        }
+        [cmd, rest @ ..] if cmd == "deliver" => {
+            let params = deliver_params(rest)?;
+            print(out, &s.execute("deliver", &params).map_err(typed_refusal)?)
         }
         [cmd, rest @ ..] if cmd == "topology" => {
             let (model, params) = topology_params(rest)?;
@@ -243,6 +252,39 @@ fn generate_params(args: &[String]) -> Result<Value, String> {
     {
         if let Some(v) = value {
             p[key] = json!(v);
+        }
+    }
+    Ok(p)
+}
+
+/// What follows `deliver`, as the command's params: each option once. `--rights` may be left out, so the core refuses with
+/// `missing_rights`.
+fn deliver_params(args: &[String]) -> Result<Value, String> {
+    let (mut brief, mut id, mut rights, mut out, mut rerun, mut jobs) = (None, None, None, None, None, None);
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        let value = rest.next().ok_or_else(|| format!("{arg} needs a value\n\n{USAGE}"))?;
+        let slot = match arg.as_str() {
+            "--brief" => &mut brief,
+            "--delivery-id" => &mut id,
+            "--rights" => &mut rights,
+            "--out" => &mut out,
+            "--rerun" => &mut rerun,
+            "--jobs" => &mut jobs,
+            other => return Err(format!("unknown option `{other}` for deliver\n\n{USAGE}")),
+        };
+        if slot.replace(value).is_some() {
+            return Err(format!("{arg} given twice\n\n{USAGE}"));
+        }
+    }
+    let need = |what: Option<&String>, flag: &str| what.cloned().ok_or_else(|| format!("deliver needs {flag}\n\n{USAGE}"));
+    let mut p = json!({"brief": need(brief, "--brief")?, "delivery_id": need(id, "--delivery-id")?, "path": need(out, "--out")?});
+    if let Some(r) = rights {
+        p["rights"] = json!(r);
+    }
+    for (key, flag, value) in [("rerun", "--rerun", rerun), ("jobs", "--jobs", jobs)] {
+        if let Some(v) = value {
+            p[key] = json!(v.parse::<i64>().map_err(|_| format!("{flag} is a whole number, got `{v}`"))?);
         }
     }
     Ok(p)
@@ -456,6 +498,23 @@ mod tests {
         let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         let mut out = Vec::new();
         cli(&args, &mut out).map(|()| String::from_utf8(out).unwrap())
+    }
+
+    #[test]
+    fn deliver_flags_become_params_and_a_mistake_is_said() {
+        let args = |text: &str| text.split_whitespace().map(String::from).collect::<Vec<_>>();
+        let p = deliver_params(&args("--brief b.json --delivery-id d --out r --rerun 5 --jobs 2")).unwrap();
+        assert_eq!(p, json!({"brief": "b.json", "delivery_id": "d", "path": "r", "rerun": 5, "jobs": 2}));
+        assert_eq!(deliver_params(&args("--brief b --delivery-id d --out r --rights emailed")).unwrap()["rights"], "emailed");
+        for bad in [
+            "--brief b --delivery-id d",
+            "--brief b --brief c --delivery-id d --out r",
+            "--brief b --delivery-id d --out r --jobs x",
+            "--nope 1",
+            "--brief",
+        ] {
+            assert!(deliver_params(&args(bad)).is_err(), "{bad}");
+        }
     }
 
     #[test]

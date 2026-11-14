@@ -1,0 +1,319 @@
+//! `deliver` through `Session::execute`, with a fake DWG writer (the DXF text as the file's bytes).
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use serde_json::{Value, json};
+
+use super::deliver::{rerun_indices, rooms_for};
+use crate::engine::Session;
+
+const GV: &str = "bimcraft-0.0.0+abc1234";
+
+fn dir(test: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("bimcraft-deliver-{}-{test}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).expect("temp dir");
+    d
+}
+
+fn session() -> Session {
+    let mut s = Session::new();
+    s.dwg_writer = Some(Arc::new(|dxf, _| Ok(dxf.as_bytes().to_vec())));
+    s.generator_version = Some(GV.into());
+    s
+}
+
+fn put(d: &Path, name: &str, bytes: &[u8]) -> String {
+    let p = d.join(name);
+    std::fs::write(&p, bytes).expect("write");
+    p.display().to_string()
+}
+
+const RIGHTS: &[u8] = "line one\r\nnon-ascii \u{2014} here, no final newline".as_bytes();
+
+fn brief3(d: &Path) -> String {
+    put(
+        d,
+        "brief.json",
+        br#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 4, "rooms": [8, 12], "rooms_tol": 2}]}"#,
+    )
+}
+
+fn params(d: &Path, brief: &str, id: &str, rights: Option<&str>, root: &Path) -> Value {
+    let mut p = json!({"brief": brief, "delivery_id": id, "path": root.display().to_string(), "rerun": 2, "jobs": 2});
+    if let Some(r) = rights {
+        p["rights"] = json!(r);
+    }
+    let _ = d;
+    p
+}
+
+/// Every path under `root` with its size and bytes' length, modified time.
+fn tree(root: &Path) -> BTreeMap<String, (bool, u64, std::time::SystemTime, Vec<u8>)> {
+    let mut out = BTreeMap::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).expect("read_dir").flatten() {
+            let p = e.path();
+            let md = std::fs::symlink_metadata(&p).expect("md");
+            let rel = p.strip_prefix(root).expect("rel").display().to_string();
+            if md.is_dir() {
+                stack.push(p.clone());
+                out.insert(rel, (true, 0, md.modified().expect("mtime"), Vec::new()));
+            } else {
+                out.insert(rel, (false, md.len(), md.modified().expect("mtime"), std::fs::read(&p).expect("read")));
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn a_delivery_writes_the_folder_and_nothing_else() {
+    let d = dir("layout");
+    let root = d.join("root");
+    std::fs::create_dir_all(&root).expect("root");
+    let rights = put(&d, "rights.txt", RIGHTS);
+    let brief = brief3(&d);
+    let mut s = session();
+    let reply = s.execute("deliver", &params(&d, &brief, "t1", Some(&rights), &root)).expect("deliver");
+    assert_eq!(reply["generator_version"], GV);
+    assert_eq!(reply["files"], 4);
+    assert!(reply["skipped"].as_array().is_some_and(Vec::is_empty));
+    let gv = root.join(GV);
+    assert_eq!(std::fs::read_dir(&root).expect("ls").count(), 1);
+    let mut inner: Vec<String> = std::fs::read_dir(&gv).expect("ls").flatten().map(|e| e.file_name().to_string_lossy().into()).collect();
+    inner.sort();
+    assert_eq!(inner, ["t1", "t1-rerun"]);
+    for (folder, n) in [("t1", 4), ("t1-rerun", 2)] {
+        let f = gv.join(folder);
+        let mut names: Vec<String> = std::fs::read_dir(&f).expect("ls").flatten().map(|e| e.file_name().to_string_lossy().into()).collect();
+        names.sort();
+        assert_eq!(names, ["RIGHTS.txt", "dwg", "manifest.csv"]);
+        assert_eq!(std::fs::read(f.join("RIGHTS.txt")).expect("rights"), RIGHTS);
+        assert_eq!(std::fs::read_dir(f.join("dwg")).expect("ls").count(), n);
+    }
+    assert!(reply["folder"].as_str().is_some_and(|f| f.ends_with(&format!("{GV}/t1"))));
+    assert!(reply["rerun_folder"].as_str().is_some_and(|f| f.ends_with(&format!("{GV}/t1-rerun"))));
+    assert!(reply["sources"]["house"].as_array().is_some_and(|a| !a.is_empty()));
+}
+
+#[test]
+fn the_manifest_names_each_file_by_its_hash_in_seed_order() {
+    let d = dir("manifest");
+    let root = d.join("root");
+    std::fs::create_dir_all(&root).expect("root");
+    let rights = put(&d, "rights.txt", RIGHTS);
+    let brief = brief3(&d);
+    let mut s = session();
+    let reply = s.execute("deliver", &params(&d, &brief, "m1", Some(&rights), &root)).expect("deliver");
+    let f = root.join(GV).join("m1");
+    let text = std::fs::read_to_string(f.join("manifest.csv")).expect("csv");
+    assert!(!text.contains('\r') && text.ends_with('\n'));
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines[0], "seed,file,sha256,generator_version,units,wall_layers,door_layers,window_layers,building,floor,drawing");
+    assert_eq!(lines.len(), 5);
+    let mut total = 0;
+    let mut buildings = std::collections::BTreeSet::new();
+    for (i, line) in lines[1..].iter().enumerate() {
+        let c: Vec<&str> = line.split(',').collect();
+        assert_eq!(c.len(), 11, "{line}");
+        assert_eq!(c[0], (i + 1).to_string());
+        assert_eq!(c[1], format!("dwg/house_s{}.dwg", i + 1));
+        let bytes = std::fs::read(f.join(c[1])).expect("dwg");
+        assert_eq!(c[2], crate::sha256::hex(&bytes));
+        total += bytes.len();
+        assert_eq!(&c[3..8], [GV, "mm", "A-WALL", "A-DOOR", "A-GLAZ"]);
+        assert!(c[8].starts_with("house-") && c[8].len() == 18);
+        buildings.insert(c[8].to_string());
+        assert_eq!((c[9], c[10]), ("1", ""));
+    }
+    assert_eq!(reply["buildings"], buildings.len());
+    assert_eq!(reply["average_file_bytes"].as_f64().map(|a| a.round() as usize), Some((total as f64 / 4.0).round() as usize));
+    // The rerun's rows are the delivery's rows for its seeds.
+    let rerun = std::fs::read_to_string(root.join(GV).join("m1-rerun").join("manifest.csv")).expect("rerun csv");
+    let rl: Vec<&str> = rerun.lines().collect();
+    assert_eq!(rl.len(), 3);
+    for l in &rl[1..] {
+        assert!(lines.contains(l), "{l}");
+    }
+    // Seeds 2 and 4 of four: spread through the delivery.
+    assert!(rl[1].starts_with("2,") && rl[2].starts_with("4,"), "{rl:?}");
+}
+
+#[test]
+fn the_tree_does_not_depend_on_the_jobs() {
+    let d = dir("jobs");
+    let rights = put(&d, "rights.txt", RIGHTS);
+    let brief = brief3(&d);
+    let mut trees = Vec::new();
+    for jobs in [1, 3] {
+        let root = d.join(format!("root{jobs}"));
+        std::fs::create_dir_all(&root).expect("root");
+        let mut p = params(&d, &brief, "j", Some(&rights), &root);
+        p["jobs"] = json!(jobs);
+        session().execute("deliver", &p).expect("deliver");
+        let t: BTreeMap<String, Vec<u8>> = tree(&root).into_iter().filter(|(_, v)| !v.0).map(|(k, v)| (k, v.3)).collect();
+        trees.push(t);
+    }
+    assert!(!trees[0].is_empty());
+    assert_eq!(trees[0], trees[1]);
+}
+
+#[test]
+fn rights_emailed_leaves_no_rights_file() {
+    let d = dir("emailed");
+    let root = d.join("root");
+    std::fs::create_dir_all(&root).expect("root");
+    let brief = brief3(&d);
+    session().execute("deliver", &params(&d, &brief, "e", Some("emailed"), &root)).expect("deliver");
+    for f in ["e", "e-rerun"] {
+        let p = root.join(GV).join(f);
+        assert!(p.join("manifest.csv").is_file() && !p.join("RIGHTS.txt").exists());
+    }
+}
+
+fn refused(s: &mut Session, p: &Value, code: &str) {
+    let e = s.execute("deliver", p).expect_err("refused");
+    assert!(e.starts_with(&format!("{code}: ")), "{e}");
+}
+
+#[test]
+fn refusals_write_nothing_at_all() {
+    let d = dir("refusals");
+    let root = d.join("root");
+    std::fs::create_dir_all(&root).expect("root");
+    let rights = put(&d, "rights.txt", RIGHTS);
+    let empty = put(&d, "empty.txt", b"");
+    let brief = brief3(&d);
+    let overlap = put(
+        &d,
+        "overlap.json",
+        br#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 6, "rooms": [8, 12]},
+        {"archetype": "house", "first_seed": 4, "count": 6, "rooms": [8, 12]}]}"#,
+    );
+    let before = tree(&root);
+    let mut s = session();
+    refused(&mut s, &params(&d, &brief, "r", None, &root), "missing_rights");
+    refused(&mut s, &params(&d, &brief, "r", Some(&d.join("none.txt").display().to_string()), &root), "missing_rights");
+    refused(&mut s, &params(&d, &brief, "r", Some(&empty), &root), "missing_rights");
+    refused(&mut s, &params(&d, &overlap, "r", Some(&rights), &root), "invalid_brief");
+    refused(&mut s, &params(&d, &brief, "../r", Some(&rights), &root), "invalid_params");
+    refused(&mut s, &params(&d, &brief, ".hidden", Some(&rights), &root), "invalid_params");
+    let mut bare = Session::new();
+    refused(&mut bare, &params(&d, &brief, "r", Some(&rights), &root), "invalid_params");
+    let mut no_writer = session();
+    no_writer.dwg_writer = None;
+    refused(&mut no_writer, &params(&d, &brief, "r", Some(&rights), &root), "invalid_params");
+    let mut no_version = session();
+    no_version.generator_version = None;
+    refused(&mut no_version, &params(&d, &brief, "r", Some(&rights), &root), "invalid_params");
+    assert_eq!(tree(&root), before);
+
+    // A second delivery of the same id, and a rerun folder alone: refused, and nothing under ROOT changes.
+    s.execute("deliver", &params(&d, &brief, "x", Some(&rights), &root)).expect("deliver");
+    let before = tree(&root);
+    refused(&mut s, &params(&d, &brief, "x", Some(&rights), &root), "delivery_exists");
+    assert_eq!(tree(&root), before);
+    std::fs::create_dir(root.join(GV).join("y-rerun")).expect("rerun folder");
+    let before = tree(&root);
+    refused(&mut s, &params(&d, &brief, "y", Some(&rights), &root), "delivery_exists");
+    assert_eq!(tree(&root), before);
+}
+
+#[test]
+fn a_batch_no_family_can_meet_is_skipped_with_its_code() {
+    let d = dir("skipped");
+    let root = d.join("root");
+    std::fs::create_dir_all(&root).expect("root");
+    let rights = put(&d, "rights.txt", RIGHTS);
+    let brief = put(
+        &d,
+        "brief.json",
+        br#"{"schema_version": 1, "batches": [
+        {"archetype": "house", "first_seed": 1, "count": 3, "rooms": [8, 12], "rooms_tol": 2},
+        {"archetype": "house", "first_seed": 101, "count": 2, "rooms": [2, 2], "rooms_tol": 0}]}"#,
+    );
+    let reply = s_deliver(&d, &brief, &rights, &root);
+    assert_eq!(reply["files"], 3);
+    let skipped = reply["skipped"].as_array().expect("skipped");
+    assert_eq!(skipped.len(), 2);
+    for (k, s) in skipped.iter().enumerate() {
+        assert_eq!(s["seed"], 101 + k);
+        assert_eq!(s["error"], "unsatisfiable_rooms");
+    }
+    let csv = std::fs::read_to_string(root.join(GV).join("sk").join("manifest.csv")).expect("csv");
+    assert_eq!(csv.lines().count(), 4);
+    assert!(!root.join(GV).join("sk").join("dwg").join("house_s101.dwg").exists());
+}
+
+fn s_deliver(d: &Path, brief: &str, rights: &str, root: &Path) -> Value {
+    session().execute("deliver", &params(d, brief, "sk", Some(rights), root)).expect("deliver")
+}
+
+#[test]
+fn briefs_the_schema_does_not_allow_are_invalid() {
+    let d = dir("briefs");
+    let root = d.join("root");
+    std::fs::create_dir_all(&root).expect("root");
+    let rights = put(&d, "rights.txt", RIGHTS);
+    let mut s = session();
+    for (i, text) in [
+        r#"{"schema_version": 2, "batches": []}"#,
+        r#"{"schema_version": 1, "batches": []}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "barn", "first_seed": 1, "count": 1, "rooms": [8, 12]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "rooms": [8, 12], "area": [100, 200]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "area": [100, 200]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 18446744073709551615, "count": 5, "rooms": [8, 12]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 0, "rooms": [8, 12]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "rooms": [12, 8]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 5000000, "rooms": [8, 12]}]}"#,
+        r#"{"schema_version": 1, "batches": [{"archetype": "house", "first_seed": 1, "count": 1, "rooms": [8, 12], "extra": 1}]}"#,
+        "not json",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let brief = put(&d, &format!("b{i}.json"), text.as_bytes());
+        refused(&mut s, &params(&d, &brief, "b", Some(&rights), &root), "invalid_brief");
+    }
+    assert_eq!(std::fs::read_dir(&root).expect("ls").count(), 0);
+    refused(&mut s, &params(&d, "/dev/zero", "b", Some(&rights), &root), "invalid_brief");
+    refused(&mut s, &params(&d, "/nonexistent/b.json", "b", Some(&rights), &root), "invalid_brief");
+}
+
+#[test]
+fn the_rerun_is_spread_through_the_delivery() {
+    for (n, k) in [(200usize, 50usize), (190, 50), (4, 2), (3, 50), (1, 1), (7, 7)] {
+        let k = k.min(n);
+        let at = rerun_indices(n, k);
+        assert_eq!(at.len(), k);
+        assert!(at.windows(2).all(|w| w[0] < w[1]) && at.iter().all(|i| *i < n));
+        let step = n.div_ceil(k);
+        if k < n {
+            assert!(at[0] <= step && *at.last().unwrap() + 1 + step >= n, "{n} {k} {at:?}");
+            assert!(at.windows(2).all(|w| w[1] - w[0] <= step + 1));
+        } else {
+            assert_eq!(at, (0..n).collect::<Vec<_>>());
+        }
+    }
+    assert_eq!(&rerun_indices(200, 50)[..3], [2, 6, 10]);
+    assert_eq!(rerun_indices(4, 2), [1, 3]);
+}
+
+#[test]
+fn a_seeds_room_count_depends_on_the_seed_alone_and_stays_pinned() {
+    for seed in 0..500 {
+        let r = rooms_for(seed, 5, 22);
+        assert!((5..=22).contains(&r));
+        assert_eq!(r, rooms_for(seed, 5, 22));
+    }
+    assert_eq!(rooms_for(9, 7, 7), 7);
+    let first: Vec<i64> = (1..=5).map(|s| rooms_for(s, 5, 22)).collect();
+    assert_eq!(first, PINNED, "past deliveries depend on these never changing");
+}
+
+const PINNED: [i64; 5] = [5, 19, 5, 17, 16];
