@@ -3,7 +3,7 @@
   "family": "medical-day",
   "pack_id": "medical-day",
   "building_type": "hospital",
-  "deliver": {"rooms": [24, 30], "rooms_tol": 0},
+  "deliver": {"rooms": [10, 15], "rooms_tol": 0},
   "review": {
     "status": "reviewed",
     "note": "Reviewed and approved for corpus generation. Written from the claude-fable-5-2 proposal (fill/medical-day-claude-fable-5-2.json, which holds the reason for each value) and the A112 trace. A value marked `trace` is what A112 holds; a value marked `model` is the proposal's. The medical-day pack gives rules (MD-001 to MD-011) and kinds, and no counts, areas or connections, so this file is the only source for those."
@@ -14,7 +14,7 @@
     "done/fixtures/medical-day/a112-room-areas.json",
     "BIMCraft/crates/core/data/shape-families/fill/medical-day-claude-fable-5-2.json"
   ],
-  "entry": null,
+  "entry": {"rooms": ["waiting"], "doors": [1, 1], "types": ["single"]},
   "rooms": {
     "corridor": {
       "kind": "corridor", "name": "Corridor", "role": "circulation", "place": "spine",
@@ -22,18 +22,18 @@
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "low"}, "max_side_ratio": {"from": "model", "confidence": "high"}, "min_side_mm": {"from": "model", "confidence": "low"}, "max_links": {"from": "model", "confidence": "medium"}}
     },
     "waiting": {
-      "kind": "waiting", "name": "Waiting", "role": "public", "place": "off_spine",
-      "count": [1, 2], "area_m2": [10.0, 45.0], "max_side_ratio": 2.5, "min_side_mm": 3000, "max_links": 2,
+      "kind": "waiting", "name": "Waiting", "role": "public", "place": "entry_end",
+      "count": [1, 1], "area_m2": [10.0, 60.0], "max_side_ratio": 2.5, "min_side_mm": 3000, "max_links": 2, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "low"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "model", "confidence": "medium"}}
     },
     "treatment_bay": {
       "kind": "treatment_bay", "name": "Treatment Bay", "role": "clinical", "place": "off_spine", "weight": 5,
-      "count": [2, 14], "area_m2": [8.0, 20.0], "max_side_ratio": 2.0, "min_side_mm": 2400, "max_links": 1,
+      "count": [2, 14], "area_m2": [8.0, 20.0], "max_side_ratio": 2.0, "min_side_mm": 2400, "max_links": 1, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}}
     },
     "treatment_room": {
       "kind": "treatment_room", "name": "Treatment Room", "role": "clinical", "place": "off_spine", "weight": 2,
-      "count": [0, 6], "area_m2": [10.0, 22.0], "max_side_ratio": 2.0, "min_side_mm": 2700, "max_links": 2,
+      "count": [0, 6], "area_m2": [10.0, 22.0], "max_side_ratio": 2.0, "min_side_mm": 2700, "max_links": 2, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}}
     },
     "anteroom": {
@@ -43,7 +43,7 @@
     },
     "isolation": {
       "kind": "isolation", "name": "Isolation Room", "role": "clinical", "place": "beside_parent",
-      "count": [0, 2], "per": {"room": "anteroom", "count": [1, 1]}, "area_m2": [12.0, 26.0], "max_side_ratio": 2.0, "min_side_mm": 2700, "max_links": 3,
+      "count": [0, 2], "per": {"room": "anteroom", "count": [1, 1]}, "area_m2": [12.0, 26.0], "max_side_ratio": 2.0, "min_side_mm": 2700, "max_links": 3, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}}
     },
     "iso_washroom": {
@@ -73,7 +73,7 @@
     },
     "staff_work": {
       "kind": "staff_work", "name": "Staff Work", "role": "support", "place": "off_spine",
-      "count": [1, 2], "area_m2": [8.0, 30.0], "max_side_ratio": 2.5, "min_side_mm": 2400, "max_links": 3,
+      "count": [1, 2], "area_m2": [8.0, 30.0], "max_side_ratio": 2.5, "min_side_mm": 2400, "max_links": 3, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}}
     },
     "staff_station": {
@@ -83,12 +83,12 @@
     },
     "office": {
       "kind": "office", "name": "Office", "role": "private", "place": "off_spine",
-      "count": [0, 6], "area_m2": [8.0, 16.0], "max_side_ratio": 2.0, "min_side_mm": 2400, "max_links": 1,
+      "count": [0, 6], "area_m2": [8.0, 16.0], "max_side_ratio": 2.0, "min_side_mm": 2400, "max_links": 1, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}}
     },
     "meeting": {
       "kind": "meeting", "name": "Meeting", "role": "shared", "place": "off_spine",
-      "count": [0, 2], "area_m2": [12.0, 36.0], "max_side_ratio": 2.2, "min_side_mm": 3000, "max_links": 1,
+      "count": [0, 2], "area_m2": [12.0, 36.0], "max_side_ratio": 2.2, "min_side_mm": 3000, "max_links": 1, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}}
     },
     "storage": {
@@ -124,7 +124,7 @@
   },
   "links": [
     {"from": "corridor", "to": "corridor", "use": "parent", "types": ["open_full", "double", "single"], "source": {"from": "model", "confidence": "medium"}},
-    {"from": "corridor", "to": "waiting", "use": "parent", "types": ["open_full", "cased", "double"], "source": {"from": "model", "confidence": "medium"}},
+    {"from": "waiting", "to": "corridor", "use": "parent", "types": ["open_full", "cased", "double"], "source": {"from": "model", "confidence": "medium"}},
     {"from": "corridor", "to": "treatment_bay", "use": "parent", "types": ["open_full", "cased"], "source": {"from": "model", "confidence": "high"}},
     {"from": "corridor", "to": "treatment_room", "use": "parent", "types": ["single", "double", "unequal_double"], "source": {"from": "model", "confidence": "medium"}},
     {"from": "corridor", "to": "anteroom", "use": "parent", "types": ["single"], "source": {"from": "trace"}},

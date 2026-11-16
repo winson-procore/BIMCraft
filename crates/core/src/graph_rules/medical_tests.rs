@@ -119,6 +119,22 @@ fn a_link_with_a_room_on_one_side_fails_md_011() {
 }
 
 #[test]
+fn one_door_outside_from_the_waiting_room_passes_md_011_and_a_second_fails() {
+    let way_in =
+        |from: &str, id: &str| json!({"kind": "door", "from": from, "to": "exterior", "exterior": true, "operation": "swing", "id": id});
+    let mut g = tiny();
+    g["nodes"].as_array_mut().unwrap().push(json!({"id": "wait", "kind": "waiting"}));
+    edges(&mut g).push(json!({"kind": "open", "from": "wait", "to": "c1", "id": "o4"}));
+    edges(&mut g).push(way_in("wait", "x1"));
+    assert_eq!(failing(&g), Vec::<String>::new());
+    // As `topology` extracts it: the same door listed again.
+    g["exterior_doors"] = json!([{"room": "wait"}]);
+    assert_eq!(failing(&g), Vec::<String>::new());
+    edges(&mut g).push(way_in("wait", "x2"));
+    assert_eq!(failing(&g), vec!["MD-011".to_string()]);
+}
+
+#[test]
 fn an_edge_to_a_node_not_in_the_graph_fails_md_011() {
     let mut g = tiny();
     edges(&mut g).push(json!({"kind": "door", "from": "c1", "to": "nowhere", "operation": "swing", "id": "x"}));

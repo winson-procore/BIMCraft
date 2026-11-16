@@ -5,7 +5,7 @@
   "origin": "authored_from_generator",
   "reference_plans": [],
   "reference_plan_count": 0,
-  "note": "The medical-day pattern: a window band of treatment bays, a patient corridor, core blocks between cross corridors, an optional office band and a staff corridor. A department, not a building: no entry. The A112 trace passes all eleven rules. Every rule is exploratory.",
+  "note": "The medical-day pattern: a window band of treatment bays, a patient corridor, core blocks between cross corridors, an optional office band and a staff corridor. A department, entered through its waiting room when it is delivered on its own (none in A112). The A112 trace passes all eleven rules. Every rule is exploratory.",
   "kinds": {
     "treatment_bay": {
       "role": "clinical",
@@ -359,17 +359,17 @@
     },
     {
       "id": "MD-011",
-      "name": "no-entry",
+      "name": "one-way-in",
       "classification": "exploratory",
       "category": "access",
       "subject": "every door and open link",
-      "predicate": "has a room on both sides",
-      "object": "so the plan has no entry",
+      "predicate": "has a room on both sides, but at most one door outside",
+      "object": "from a waiting room",
       "checkability": "deterministic",
       "confidence": 0.7,
-      "rationale": "A department is a part of a building: no door goes outside.",
+      "rationale": "A department traced inside a hospital (A112) has no door outside; one delivered on its own is entered through its waiting room, as the corpus's receiver asked (2026-11-16).",
       "exceptions": [],
-      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json",
+      "provenance": "specs/medical-day-pattern-generator.md (Rules the pattern keeps); fixture done/fixtures/medical-day/a112-expected-topology.json; the receiver's review of a delivery, 2026-11-16",
       "check": {}
     }
   ]

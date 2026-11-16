@@ -640,6 +640,17 @@ fn a_rooms_batch_is_accepted_for_every_family_file_and_refused_for_none() {
     refused(&mut session(), &params(&d, &none, "none", Some(&rights), &root2), "invalid_brief");
 }
 
+/// A v2 delivery draws each seed's room count from its family's `deliver.rooms`; the receiver's token limit holds a plan of about
+/// 15 rooms, so no family is delivered bigger.
+#[test]
+fn no_family_delivers_more_than_15_rooms() {
+    for (name, text) in shape_graph::family::BUILTIN {
+        let fam = shape_graph::family::Family::parse(text).expect("a built-in family parses");
+        let d = fam.deliver.as_ref().unwrap_or_else(|| panic!("`{name}` has delivery defaults"));
+        assert!(d.rooms[1] <= 15, "`{name}` delivers up to {} rooms", d.rooms[1]);
+    }
+}
+
 /// A reviewed family is delivered with or without `"unreviewed": "allow"`, which changes nothing for it. Every built-in family is
 /// reviewed, so the refusal of an unreviewed one is tested on the build (`pack_tables_tests`), not through a brief.
 #[test]

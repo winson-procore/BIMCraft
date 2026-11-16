@@ -146,8 +146,10 @@ trace's 44 rooms, given kinds, pass all eleven): kinds treatment_bay, treatment_
 clean_utility, soiled_utility, staff_work, office, meeting, storage, alcove, waiting, shell, plant, shaft and corridor. Bays open to a
 corridor with no door; treatment rooms, offices and utilities with a door to a corridor; isolation with an anteroom and a washroom
 of its own; clean and soiled apart; medication with one link; staff work open and doorless; the corridors one set; every room but a
-shaft reaching a corridor; and no link with a room on one side only (MD-011, from `exterior` edges, edges naming a node the graph
-lacks, and a top-level `exterior_doors` list). The evaluators are in `graph_rules/medical.rs` and follow the done check's own
+shaft reaching a corridor; and no link with a room on one side only but at most one door outside, from a waiting room (MD-011,
+`one-way-in`: `exterior` edges, edges naming a node the graph lacks, and the doors of a top-level `exterior_doors` list that no edge
+already gives, as `topology` writes each door outside in both). MD-011 was `no-entry` until 2026-11-16, when a delivery's receiver
+asked for medical-day plans with a way in; A112, a department inside a hospital, has none and passes either way. The evaluators are in `graph_rules/medical.rs` and follow the done check's own
 literally: links count one by one, a door is any operation but `open`. A node with no kind, or one outside the eighteen, is refused
 rather than failed. Graphs need a `kind` on each node and no `role` or `entry`. `generate --archetype medical-day`
 ([graph generator](graph-generator.md#medical-day-graph-first)) checks its graph and the extracted one against it.

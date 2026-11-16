@@ -15,6 +15,7 @@ use super::family::{Conn, Family};
 use super::layout::Laid;
 use super::links::{Box4, Rc, boxed, by_room, outline, outside, shared, wall};
 use super::plan::Room;
+use super::swings;
 use super::tags::{self, TagAt};
 use super::wall_lines::WallLines;
 use crate::engine::Session;
@@ -154,6 +155,8 @@ fn orient(fam: &Family, rooms: &[Room], laid: &Laid, d: &mut Drawn) -> Result<()
     let exterior = swing::exterior_rule();
     let kind = |i: usize| fam.types[rooms[i].ty].kind.as_str();
     let room_at = |p: [f64; 2]| laid.rects.iter().find(|r| holds(r, p)).map(|r| r.0);
+    let by = by_room(&laid.rects);
+    let mut swept: Vec<Vec<Vec<[f64; 2]>>> = Vec::new();
     for door in &mut d.doors {
         if !matches!(door.op, "swing" | "double-swing") {
             continue;
@@ -213,10 +216,31 @@ fn orient(fam: &Family, rooms: &[Room], laid: &Laid, d: &mut Drawn) -> Result<()
             _ => {}
         }
         let face = target.is_some_and(|t| t != left);
+        // The rule's way first; then the other jamb, the other side, both: the first whose swing stays in the room it opens into
+        // and clear of the swings placed before it.
+        let placed = swings::Placed {
+            at,
+            u: [(b[0] - a[0]) / len, (b[1] - a[1]) / len],
+            thickness: if w.exterior { 250.0 } else { 130.0 },
+            width: door.width as f64,
+        };
+        let fits = |face: bool, hand: bool| {
+            let swing = swings::sectors(door.family, &placed, face, hand);
+            let room = if face { right } else { left };
+            let inside = room.is_none_or(|r| by.get(&r).is_some_and(|boxes| swings::inside(boxes, &swing)));
+            (inside && !swept.iter().any(|s| swings::clash(s, &swing))).then_some(swing)
+        };
+        let Some((face, hand, swing)) = [(face, hinge_end), (face, !hinge_end), (!face, hinge_end), (!face, !hinge_end)]
+            .into_iter()
+            .find_map(|(f, h)| fits(f, h).map(|s| (f, h, s)))
+        else {
+            return Err(format!("the swing of the door at {:?} fits no way round", door.at));
+        };
+        swept.push(swing);
         door.flip_facing = face;
-        door.flip_hand = hinge_end;
+        door.flip_hand = hand;
         door.opens_into = Some(if face { right } else { left });
-        door.hinge = Some(if hinge_end { "end" } else { "start" });
+        door.hinge = Some(if hand { "end" } else { "start" });
     }
     Ok(())
 }

@@ -33,6 +33,9 @@ mod plan;
 pub(crate) mod register_tests;
 #[cfg(test)]
 mod required_tests;
+#[cfg(test)]
+mod swing_tests;
+mod swings;
 mod tags;
 #[cfg(test)]
 mod tests;
