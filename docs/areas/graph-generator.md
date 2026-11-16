@@ -459,8 +459,11 @@ and prints one JSON summary (`folder`, `rerun_folder`, `generator_version`, `fil
   `shape`, `rooms`, `interior`, `bumps`, `gridlines` and `brief_schema = 2`; v1 DWGs stamp only `generator_version`. A seed `build` refuses is in
   `skipped` with the refusal's code and has no row and no file. When every seed is skipped there is no summary: the call is refused as `empty_delivery`,
   nothing is written, and the message says how many seeds were skipped with each code and gives the first one's own message.
-- **`building`** is `<family>-` and 12 hex digits of the SHA-256 of the script's `type`, `family`, `wall`, `door` (without `mark`), `room_separator` and
-  `room` lines, each kind sorted: the same layout is the same building however the script numbered its doors, and `generate`'s `manifest.json` carries it.
+- **`building`** in `manifest.csv` is `b` and the row's running number in seed order, nine digits zero-padded (`b000000001`, `b000000002`, …):
+  a skipped seed takes no number, and a rerun row has the name its seed has in the delivery. `generate`'s `manifest.json` names a plan's layout
+  instead: `<family>-` and 12 hex digits of the SHA-256 of the script's `type`, `family`, `wall`, `door` (without `mark`), `room_separator` and `room`
+  lines, each kind sorted, so the same layout is the same building however the script numbered its doors. The summary's `buildings` counts those
+  layouts, and the rerun must make the same layout for each seed.
 - **Threads.** `--jobs` plain threads pull seeds from an atomic counter (the reproducible-GUID state is thread-local, so no rayon here); results go by position
   and the manifest is written when every seed is done, so the tree does not depend on J. DWGs stream to their files.
 - **The rerun** repeats `k = min(N, rows)` seeds, index `i` being row `floor((2i+1)·rows/2k)`, made again from the brief; a different byte is `nondeterministic`.
@@ -475,6 +478,8 @@ and prints one JSON summary (`folder`, `rerun_folder`, `generator_version`, `fil
 
 - 2026-11-15: v1 delivery briefs are frozen for reproducibility. v2 adds seed-driven reviewed-family batches, v2 DWG custom properties and v2 manifest
   columns for large synthetic DWG deliveries.
+- 2026-11-16: `manifest.csv`'s `building` is a running name in seed order (`b000000001`) instead of the layout hash, for v1 and v2 alike, since a
+  receiver can't take hundreds of thousands of hash names in one delivery. The DWGs, their file names and the other columns are unchanged.
 
 ## Not yet
 
