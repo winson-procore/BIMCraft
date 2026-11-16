@@ -252,8 +252,10 @@ holds about 20 and a `narrow_bar` about 30). That file names the medical-day pac
 `connections` table, so the file is the only source for counts, areas and links. It is the proposal
 `fill/medical-day-claude-fable-5-2.json` with each value's `why` left out: a room type's `source` says, for each of `count`, `area_m2`,
 `max_side_ratio`, `min_side_mm` and `max_links`, `{"from": "trace"}` (what A112 holds) or `{"from": "model", "confidence": C}` (the
-proposal's value), and a link has one `source`; the test `shape_graph/medical_day_tests.rs` keeps the two files equal. `entry` is null,
-`building_type` is `hospital`, bays, alcoves and staff work are open to a corridor, an isolation room is a `beside_parent` room of its
+proposal's value), and a link has one `source`; the test `shape_graph/medical_day_tests.rs` keeps the two files equal. The way in is
+the waiting room (`entry`: one room type, `entry_end`, one single door; one waiting room of 10 to 60 m2, the corridor's parent), and
+waiting, bays, treatment rooms, isolation, staff work, offices and meeting rooms have windows on an outside wall: the receiver of a
+delivery asked for both (2026-11-16), and MD-011 allows that one door. `building_type` is `hospital`, bays, alcoves and staff work are open to a corridor, an isolation room is a `beside_parent` room of its
 anteroom with its own washroom and a `required` door to a corridor (MD-003), and a shaft is cut from a store's cell with no opening.
 `review.status` is `reviewed`: a person read it and approved it for corpus generation, so it needs no `--unreviewed allow`, and
 the manifest's `family_review` says `reviewed`.
@@ -329,6 +331,10 @@ clusters and groups), `fit.rs` (fitting a cluster in a cell, `share`, the attemp
 the script, the scratch run read back by the topology extractor, the graph and the pack's rules on both graphs). With no shape pinned the seed
 orders the nine shapes and each gets 80 attempts; 400 attempts at most, then `unplaceable_shape` or `unplaceable_graph`. Three read-backs that
 disagree with the plan also end it. Swing doors take their side and jamb from `generate/swing.rs`'s rules by room kind, read from the family.
+A swing must then fit (`shape_graph/swings.rs`): each leaf's quarter disc, as the family draws it (hinged a frame width inside its jamb,
+on the wall's face, as long as the leaf), lies inside the faces of the room it opens into and overlaps no swing placed before it. The
+rule's side and jamb are tried first, then the other jamb, the other side, both; a door that fits no way round gives up the attempt
+(`Trouble::Plan`). A delivery once had a 900 mm closet door swinging through the closet's back wall, and doors whose swings met.
 
 Two things a script of this engine does that others don't: its `new` carries a `seed`, which makes the project's uid and every GUID the
 seed's, so a script saves the same file again; and its wall material has no solid cut pattern, because that lays paper over the wall lines
@@ -339,9 +345,11 @@ and a plan's DXF then has no `A-WALL` entities.
 loss along the gap), `single`, `double`, `unequal_double`, `sliding`, `double_sliding`, `pocket` and `bifold`. A door's centre is anywhere
 along its wall that leaves 150 mm of wall each side (`doors::door_centre`): a fraction per link is drawn at the end of `links::connect`,
 after every type pick, so the picks' random stream is unchanged, and stored in `Linked::place` (the entry door's in `entry_at`). The script
-defines the folding, Unequal Double (leaves two thirds and a third of the clear width, so its ARC radii differ by at least 200 mm), Double
-Sliding (two bi-parting leaves on one track) and Pocket (a leaf on the wall's centre line, the pocket marked at one jamb) door families
-(`doors::definition`); the others are BIMCraft's. A family file's `entry.types` must be door types.
+defines the folding, Double Sliding (two bi-parting leaves on one track) and Pocket (a leaf on the wall's centre line, the pocket marked at
+one jamb) door families (`doors::definition`); the others are BIMCraft's. `unequal_double` is drawn as BIMCraft's Double Door (1500 or 1200):
+a receiver reads a double door as one opening only when its two swings hang on the outer jambs and close at the centre, which the Double
+Door's plan symbol does, and an unequal pair's leaves, closing off centre, were read as two single doors sharing a jamb. A family file's
+`entry.types` must be door types.
 
 **Room tags that do not fit** (Slice 14; `shape_graph/tags.rs`). A room's tag (name, number, area: `render::room_tag_box`, 0.6 H a character
 wide and 4.5 H high, H the name's height, 260 mm at 1 : 100) is drawn in the room when it fits the room's cell shrunk by 150 mm on every
@@ -453,14 +461,19 @@ and prints one JSON summary (`folder`, `rerun_folder`, `generator_version`, `fil
   uses reviewed built-in families only. `building_types` is omitted for every covered type or is a non-empty unique list of plain types (`office`,
   `residential`, `clinic`, `hospital`, `educational`). For each seed, separate salts choose the building type, weighted family, shape, room count,
   interior (`aligned` or `jogged`), bumps and gridlines; pinning `interior`, `bumps` or `gridlines` changes only that option. Unknown v2 keys, including
-  `archetype`, `shape`, `rooms`, `rooms_tol`, `area` and `unreviewed`, are `invalid_brief`.
+  `archetype`, `shape`, `rooms`, `rooms_tol`, `area` and `unreviewed`, are `invalid_brief`. A seed's room count is drawn from its family's
+  `deliver.rooms`, which no family sets above 15 (the receiver's token limit; `no_family_delivers_more_than_15_rooms`): clinic 10 to 14,
+  hospital 15 (its smallest program), house 8 to 12, medical-day and office-pattern 10 to 15, school 10 to 13, studio-office 7 to 15.
 - **A seed** is built in memory (`shape_graph::build`), its script run in a fresh `Session`, given the properties and saved as DWG, so its bytes are what
   `generate` then `run` write with drawing properties added. v2 DWGs stamp string custom properties `generator_version`, `building_type`, `archetype`,
   `shape`, `rooms`, `interior`, `bumps`, `gridlines` and `brief_schema = 2`; v1 DWGs stamp only `generator_version`. A seed `build` refuses is in
   `skipped` with the refusal's code and has no row and no file. When every seed is skipped there is no summary: the call is refused as `empty_delivery`,
   nothing is written, and the message says how many seeds were skipped with each code and gives the first one's own message.
-- **`building`** is `<family>-` and 12 hex digits of the SHA-256 of the script's `type`, `family`, `wall`, `door` (without `mark`), `room_separator` and
-  `room` lines, each kind sorted: the same layout is the same building however the script numbered its doors, and `generate`'s `manifest.json` carries it.
+- **`building`** in `manifest.csv` is `b` and the row's running number in seed order, nine digits zero-padded (`b000000001`, `b000000002`, …):
+  a skipped seed takes no number, and a rerun row has the name its seed has in the delivery. `generate`'s `manifest.json` names a plan's layout
+  instead: `<family>-` and 12 hex digits of the SHA-256 of the script's `type`, `family`, `wall`, `door` (without `mark`), `room_separator` and `room`
+  lines, each kind sorted, so the same layout is the same building however the script numbered its doors. The summary's `buildings` counts those
+  layouts, and the rerun must make the same layout for each seed.
 - **Threads.** `--jobs` plain threads pull seeds from an atomic counter (the reproducible-GUID state is thread-local, so no rayon here); results go by position
   and the manifest is written when every seed is done, so the tree does not depend on J. DWGs stream to their files.
 - **The rerun** repeats `k = min(N, rows)` seeds, index `i` being row `floor((2i+1)·rows/2k)`, made again from the brief; a different byte is `nondeterministic`.
@@ -475,6 +488,14 @@ and prints one JSON summary (`folder`, `rerun_folder`, `generator_version`, `fil
 
 - 2026-11-15: v1 delivery briefs are frozen for reproducibility. v2 adds seed-driven reviewed-family batches, v2 DWG custom properties and v2 manifest
   columns for large synthetic DWG deliveries.
+- 2026-11-16: `manifest.csv`'s `building` is a running name in seed order (`b000000001`) instead of the layout hash, for v1 and v2 alike, since a
+  receiver can't take hundreds of thousands of hash names in one delivery. The DWGs, their file names and the other columns are unchanged.
+- 2026-11-16: from the receiver's review of a 103-file v2 delivery. Families deliver at most 15 rooms (52 of the 103 had more); medical-day
+  has a door outside through its waiting room and windows; a swing door's swing stays in its room and clear of other swings (a house's
+  closet door, four plans with swings that met). v2 seeds draw other plans than before.
+- 2026-11-16: a double door's two swings hang on its outer jambs and close at its centre (they hung a frame width inside and overlapped
+  100 mm), and `unequal_double` is drawn as an equal Double Door: the receiver read both as two single doors sharing a jamb.
+- 2026-11-16: a school delivers 10 to 13 rooms, keeping the proposal's minimum of four classrooms.
 
 ## Not yet
 

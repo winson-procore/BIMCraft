@@ -16,7 +16,7 @@
   ],
   "pack_id": "medical-day",
   "building_type": "hospital",
-  "entry": null,
+  "entry": {"rooms": ["waiting"], "doors": [1, 1], "types": ["single"]},
   "rooms": {
     "corridor": {
       "kind": "corridor", "name": "Corridor", "role": "circulation", "place": "spine",
@@ -25,22 +25,22 @@
       "why": "A112 has seven corridor spaces of 19.9 to 58.9 m2, the busiest with 11 links. A small plan needs only one, and that one must be able to carry a 20-room plan, hence the long top of the area and 40 links. The trace gives no widths; 2100 mm is a guess for a unit where recliners and wheelchairs pass, not beds."
     },
     "waiting": {
-      "kind": "waiting", "name": "Waiting", "role": "public", "place": "off_spine",
-      "count": [1, 2], "area_m2": [10.0, 45.0], "max_side_ratio": 2.5, "min_side_mm": 3000, "max_links": 2,
+      "kind": "waiting", "name": "Waiting", "role": "public", "place": "entry_end",
+      "count": [1, 1], "area_m2": [10.0, 60.0], "max_side_ratio": 2.5, "min_side_mm": 3000, "max_links": 2, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "low"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "model", "confidence": "medium"}},
-      "why": "A112 has one, 11.95 m2, open to its corridor and nothing else. A larger unit may have a second; the top of the area is a guess for one."
+      "why": "A112 has one, 11.95 m2, open to its corridor and nothing else. A larger unit may have a second; the top of the area is a guess for one. The way in when the department is delivered on its own (the receiver asked for a door outside, 2026-11-16): one waiting room, at the end of the spine, with windows."
     },
     "treatment_bay": {
       "kind": "treatment_bay", "name": "Treatment Bay", "role": "clinical", "place": "off_spine", "weight": 5,
-      "count": [2, 14], "area_m2": [8.0, 20.0], "max_side_ratio": 2.0, "min_side_mm": 2400, "max_links": 1,
+      "count": [2, 14], "area_m2": [8.0, 20.0], "max_side_ratio": 2.0, "min_side_mm": 2400, "max_links": 1, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}},
-      "why": "A112 has seven: five of 12.3 to 12.5 m2 and two of about 18.2 m2, each with one link, open to a corridor. The bays are the point of the unit, so at least two and the heaviest weight. 2400 mm takes a recliner or stretcher with a chair beside it."
+      "why": "A112 has seven: five of 12.3 to 12.5 m2 and two of about 18.2 m2, each with one link, open to a corridor. The bays are the point of the unit, so at least two and the heaviest weight. 2400 mm takes a recliner or stretcher with a chair beside it. Windows: it stands on the outside wall (the window band), and the receiver asked for glazing there (2026-11-16)."
     },
     "treatment_room": {
       "kind": "treatment_room", "name": "Treatment Room", "role": "clinical", "place": "off_spine", "weight": 2,
-      "count": [0, 6], "area_m2": [10.0, 22.0], "max_side_ratio": 2.0, "min_side_mm": 2700, "max_links": 2,
+      "count": [0, 6], "area_m2": [10.0, 22.0], "max_side_ratio": 2.0, "min_side_mm": 2700, "max_links": 2, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}},
-      "why": "A112 has two, 14.2 and 14.5 m2. One has a second link, a door to a washroom that also opens to the corridor, so two links."
+      "why": "A112 has two, 14.2 and 14.5 m2. One has a second link, a door to a washroom that also opens to the corridor, so two links. Windows: it stands on the outside wall (the window band), and the receiver asked for glazing there (2026-11-16)."
     },
     "anteroom": {
       "kind": "anteroom", "name": "Anteroom", "role": "support", "place": "off_spine", "weight": 2,
@@ -50,9 +50,9 @@
     },
     "isolation": {
       "kind": "isolation", "name": "Isolation Room", "role": "clinical", "place": "beside_parent",
-      "count": [0, 2], "per": {"room": "anteroom", "count": [1, 1]}, "area_m2": [12.0, 26.0], "max_side_ratio": 2.0, "min_side_mm": 2700, "max_links": 3,
+      "count": [0, 2], "per": {"room": "anteroom", "count": [1, 1]}, "area_m2": [12.0, 26.0], "max_side_ratio": 2.0, "min_side_mm": 2700, "max_links": 3, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}},
-      "why": "A112 has one, 19.98 m2, with three links: its anteroom, its washroom and a pair of doors to a corridor (MD-003). One for each anteroom, never without."
+      "why": "A112 has one, 19.98 m2, with three links: its anteroom, its washroom and a pair of doors to a corridor (MD-003). One for each anteroom, never without. Windows: it stands on the outside wall (the window band), and the receiver asked for glazing there (2026-11-16)."
     },
     "iso_washroom": {
       "kind": "washroom", "name": "Washroom", "role": "service", "place": "beside_parent",
@@ -86,9 +86,9 @@
     },
     "staff_work": {
       "kind": "staff_work", "name": "Staff Work", "role": "support", "place": "off_spine",
-      "count": [1, 2], "area_m2": [8.0, 30.0], "max_side_ratio": 2.5, "min_side_mm": 2400, "max_links": 3,
+      "count": [1, 2], "area_m2": [8.0, 30.0], "max_side_ratio": 2.5, "min_side_mm": 2400, "max_links": 3, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}},
-      "why": "A112 has two open work areas, 14.45 and 16.19 m2, each open to two corridors; one also has a small station open to it, so three links. The engine gives a room one link to the spine, so the second corridor side is not drawn."
+      "why": "A112 has two open work areas, 14.45 and 16.19 m2, each open to two corridors; one also has a small station open to it, so three links. The engine gives a room one link to the spine, so the second corridor side is not drawn. Windows: it stands on the outside wall (the window band), and the receiver asked for glazing there (2026-11-16)."
     },
     "staff_station": {
       "kind": "staff_work", "name": "Staff Station", "role": "support", "place": "beside_parent",
@@ -98,15 +98,15 @@
     },
     "office": {
       "kind": "office", "name": "Office", "role": "private", "place": "off_spine",
-      "count": [0, 6], "area_m2": [8.0, 16.0], "max_side_ratio": 2.0, "min_side_mm": 2400, "max_links": 1,
+      "count": [0, 6], "area_m2": [8.0, 16.0], "max_side_ratio": 2.0, "min_side_mm": 2400, "max_links": 1, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}},
-      "why": "A112 has four, 10.45 to 10.6 m2, each with one door to a corridor (MD-007). The office band is optional in the pattern, so the minimum is 0."
+      "why": "A112 has four, 10.45 to 10.6 m2, each with one door to a corridor (MD-007). The office band is optional in the pattern, so the minimum is 0. Windows: it stands on the outside wall (the window band), and the receiver asked for glazing there (2026-11-16)."
     },
     "meeting": {
       "kind": "meeting", "name": "Meeting", "role": "shared", "place": "off_spine",
-      "count": [0, 2], "area_m2": [12.0, 36.0], "max_side_ratio": 2.2, "min_side_mm": 3000, "max_links": 1,
+      "count": [0, 2], "area_m2": [12.0, 36.0], "max_side_ratio": 2.2, "min_side_mm": 3000, "max_links": 1, "window": true,
       "source": {"count": {"from": "model", "confidence": "medium"}, "area_m2": {"from": "model", "confidence": "medium"}, "max_side_ratio": {"from": "model", "confidence": "medium"}, "min_side_mm": {"from": "model", "confidence": "medium"}, "max_links": {"from": "trace"}},
-      "why": "A112 has one, 32.22 m2, with a pair of doors to a corridor. The bottom of the area is a small huddle room."
+      "why": "A112 has one, 32.22 m2, with a pair of doors to a corridor. The bottom of the area is a small huddle room. Windows: it stands on the outside wall (the window band), and the receiver asked for glazing there (2026-11-16)."
     },
     "storage": {
       "kind": "storage", "name": "Storage", "role": "support", "place": "off_spine",
@@ -147,7 +147,7 @@
   },
   "links": [
     {"from": "corridor", "to": "corridor", "use": "parent", "types": ["open_full", "double", "single"], "source": {"from": "model", "confidence": "medium"}, "why": "A112's nine corridor-to-corridor links are four open, three pairs of doors and two single doors. Open first, as the commonest. MD-009 counts all three."},
-    {"from": "corridor", "to": "waiting", "use": "parent", "types": ["open_full", "cased", "double"], "source": {"from": "model", "confidence": "medium"}, "why": "Open in A112. A pair of doors is added for a waiting room closed off from a treatment corridor."},
+    {"from": "waiting", "to": "corridor", "use": "parent", "types": ["open_full", "cased", "double"], "source": {"from": "model", "confidence": "medium"}, "why": "Open in A112. A pair of doors is added for a waiting room closed off from a treatment corridor. From the waiting room, which is the way in and so the corridor's parent."},
     {"from": "corridor", "to": "treatment_bay", "use": "parent", "types": ["open_full", "cased"], "source": {"from": "model", "confidence": "high"}, "why": "Seven of seven are open in A112, and MD-001 allows no door. Both open forms: no front at all, or a cubicle front with a wide gap."},
     {"from": "corridor", "to": "treatment_room", "use": "parent", "types": ["single", "double", "unequal_double"], "source": {"from": "model", "confidence": "medium"}, "why": "A112 has one on a single door and one on a pair (MD-002 wants a door). The unequal pair is the usual stretcher door."},
     {"from": "corridor", "to": "anteroom", "use": "parent", "types": ["single"], "source": {"from": "trace"}, "why": "A single swing door in A112 (MD-003: the anteroom has a door to a corridor)."},

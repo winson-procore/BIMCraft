@@ -26,11 +26,13 @@ fn file(files: &[(&'static str, String)], name: &str) -> Value {
 }
 
 #[test]
-fn the_family_names_its_pack_has_no_entry_and_is_reviewed() {
+fn the_family_names_its_pack_is_entered_by_its_waiting_room_and_is_reviewed() {
     let fam = Family::parse(text()).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(fam.pack_id.as_deref(), Some(NAME));
     assert_eq!(fam.building_type, "hospital");
-    assert!(fam.entry.is_none(), "a department has no outside door");
+    let entry = fam.entry.as_ref().expect("one door outside");
+    let roles: Vec<&str> = entry.rooms.iter().map(|r| fam.types[*r].role.as_str()).collect();
+    assert_eq!(roles, ["public"], "entered through its one public room type");
     assert!(!fam.unreviewed());
     let pack = Pack::embedded(NAME).expect("its pack");
     for kind in pack.kinds.keys() {
@@ -84,7 +86,13 @@ fn it_is_made_without_unreviewed_allow_and_passes_every_rule_of_its_pack() {
     assert!((27..=33).contains(&built.rooms), "{}", built.rooms);
     assert_eq!(file(&built.files, "manifest.json")["family_review"], "reviewed");
     let graph = file(&built.files, "topology-graph.json");
-    assert!(graph["entry"].is_null() || graph["entry"]["room"].is_null(), "{}", graph["entry"]);
+    let entry = graph["entry"]["room"].as_str().expect("an entry room");
+    let kind = graph["nodes"].as_array().expect("nodes").iter().find(|n| n["id"] == entry).map(|n| n["kind"].clone());
+    let fam = Family::parse(text()).unwrap_or_else(|e| panic!("{e}"));
+    let way_in = fam.entry.as_ref().map(|e| Value::from(fam.types[e.rooms[0]].kind.as_str()));
+    assert_eq!(kind, way_in, "{}", graph["entry"]);
+    let script = built.files.iter().find(|(n, _)| *n == "script.bimcraft.txt").map(|(_, t)| t.as_str()).unwrap_or_default();
+    assert!(script.lines().any(|l| l.starts_with("window ")), "the plan has windows");
     let report = file(&built.files, "report.json");
     let checks = report["checks"].as_array().expect("checks");
     let pack = Pack::embedded(NAME).expect("its pack");

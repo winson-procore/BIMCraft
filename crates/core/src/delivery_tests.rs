@@ -292,6 +292,22 @@ fn a_double_door_has_two_equal_arcs_and_a_sliding_door_none() {
     assert!(arcs(&door_block(&t)).is_empty());
 }
 
+/// A reader takes a double door for one opening when its two swings hang on the outer jambs and close at the centre; leaves that
+/// overlap read as two single doors sharing a jamb.
+#[test]
+fn a_double_doors_leaves_hang_on_its_outer_jambs_and_close_at_its_centre() {
+    let (_, t) = one_door(r#"door {"at":[0,2000],"family":"Double Door","type":"1500 x 2100","mark":"D1"}"#, "double-centre", true);
+    let block = door_block(&t);
+    let a = arcs(&block);
+    assert_eq!(a.len(), 2);
+    let centres: Vec<(f64, f64)> = a.iter().map(|a| (a.num("10"), a.num("20"))).collect();
+    assert!(((centres[0].0 - centres[1].0).abs() - 1500.0).abs() < 0.5, "hinges on the outer jambs: {centres:?}");
+    assert!(a.iter().all(|a| (a.num("40") - 750.0).abs() < 0.5), "each leaf half the opening");
+    let near = |u: (f64, f64), v: (f64, f64)| (u.0 - v.0).hypot(u.1 - v.1) < 0.5;
+    let (e0, e1) = (ends(a[0]), ends(a[1]));
+    assert!(e0.iter().any(|p| e1.iter().any(|q| near(*p, *q))), "the leaves close at one point: {e0:?} {e1:?}");
+}
+
 #[test]
 fn the_profile_does_not_change_the_png() {
     let (mut on, _) = one_door(r#"door {"at":[0,2000],"family":"Single Door","type":"900 x 2100","mark":"D1"}"#, "png-on", true);

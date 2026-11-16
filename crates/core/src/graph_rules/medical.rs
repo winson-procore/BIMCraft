@@ -1,5 +1,5 @@
 //! The medical-day pack's evaluators, MD-001 to MD-011: a department of treatment bays, treatment and isolation rooms, utility rooms
-//! and corridors, with no way in from outside. Read off a graph whose spaces have kinds. Every link is a door (any operation but
+//! and corridors, with at most one way in from outside, through its waiting room. Read off a graph whose spaces have kinds. Every link is a door (any operation but
 //! `open`) or an open link; links count one by one, so two doors between the same rooms are two links.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -25,25 +25,32 @@ pub(super) fn check(pack: &Pack, graph: &Graph) -> Result<Vec<Check>, String> {
         kind.insert(n.id.as_str(), k);
     }
     let mut near: BTreeMap<&str, Vec<Link>> = kind.keys().map(|k| (*k, Vec::new())).collect();
-    let mut outside = graph.exterior_doors;
+    let mut outside = 0;
+    let mut ways_in = Vec::new();
     for e in &graph.edges {
         let k = e.kind.to_lowercase();
         if k != "door" && k != "open" {
             continue;
         }
-        let known = kind.contains_key(e.from.as_str()) && kind.contains_key(e.to.as_str());
-        if e.exterior || !known {
+        let door = k == "door" && e.operation.as_deref().map(str::to_lowercase).as_deref() != Some("open");
+        let (from, to) = (kind.contains_key(e.from.as_str()), kind.contains_key(e.to.as_str()));
+        if e.exterior && door && from != to {
+            ways_in.push(if from { e.from.as_str() } else { e.to.as_str() });
+            continue;
+        }
+        if e.exterior || !(from && to) {
             outside += 1;
             continue;
         }
-        let door = k == "door" && e.operation.as_deref().map(str::to_lowercase).as_deref() != Some("open");
         near.entry(e.from.as_str()).or_default().push((e.to.as_str(), door));
         near.entry(e.to.as_str()).or_default().push((e.from.as_str(), door));
     }
+    // An extracted graph lists each door outside as an edge and again under `exterior_doors`.
+    outside += graph.exterior_doors.saturating_sub(ways_in.len());
     let plan = Plan { kind, near };
     let mut checks = Vec::new();
     for rule in &pack.rules {
-        let (problems, ok) = plan.rule(rule, graph, outside)?;
+        let (problems, ok) = plan.rule(rule, outside, &ways_in)?;
         checks.push(verdict(rule, problems, ok));
     }
     Ok(checks)
@@ -66,7 +73,8 @@ impl<'a> Plan<'a> {
         self.near(id).iter().any(|(x, door)| self.corridor(x) && *door)
     }
 
-    fn rule(&self, rule: &Rule, _graph: &Graph, outside: usize) -> Result<(Vec<String>, String), String> {
+    /// `outside` counts the links with a room on one side only, but the doors to outside, whose rooms `ways_in` names.
+    fn rule(&self, rule: &Rule, outside: usize, ways_in: &[&str]) -> Result<(Vec<String>, String), String> {
         let mut bad = Vec::new();
         let ok;
         match rule.id.as_str() {
@@ -184,10 +192,19 @@ impl<'a> Plan<'a> {
                 );
             }
             "MD-011" => {
-                ok = "every link has a room on both sides";
+                ok = "every link has a room on both sides but at most one door outside, from a waiting room";
                 if outside > 0 {
                     bad.push(format!("{outside} link(s) have a room on one side only"));
                 }
+                if ways_in.len() > 1 {
+                    bad.push(format!("{} doors go outside, not one", ways_in.len()));
+                }
+                bad.extend(
+                    ways_in
+                        .iter()
+                        .filter(|r| self.kind.get(*r) != Some(&"waiting"))
+                        .map(|r| format!("the door outside is from `{r}`, not a waiting room")),
+                );
             }
             other => return Err(format!("the pack's rule {other} has no evaluator")),
         }

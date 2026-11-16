@@ -81,7 +81,8 @@ fn the_entry_must_be_a_door_type() {
 
 #[test]
 fn the_new_types_have_their_door_rows() {
-    assert_eq!(Conn::UnequalDouble.door(), Some(("Unequal Double Door", "double-swing")));
+    // A receiver reads a double door only with its leaves closing at the centre, so an unequal pair is drawn as an equal one.
+    assert_eq!(Conn::UnequalDouble.door(), Some(("Double Door", "double-swing")));
     assert_eq!(Conn::DoubleSliding.door(), Some(("Double Sliding Door", "double-sliding")));
     assert_eq!(Conn::Pocket.door(), Some(("Pocket Door", "sliding")));
     assert_eq!(Conn::Cased.door(), None);
@@ -101,7 +102,6 @@ fn house_plans_draw_the_new_types_and_read_them_back() {
     for e in ext["edges"].as_array().into_iter().flatten() {
         let (op, fam) = (e["operation"].as_str(), e["family"].as_str());
         match fam {
-            Some("Unequal Double Door") => assert_eq!(op, Some("double-swing")),
             Some("Double Sliding Door") => assert_eq!(op, Some("double-sliding")),
             Some("Pocket Door") => assert_eq!(op, Some("sliding")),
             _ => {}

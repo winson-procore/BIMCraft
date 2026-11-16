@@ -37,6 +37,9 @@ const V2_ROOMS_SALT: u64 = 0x325F_524F_4F4D_5321;
 const V2_INTERIOR_SALT: u64 = 0x325F_494E_5445_5221;
 const V2_BUMPS_SALT: u64 = 0x325F_4255_4D50_5321;
 const V2_GRIDLINES_SALT: u64 = 0x325F_4752_4944_5321;
+/// A delivered building's name: this prefix and its running number in seed order, zero-padded so names sort as they count.
+const BUILDING_PREFIX: &str = "b";
+const BUILDING_DIGITS: usize = 9;
 const HEADER: &str = "seed,file,sha256,generator_version,units,wall_layers,door_layers,window_layers,building,floor,drawing";
 const HEADER_V2: &str = "seed,file,sha256,generator_version,units,wall_layers,door_layers,window_layers,building,floor,drawing,building_type,archetype,shape,rooms,interior,bumps,gridlines";
 
@@ -122,13 +125,16 @@ struct Row {
     seed: u64,
     file: String,
     sha256: String,
+    /// The plan manifest's `building`, a hash of its layout: what `buildings` counts.
+    layout: String,
+    /// The manifest's name for it ([`building_name`]), given once every seed is done.
     building: String,
     bytes: u64,
     meta: Option<RowMeta>,
 }
 
 enum Outcome {
-    Row(Row),
+    Row(Box<Row>),
     Skipped { seed: u64, code: &'static str, message: String },
 }
 
@@ -496,7 +502,7 @@ fn make_one(job: &Job, writer: &crate::cad::DwgWriter, gv: &str, dir: &Path) -> 
     let text = |name: &str| built.files.iter().find(|(n, _)| *n == name).map(|(_, t)| t.as_str());
     let script = text("script.bimcraft.txt").ok_or("generation_failed: the plan has no script")?;
     let manifest: Value = serde_json::from_str(text("manifest.json").unwrap_or("null")).unwrap_or(Value::Null);
-    let building = manifest["building"].as_str().ok_or("generation_failed: the plan's manifest names no building")?.to_string();
+    let layout = manifest["building"].as_str().ok_or("generation_failed: the plan's manifest names no building")?.to_string();
     let meta = if job.schema_version == 2 {
         Some(RowMeta {
             building_type: job.building_type.clone().ok_or("generation_failed: v2 job has no building_type")?,
@@ -544,14 +550,15 @@ fn make_one(job: &Job, writer: &crate::cad::DwgWriter, gv: &str, dir: &Path) -> 
         Ok(())
     })?;
     let bytes = std::fs::read(&at).map_err(|e| format!("output_unwritable: {}: {e}", at.display()))?;
-    Ok(Outcome::Row(Row {
+    Ok(Outcome::Row(Box::new(Row {
         seed: job.seed,
         file: format!("dwg/{name}"),
         sha256: crate::sha256::hex(&bytes),
-        building,
+        layout,
+        building: String::new(),
         bytes: bytes.len() as u64,
         meta,
-    }))
+    })))
 }
 
 /// Every job on `threads` plain threads, each pulling the next index, results by position. The reproducible-GUID state is
@@ -595,6 +602,11 @@ fn run_all(jobs: &[Job], dir: &Path, writer: &crate::cad::DwgWriter, gv: &str, t
         Some(e) => Err(e),
         None => Ok(out),
     }
+}
+
+/// The name of the `n`th delivered building, from 1: `b000000001`.
+fn building_name(n: usize) -> String {
+    format!("{BUILDING_PREFIX}{n:0BUILDING_DIGITS$}")
 }
 
 fn csv_row(r: &Row, gv: &str) -> String {
@@ -747,12 +759,16 @@ fn write_delivery(
         made.folders.push(f.to_path_buf());
         std::fs::create_dir(f.join("dwg")).map_err(|e| io(f, e))?;
     }
-    let outcomes = run_all(jobs, dfold, writer, gv, threads).map_err(from_message)?;
+    let mut outcomes = run_all(jobs, dfold, writer, gv, threads).map_err(from_message)?;
+    // The outcomes are in seed order; a skipped seed takes no number, so the names run on without a gap.
+    for (n, r) in outcomes.iter_mut().filter_map(|o| if let Outcome::Row(r) = o { Some(r) } else { None }).enumerate() {
+        r.building = building_name(n + 1);
+    }
     let mut rows: Vec<&Row> = Vec::new();
     let mut skipped: Vec<Value> = Vec::new();
     for o in &outcomes {
         match o {
-            Outcome::Row(r) => rows.push(r),
+            Outcome::Row(r) => rows.push(r.as_ref()),
             Outcome::Skipped { seed, code, message } => skipped.push(json!({"seed": seed, "error": code, "message": message})),
         }
     }
@@ -785,14 +801,20 @@ fn write_delivery(
         .into_iter()
         .filter_map(|i| by_seed.get(&rows[i].seed).map(|j| (*j).clone()))
         .collect();
-    let again = match rfold {
+    let mut again = match rfold {
         Some(rfold) => run_all(&picked, rfold, writer, gv, threads).map_err(from_message)?,
         None => Vec::new(),
     };
+    let names: BTreeMap<u64, &str> = rows.iter().map(|r| (r.seed, r.building.as_str())).collect();
+    for o in &mut again {
+        if let Outcome::Row(r) = o {
+            r.building = names.get(&r.seed).map_or_else(String::new, |n| (*n).to_string());
+        }
+    }
     let mut rerun_rows: Vec<&Row> = Vec::new();
     for o in &again {
         match o {
-            Outcome::Row(r) => rerun_rows.push(r),
+            Outcome::Row(r) => rerun_rows.push(r.as_ref()),
             Outcome::Skipped { seed, .. } => {
                 return Err(refuse("nondeterministic", format!("seed {seed} was delivered, and refused the second time")));
             }
@@ -800,7 +822,7 @@ fn write_delivery(
     }
     for r in &rerun_rows {
         let row_text = |row: &Row| if row.meta.is_some() { csv_row_v2(row, gv) } else { csv_row(row, gv) };
-        let first = rows.iter().find(|d| d.seed == r.seed).map(|d| row_text(d));
+        let first = rows.iter().find(|d| d.seed == r.seed).filter(|d| d.layout == r.layout).map(|d| row_text(d));
         if first.as_deref() != Some(row_text(r).as_str()) {
             return Err(refuse("nondeterministic", format!("seed {} made a different file the second time", r.seed)));
         }
@@ -815,7 +837,7 @@ fn write_delivery(
     }
     let files = rows.len();
     let total: u64 = rows.iter().map(|r| r.bytes).sum();
-    let buildings = rows.iter().map(|r| r.building.as_str()).collect::<BTreeSet<_>>().len();
+    let buildings = rows.iter().map(|r| r.layout.as_str()).collect::<BTreeSet<_>>().len();
     let mut sources = serde_json::Map::new();
     for job in jobs.iter().filter(|j| j.area.is_none()) {
         if !sources.contains_key(&job.archetype) {

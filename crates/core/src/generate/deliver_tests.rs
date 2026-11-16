@@ -172,7 +172,7 @@ fn v1_rooms_delivery_sha_is_golden() {
 }
 
 #[test]
-fn the_manifest_names_each_file_by_its_hash_in_seed_order() {
+fn the_manifest_numbers_its_buildings_in_seed_order() {
     let d = dir("manifest");
     let root = d.join("root");
     std::fs::create_dir_all(&root).expect("root");
@@ -197,11 +197,12 @@ fn the_manifest_names_each_file_by_its_hash_in_seed_order() {
         assert_eq!(c[2], crate::sha256::hex(&bytes));
         total += bytes.len();
         assert_eq!(&c[3..8], [GV, "mm", "A-WALL", "A-DOOR", "A-GLAZ"]);
-        assert!(c[8].starts_with("house-") && c[8].len() == 18);
+        assert_eq!(c[8], format!("b{:09}", i + 1));
         buildings.insert(c[8].to_string());
         assert_eq!((c[9], c[10]), ("1", ""));
     }
-    assert_eq!(reply["buildings"], buildings.len());
+    assert_eq!(buildings.len(), 4);
+    assert!(reply["buildings"].as_u64().is_some_and(|n| (1..=4).contains(&n)), "{reply}");
     assert_eq!(reply["average_file_bytes"].as_f64().map(|a| a.round() as usize), Some((total as f64 / 4.0).round() as usize));
     // The rerun's rows are the delivery's rows for its seeds.
     let rerun = std::fs::read_to_string(root.join(GV).join("m1-rerun").join("manifest.csv")).expect("rerun csv");
@@ -325,9 +326,10 @@ fn v2_matches_generate_for_values_read_back_from_the_dwg() {
     session().execute("deliver", &p).expect("deliver");
     let folder = root.join(GV).join("match");
     let csv = std::fs::read_to_string(folder.join("manifest.csv")).expect("csv");
-    for line in csv.lines().skip(1) {
+    for (i, line) in csv.lines().skip(1).enumerate() {
         let c: Vec<&str> = line.split(',').collect();
         let seed: u64 = c[0].parse().unwrap();
+        assert_eq!(c[8], format!("b{:09}", i + 1));
         let prop = props(&std::fs::read_to_string(folder.join(c[1])).expect("dwg text"));
         let job = jobs.iter().find(|j| j.seed == seed).expect("job");
         let out = d.join(format!("generate-{seed}"));
@@ -359,7 +361,6 @@ fn v2_matches_generate_for_values_read_back_from_the_dwg() {
         request.interior = shape_graph::Interior::parse(&prop["interior"]).unwrap();
         request.bumps = prop["bumps"] == "on";
         let built = shape_graph::build(&request, false).expect("shape graph build");
-        assert_eq!(manifest["building"], c[8]);
         assert_eq!(manifest["topology_hash"], generated["topology_hash"]);
         assert_eq!(built.topology_hash, generated["topology_hash"]);
         assert_eq!(manifest["shape"], prop["shape"]);
@@ -521,6 +522,9 @@ fn a_batch_no_family_can_meet_is_skipped_with_its_code() {
     }
     let csv = std::fs::read_to_string(root.join(GV).join("sk").join("manifest.csv")).expect("csv");
     assert_eq!(csv.lines().count(), 4);
+    // Skipped seeds take no number: the delivered rows run on without a gap.
+    let names: Vec<&str> = csv.lines().skip(1).filter_map(|l| l.split(',').nth(8)).collect();
+    assert_eq!(names, ["b000000001", "b000000002", "b000000003"]);
     assert!(!root.join(GV).join("sk").join("dwg").join("house_s101.dwg").exists());
 }
 
@@ -634,6 +638,20 @@ fn a_rooms_batch_is_accepted_for_every_family_file_and_refused_for_none() {
     let root2 = d.join("root2");
     std::fs::create_dir_all(&root2).expect("root");
     refused(&mut session(), &params(&d, &none, "none", Some(&rights), &root2), "invalid_brief");
+}
+
+/// A v2 delivery draws each seed's room count from its family's `deliver.rooms`; the receiver's token limit holds a plan of about
+/// 15 rooms, so no family is delivered bigger.
+#[test]
+fn no_family_delivers_more_than_15_rooms() {
+    for (name, text) in shape_graph::family::BUILTIN {
+        let fam = shape_graph::family::Family::parse(text).expect("a built-in family parses");
+        let d = fam.deliver.as_ref().unwrap_or_else(|| panic!("`{name}` has delivery defaults"));
+        assert!(d.rooms[1] <= 15, "`{name}` delivers up to {} rooms", d.rooms[1]);
+        if *name == "school" {
+            assert_eq!(d.rooms, [10, 13], "a school delivers 10 to 13 rooms");
+        }
+    }
 }
 
 /// A reviewed family is delivered with or without `"unreviewed": "allow"`, which changes nothing for it. Every built-in family is
