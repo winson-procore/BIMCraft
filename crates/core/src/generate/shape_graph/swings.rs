@@ -1,5 +1,6 @@
-//! Where a swing door's leaves sweep, as its family draws them: each leaf's arc is centred on its hinge, a frame width inside the
-//! jamb on the face of the wall, and turns from along the wall to square off it, as long as the leaf. `flip_hand` mirrors it
+//! Where a swing door's leaves sweep, as its family draws them: each leaf's arc is centred on its hinge on the face of the wall (a
+//! single door's a frame width inside its jamb, a double door's on the outer jambs), and turns from along the wall to square off it,
+//! as long as the leaf. `flip_hand` mirrors it
 //! along the wall and `flip_facing` across. A swing must lie in the room it opens into and clear of every other door's swing.
 
 use super::links::Box4;
@@ -23,13 +24,12 @@ pub struct Placed {
     pub width: f64,
 }
 
-/// The leaves of a swing family: each hinge's place along the wall from the middle (its own axes) and the leaf's length.
+/// The leaves of a swing family: each hinge's place along the wall from the middle (its own axes) and the leaf's length. A double
+/// door's leaves hang on the outer jambs and close at the centre.
 fn leaves(family: &str, w: f64) -> Vec<(f64, f64)> {
-    let (left, right) = (-w / 2.0 + FRAME, w / 2.0 - FRAME);
     match family {
-        "Double Door" => vec![(left, w / 2.0), (right, w / 2.0)],
-        "Unequal Double Door" => vec![(left, w * 2.0 / 3.0), (right, w / 3.0)],
-        _ => vec![(left, w)],
+        "Double Door" => vec![(-w / 2.0, w / 2.0), (w / 2.0, w / 2.0)],
+        _ => vec![(-w / 2.0 + FRAME, w)],
     }
 }
 
@@ -135,9 +135,10 @@ mod tests {
     fn a_double_door_sweeps_two_half_discs_from_its_two_jambs() {
         let s = sectors("Double Door", &door([0.0, 0.0], [1.0, 0.0]), false, false);
         assert_eq!(s.len(), 2);
-        assert_eq!((s[0][0], s[1][0]), ([-400.0, 65.0], [400.0, 65.0]));
-        // Each leaf reaches 450 square off the wall.
+        assert_eq!((s[0][0], s[1][0]), ([-450.0, 65.0], [450.0, 65.0]));
+        // Each leaf reaches 450 square off the wall, and both close at the centre.
         assert!(s.iter().all(|p| (p[CHORDS + 1][1] - 515.0).abs() < 1e-9));
+        assert!(s.iter().all(|p| p[1][0].abs() < 1e-9));
     }
 
     #[test]

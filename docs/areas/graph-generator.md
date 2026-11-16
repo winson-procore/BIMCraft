@@ -345,9 +345,11 @@ and a plan's DXF then has no `A-WALL` entities.
 loss along the gap), `single`, `double`, `unequal_double`, `sliding`, `double_sliding`, `pocket` and `bifold`. A door's centre is anywhere
 along its wall that leaves 150 mm of wall each side (`doors::door_centre`): a fraction per link is drawn at the end of `links::connect`,
 after every type pick, so the picks' random stream is unchanged, and stored in `Linked::place` (the entry door's in `entry_at`). The script
-defines the folding, Unequal Double (leaves two thirds and a third of the clear width, so its ARC radii differ by at least 200 mm), Double
-Sliding (two bi-parting leaves on one track) and Pocket (a leaf on the wall's centre line, the pocket marked at one jamb) door families
-(`doors::definition`); the others are BIMCraft's. A family file's `entry.types` must be door types.
+defines the folding, Double Sliding (two bi-parting leaves on one track) and Pocket (a leaf on the wall's centre line, the pocket marked at
+one jamb) door families (`doors::definition`); the others are BIMCraft's. `unequal_double` is drawn as BIMCraft's Double Door (1500 or 1200):
+a receiver reads a double door as one opening only when its two swings hang on the outer jambs and close at the centre, which the Double
+Door's plan symbol does, and an unequal pair's leaves, closing off centre, were read as two single doors sharing a jamb. A family file's
+`entry.types` must be door types.
 
 **Room tags that do not fit** (Slice 14; `shape_graph/tags.rs`). A room's tag (name, number, area: `render::room_tag_box`, 0.6 H a character
 wide and 4.5 H high, H the name's height, 260 mm at 1 : 100) is drawn in the room when it fits the room's cell shrunk by 150 mm on every
@@ -491,6 +493,8 @@ and prints one JSON summary (`folder`, `rerun_folder`, `generator_version`, `fil
 - 2026-11-16: from the receiver's review of a 103-file v2 delivery. Families deliver at most 15 rooms (52 of the 103 had more); medical-day
   has a door outside through its waiting room and windows; a swing door's swing stays in its room and clear of other swings (a house's
   closet door, four plans with swings that met). v2 seeds draw other plans than before.
+- 2026-11-16: a double door's two swings hang on its outer jambs and close at its centre (they hung a frame width inside and overlapped
+  100 mm), and `unequal_double` is drawn as an equal Double Door: the receiver read both as two single doors sharing a jamb.
 
 ## Not yet
 

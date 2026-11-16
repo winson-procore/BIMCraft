@@ -82,9 +82,9 @@ impl Conn {
     pub fn door(self) -> Option<(&'static str, &'static str)> {
         match self {
             Conn::Single => Some(("Single Door", "swing")),
-            Conn::Double => Some(("Double Door", "double-swing")),
+            // A reader takes a double door for one only when its leaves close at the centre, so an unequal pair is drawn equal.
+            Conn::Double | Conn::UnequalDouble => Some(("Double Door", "double-swing")),
             Conn::Sliding => Some(("Sliding Door", "sliding")),
-            Conn::UnequalDouble => Some(("Unequal Double Door", "double-swing")),
             Conn::DoubleSliding => Some(("Double Sliding Door", "double-sliding")),
             Conn::Pocket => Some(("Pocket Door", "sliding")),
             Conn::Bifold => Some((super::super::swing::FOLDING_FAMILY, "folding")),

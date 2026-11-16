@@ -1,5 +1,5 @@
 //! The doors of a plan: their families and widths, where they stand along a wall, where a cased opening is, and the families the
-//! script defines (the folding, unequal double, double sliding and pocket doors; the others are BIMCraft's own).
+//! script defines (the folding, double sliding and pocket doors; the others are BIMCraft's own).
 
 use serde_json::{Map, Value, json};
 
@@ -81,20 +81,6 @@ pub fn definition(family: &str, types: Map<String, Value>) -> Option<Value> {
     };
     match family {
         super::super::swing::FOLDING_FAMILY => Some(super::super::swing::folding_family(types)),
-        "Unequal Double Door" => {
-            // A wide leaf (two thirds of the scheduled width) on the left jamb and a narrow one (a third) on the right.
-            let (wide, narrow) = ("Width * 2 / 3", "Width / 3");
-            Some(make(
-                "double-swing",
-                vec![leaf_form(left, "-Width / 2 + Frame Width + 1", "20"), leaf_form(right, "Width / 2 - Frame Width - 1", "20")],
-                vec![
-                    json!({"line": [[left, "Wall Thickness / 2"], [left, format!("Wall Thickness / 2 + {wide}")]]}),
-                    json!({"arc": {"centre": [left, "Wall Thickness / 2"], "radius": wide, "from": 0, "to": 90}}),
-                    json!({"line": [[right, "Wall Thickness / 2"], [right, format!("Wall Thickness / 2 + {narrow}")]]}),
-                    json!({"arc": {"centre": [right, "Wall Thickness / 2"], "radius": narrow, "from": 90, "to": 180}}),
-                ],
-            ))
-        }
         "Double Sliding Door" => {
             // Two leaves parting from the middle on one track, each drawn from its jamb to just short of the middle.
             Some(make(
@@ -147,15 +133,5 @@ mod tests {
             }
         }
         assert!(cased_gap(0, 1400, 0.5, 0.5).is_none());
-    }
-
-    #[test]
-    fn unequal_double_leaves_differ_by_200() {
-        let def = definition("Unequal Double Door", Map::new()).expect("defined by the script");
-        assert_eq!(def["operation"], "double-swing");
-        assert_eq!(def["category"], "door");
-        assert_eq!(def["symbols"].as_array().map(Vec::len), Some(4));
-        let text = def["symbols"].to_string();
-        assert!(text.contains("Width * 2 / 3") && text.contains("Width / 3"), "{text}");
     }
 }

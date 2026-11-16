@@ -2116,11 +2116,13 @@ fn hosted_library(language: crate::language::Language) -> Vec<(String, Value)> {
             "parameters": [size(width, 1500.0), size(height, 2100.0), size(&frame, 50.0), size(&leaf, 40.0), material(&frame_mat, &timber), material(&leaf_mat, &timber)],
             "types": sizes(&[("1500 x 2100", 1500.0, 2100.0), ("1200 x 2100", 1200.0, 2100.0), ("1800 x 2100", 1800.0, 2100.0)]),
             "forms": forms,
+            // In plan each leaf hangs on its outer jamb and the two close at the centre: a reader of the drawing takes two
+            // swings that overlap there for two single doors.
             "symbols": [
-                {"line": [[&left, &half_t], [&left, &format!("{wall} / 2 + {each}")]]},
-                {"arc": {"centre": [&left, &half_t], "radius": &each, "from": 0, "to": 90}},
-                {"line": [[&right, &half_t], [&right, &format!("{wall} / 2 + {each}")]]},
-                {"arc": {"centre": [&right, &half_t], "radius": &each, "from": 90, "to": 180}}
+                {"line": [[&minus_half_w, &half_t], [&minus_half_w, &format!("{wall} / 2 + {each}")]]},
+                {"arc": {"centre": [&minus_half_w, &half_t], "radius": &each, "from": 0, "to": 90}},
+                {"line": [[&half_w, &half_t], [&half_w, &format!("{wall} / 2 + {each}")]]},
+                {"arc": {"centre": [&half_w, &half_t], "radius": &each, "from": 90, "to": 180}}
             ]
         }),
     ));
