@@ -648,6 +648,9 @@ fn no_family_delivers_more_than_15_rooms() {
         let fam = shape_graph::family::Family::parse(text).expect("a built-in family parses");
         let d = fam.deliver.as_ref().unwrap_or_else(|| panic!("`{name}` has delivery defaults"));
         assert!(d.rooms[1] <= 15, "`{name}` delivers up to {} rooms", d.rooms[1]);
+        if *name == "school" {
+            assert_eq!(d.rooms, [10, 13], "a school delivers 10 to 13 rooms");
+        }
     }
 }
 

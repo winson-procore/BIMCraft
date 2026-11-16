@@ -463,7 +463,7 @@ and prints one JSON summary (`folder`, `rerun_folder`, `generator_version`, `fil
   interior (`aligned` or `jogged`), bumps and gridlines; pinning `interior`, `bumps` or `gridlines` changes only that option. Unknown v2 keys, including
   `archetype`, `shape`, `rooms`, `rooms_tol`, `area` and `unreviewed`, are `invalid_brief`. A seed's room count is drawn from its family's
   `deliver.rooms`, which no family sets above 15 (the receiver's token limit; `no_family_delivers_more_than_15_rooms`): clinic 10 to 14,
-  hospital 15 (its smallest program), house 8 to 12, medical-day, office-pattern and school 10 to 15, studio-office 7 to 15.
+  hospital 15 (its smallest program), house 8 to 12, medical-day and office-pattern 10 to 15, school 10 to 13, studio-office 7 to 15.
 - **A seed** is built in memory (`shape_graph::build`), its script run in a fresh `Session`, given the properties and saved as DWG, so its bytes are what
   `generate` then `run` write with drawing properties added. v2 DWGs stamp string custom properties `generator_version`, `building_type`, `archetype`,
   `shape`, `rooms`, `interior`, `bumps`, `gridlines` and `brief_schema = 2`; v1 DWGs stamp only `generator_version`. A seed `build` refuses is in
@@ -495,6 +495,7 @@ and prints one JSON summary (`folder`, `rerun_folder`, `generator_version`, `fil
   closet door, four plans with swings that met). v2 seeds draw other plans than before.
 - 2026-11-16: a double door's two swings hang on its outer jambs and close at its centre (they hung a frame width inside and overlapped
   100 mm), and `unequal_double` is drawn as an equal Double Door: the receiver read both as two single doors sharing a jamb.
+- 2026-11-16: a school delivers 10 to 13 rooms, keeping the proposal's minimum of four classrooms.
 
 ## Not yet
 
